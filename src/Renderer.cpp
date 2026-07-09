@@ -1,5 +1,6 @@
 #include "Renderer.h"
 #include <cstring>
+#include <Preferences.h>
 #include <qrcode.h>
 #include "GameConfig.h"
 #include "ferret_game.h"  // small ferret sprite for the mini-game (only here)
@@ -23,11 +24,26 @@ static uint16_t lerp565(uint16_t a, uint16_t b, float t) {
 void Renderer::begin() {
   _lcd.init();
   _lcd.setRotation(0);
-  _lcd.setBrightness(180);
+  Preferences p;
+  p.begin("disp", true);
+  _scrBright = p.getInt("scr", 70);
+  p.end();
+  _lcd.setBrightness(map(_scrBright, 0, 100, 0, 255));
   _canvas.setColorDepth(16);
   _canvas.createSprite(SCREEN_W, SCREEN_H);
   // Ferret frames are big-endian RGB565; without this brown turns green.
   _canvas.setSwapBytes(true);
+}
+
+// Backlight brightness with a floor so the screen can never be turned fully
+// dark (which would make it impossible to turn back up on the device).
+void Renderer::setScreenBrightness(int pct) {
+  _scrBright = constrain(pct, 20, 100);
+  _lcd.setBrightness(map(_scrBright, 0, 100, 0, 255));
+  Preferences p;
+  p.begin("disp", false);
+  p.putInt("scr", _scrBright);
+  p.end();
 }
 
 void Renderer::flashButton(int idx) {
@@ -210,16 +226,15 @@ void Renderer::drawRightHandle() {
   _canvas.fillTriangle(rx + 9, RHANDLE_CY - 7, rx + 9, RHANDLE_CY + 7, rx + 2, RHANDLE_CY, BTN_BORDER);
 }
 
-// Draws a QR code (version 3, byte mode) centered horizontally.
-void Renderer::drawQr(const char* text, int topY) {
+// Draws a QR code (version 3, byte mode) centered horizontally at cx.
+void Renderer::drawQr(const char* text, int topY, int cx, int quiet) {
   QRCode qr;
   static uint8_t buf[200];  // version 3 needs 107 bytes
   qrcode_initText(&qr, buf, 3, ECC_LOW, text);
 
   const int scale = 2;
-  const int quiet = 3;  // white border (modules)
   const int total = (qr.size + quiet * 2) * scale;
-  const int ox = CENTER_X - total / 2;
+  const int ox = cx - total / 2;
   // white background (incl. quiet zone)
   _canvas.fillRect(ox, topY, total, total, TFT_WHITE);
   for (uint8_t y = 0; y < qr.size; y++) {
@@ -242,62 +257,188 @@ void Renderer::drawPillButton(int x, int y, int w, int h, const char* label, uin
   _canvas.print(label);
 }
 
-void Renderer::drawMenu(int volume, bool wifiOn, const char* ip) {
-  _canvas.fillScreen(menu::BG);  // full-screen dark purple background
+// A labeled +/- stepper with a fill track (shared by volume/LED/screen).
+void Renderer::drawStepper(const char* label, int pct, const ui::ButtonSlot& minus,
+                           const ui::ButtonSlot& plus) {
+  _canvas.setTextSize(1);
+  _canvas.setTextColor(menu::TEXT_DIM);
+  char t[24];
+  snprintf(t, sizeof(t), "%s  %d%%", label, pct);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(t) / 2, minus.cy - 22);
+  _canvas.print(t);
 
+  _canvas.fillCircle(minus.cx, minus.cy, MENU_BTN_R, menu::VOL_BTN);
+  _canvas.fillRect(minus.cx - 8, minus.cy - 2, 16, 4, TFT_WHITE);
+  _canvas.fillCircle(plus.cx, plus.cy, MENU_BTN_R, menu::VOL_BTN);
+  _canvas.fillRect(plus.cx - 8, plus.cy - 2, 16, 4, TFT_WHITE);
+  _canvas.fillRect(plus.cx - 2, plus.cy - 8, 4, 16, TFT_WHITE);
+
+  const int bx = minus.cx + MENU_BTN_R + 8;
+  const int bw = (plus.cx - MENU_BTN_R - 8) - bx;
+  _canvas.fillRoundRect(bx, minus.cy - 6, bw, 12, 4, menu::VOL_TRACK);
+  _canvas.fillRoundRect(bx, minus.cy - 6, bw * pct / 100, 12, 4, BAR_HIGH);
+}
+
+// A speaker box (cabinet) with a tweeter + woofer, centered at (cx,cy). The
+// driver centers are punched out in the tile bg so they read as cones.
+void Renderer::drawAudioIcon(int cx, int cy, uint16_t bg) {
+  _canvas.fillRoundRect(cx - 10, cy - 14, 20, 28, 4, menu::IC_AUDIO);   // cabinet
+  _canvas.drawRoundRect(cx - 10, cy - 14, 20, 28, 4, rgb565(35, 80, 160));
+  _canvas.fillCircle(cx, cy - 7, 3, menu::IC_AUDIO2);                   // tweeter
+  _canvas.fillCircle(cx, cy - 7, 1, bg);
+  _canvas.fillCircle(cx, cy + 5, 6, menu::IC_AUDIO2);                   // woofer
+  _canvas.fillCircle(cx, cy + 5, 2, bg);
+}
+
+// A light bulb: amber glass with a highlight + a gray screw base, at (cx,cy).
+void Renderer::drawLightIcon(int cx, int cy) {
+  const uint16_t base = rgb565(150, 150, 160);
+  _canvas.fillCircle(cx, cy - 4, 9, menu::IC_SUN);        // glass
+  _canvas.fillCircle(cx - 3, cy - 7, 3, menu::IC_SUN2);   // highlight
+  _canvas.fillRect(cx - 5, cy + 5, 10, 3, base);          // neck
+  _canvas.fillRoundRect(cx - 4, cy + 8, 8, 6, 2, base);   // screw base
+  _canvas.drawFastHLine(cx - 4, cy + 10, 8, menu::CELL_LABEL);  // thread lines
+  _canvas.drawFastHLine(cx - 4, cy + 12, 8, menu::CELL_LABEL);
+}
+
+// Classic WiFi symbol: three radiating arcs above a dot, green. The arcs are
+// plotted point-by-point (a ~110-degree fan) so it doesn't depend on any
+// arc-drawing API's angle convention.
+void Renderer::drawWifiIcon(int cx, int cy) {
+  const uint16_t c = menu::IC_WIFI;
+  const int dotx = cx, doty = cy + 10;  // emitter dot near the bottom
+  const int radii[3] = {7, 12, 17};
+  for (int b = 0; b < 3; b++) {
+    for (int deg = -55; deg <= 55; deg += 4) {
+      const float t = deg * 3.14159f / 180.0f;
+      const int x = dotx + (int)(radii[b] * sinf(t));
+      const int y = doty - (int)(radii[b] * cosf(t));
+      _canvas.fillCircle(x, y, 1, c);  // ~3px-thick arc
+    }
+  }
+  _canvas.fillCircle(dotx, doty, 2, c);  // emitter dot
+}
+
+// One grid cell: light tile, colored icon (a/l/w) on top, label under it.
+void Renderer::drawGridCell(int x, int y, const char* label, char icon) {
+  _canvas.fillRoundRect(x, y, MENU_CELL_W, MENU_CELL_H, 12, menu::CELL_BG);
+  _canvas.drawRoundRect(x, y, MENU_CELL_W, MENU_CELL_H, 12, BTN_BORDER);
+  const int cx = x + MENU_CELL_W / 2, iy = y + 26;
+  switch (icon) {
+    case 'a': drawAudioIcon(cx, iy, menu::CELL_BG); break;
+    case 'l': drawLightIcon(cx, iy);                break;
+    case 'w': drawWifiIcon(cx, iy);                 break;
+  }
+  _canvas.setTextColor(menu::CELL_LABEL);
+  _canvas.setTextSize(1);
+  _canvas.setCursor(cx - _canvas.textWidth(label) / 2, y + MENU_CELL_H - 15);
+  _canvas.print(label);
+}
+
+void Renderer::drawMenu(ui::MenuPage page, int volume, int ledBright,
+                        bool wifiOn, const char* ip) {
+  _canvas.fillScreen(menu::BG);  // full-screen dark purple background
+  if (page == PAGE_AUDIO)      drawMenuAudio(volume);
+  else if (page == PAGE_LIGHT) drawMenuLight(ledBright);
+  else if (page == PAGE_QR)    drawMenuQr(wifiOn, ip);
+  else                         drawMenuMain(wifiOn, ip);
+}
+
+// Main page: a perfect 2x2 grid - Audio/Luz (top), WiFi/QR (bottom). The QR
+// tile shows the code and is tappable (opens the QR detail page). + Voltar.
+void Renderer::drawMenuMain(bool wifiOn, const char* ip) {
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
   const char* title = "Config";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 8);
   _canvas.print(title);
 
-  // --- Volume (label right above the track) ---
-  _canvas.setTextSize(1);
-  _canvas.setTextColor(menu::TEXT_DIM);
-  char vtxt[20];
-  snprintf(vtxt, sizeof(vtxt), "Volume  %d%%", volume);
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(vtxt) / 2, MENU_VOL_MINUS.cy - 20);
-  _canvas.print(vtxt);
+  drawGridCell(MENU_COL_L, MENU_ROW_1, "Audio", 'a');
+  drawGridCell(MENU_COL_R, MENU_ROW_1, "Luz", 'l');
+  drawGridCell(MENU_COL_L, MENU_ROW_2, "WiFi", 'w');
 
-  _canvas.fillCircle(MENU_VOL_MINUS.cx, MENU_VOL_MINUS.cy, MENU_BTN_R, menu::VOL_BTN);
-  _canvas.fillRect(MENU_VOL_MINUS.cx - 8, MENU_VOL_MINUS.cy - 2, 16, 4, TFT_WHITE);
-  _canvas.fillCircle(MENU_VOL_PLUS.cx, MENU_VOL_PLUS.cy, MENU_BTN_R, menu::VOL_BTN);
-  _canvas.fillRect(MENU_VOL_PLUS.cx - 8, MENU_VOL_PLUS.cy - 2, 16, 4, TFT_WHITE);
-  _canvas.fillRect(MENU_VOL_PLUS.cx - 2, MENU_VOL_PLUS.cy - 8, 4, 16, TFT_WHITE);
-  int bx = MENU_VOL_MINUS.cx + MENU_BTN_R + 8;
-  int bw = (MENU_VOL_PLUS.cx - MENU_BTN_R - 8) - bx;
-  _canvas.fillRoundRect(bx, MENU_VOL_MINUS.cy - 6, bw, 12, 4, menu::VOL_TRACK);
-  _canvas.fillRoundRect(bx, MENU_VOL_MINUS.cy - 6, bw * volume / 100, 12, 4, BAR_HIGH);
+  // Bottom-right QR tile (white, rounded to match the grid). When offline it
+  // shows a placeholder; either way it opens the QR detail page on tap.
+  _canvas.fillRoundRect(MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H, 12, TFT_WHITE);
+  _canvas.drawRoundRect(MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H, 12, BTN_BORDER);
+  if (wifiOn && ip && ip[0]) {
+    char qrUrl[40];
+    snprintf(qrUrl, sizeof(qrUrl), "http://%s/", ip);
+    drawQr(qrUrl, MENU_ROW_2 + 4, MENU_QR_CX, 1);  // 62px, fits the rounded tile
+  } else {
+    _canvas.setTextSize(1);
+    _canvas.setTextColor(menu::CELL_LABEL);
+    const char* q = "QR";
+    _canvas.setCursor(MENU_QR_CX - _canvas.textWidth(q) / 2, MENU_ROW_2 + MENU_CELL_H / 2 - 4);
+    _canvas.print(q);
+  }
 
-  // --- WiFi / portal ---
+  drawPillButton(MENU_BACK_X, MENU_BACK_Y, MENU_BACK_W, MENU_BACK_H, "Voltar", menu::CLOSE_BTN);
+}
+
+// QR detail page: the code (large) + what it is + how to use it + the URLs.
+void Renderer::drawMenuQr(bool wifiOn, const char* ip) {
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setTextSize(2);
+  const char* title = "QR Code";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 8);
+  _canvas.print(title);
+
   _canvas.setTextSize(1);
   _canvas.setTextColor(menu::TEXT_DIM);
   if (wifiOn && ip && ip[0]) {
-    // Both addresses with the protocol; QR carries the IP (always resolves).
-    const char* host = "http://ferret.local";
-    char urlIp[40];
-    snprintf(urlIp, sizeof(urlIp), "http://%s", ip);
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(host) / 2, MENU_QR_TOP - 20);
-    _canvas.print(host);
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(urlIp) / 2, MENU_QR_TOP - 10);
-    _canvas.print(urlIp);
     char qrUrl[40];
     snprintf(qrUrl, sizeof(qrUrl), "http://%s/", ip);
-    drawQr(qrUrl, MENU_QR_TOP);
+    drawQr(qrUrl, 30);  // centered, ~70px
+    const char* l1 = "Aponte a camera do celular";
+    const char* l2 = "para abrir o painel de";
+    const char* l3 = "controle no navegador.";
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 108);
+    _canvas.print(l1);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 118);
+    _canvas.print(l2);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(l3) / 2, 128);
+    _canvas.print(l3);
+    char urlIp[40];
+    snprintf(urlIp, sizeof(urlIp), "http://%s", ip);
+    _canvas.setTextColor(menu::AP_NAME);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth("http://ferret.local") / 2, 144);
+    _canvas.print("http://ferret.local");
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(urlIp) / 2, 154);
+    _canvas.print(urlIp);
   } else {
-    const char* h1 = "Sem WiFi conectado";
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(h1) / 2, 118);
-    _canvas.print(h1);
-    const char* h2 = "toque em WiFi p/ configurar";
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(h2) / 2, 138);
-    _canvas.print(h2);
+    const char* m1 = "Conecte o WiFi primeiro";
+    const char* m2 = "para gerar o QR do painel.";
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(m1) / 2, 96);
+    _canvas.print(m1);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(m2) / 2, 110);
+    _canvas.print(m2);
   }
 
-  // --- bottom buttons ---
-  drawPillButton(MENU_WIFI_X, MENU_WIFI_Y, MENU_WIFI_W, MENU_WIFI_H,
-                 "WiFi", menu::WIFI_BTN);
-  drawPillButton(MENU_CLOSE_X, MENU_CLOSE_Y, MENU_CLOSE_W, MENU_CLOSE_H,
-                 "Fechar", menu::CLOSE_BTN);
+  drawPillButton(MENU_BACK_X, MENU_BACK_Y, MENU_BACK_W, MENU_BACK_H, "Voltar", menu::CLOSE_BTN);
+}
+
+void Renderer::drawMenuAudio(int volume) {
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setTextSize(2);
+  const char* title = "Audio";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
+  _canvas.print(title);
+
+  drawStepper("Volume", volume, MENU_VOL_MINUS, MENU_VOL_PLUS);
+  drawPillButton(MENU_BACK_X, MENU_BACK_Y, MENU_BACK_W, MENU_BACK_H, "Voltar", menu::CLOSE_BTN);
+}
+
+void Renderer::drawMenuLight(int ledBright) {
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setTextSize(2);
+  const char* title = "Luz";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
+  _canvas.print(title);
+
+  drawStepper("LED", ledBright, MENU_LED_MINUS, MENU_LED_PLUS);
+  drawStepper("Tela", _scrBright, MENU_SCR_MINUS, MENU_SCR_PLUS);
+  drawPillButton(MENU_BACK_X, MENU_BACK_Y, MENU_BACK_W, MENU_BACK_H, "Voltar", menu::CLOSE_BTN);
 }
 
 void Renderer::drawWifiConfig(const char* apName) {
@@ -333,6 +474,38 @@ void Renderer::drawWifiConfig(const char* apName) {
 
 // ------------------- Games -------------------
 
+// A game tile: light square with a colored icon on top and a label under it.
+void Renderer::drawGameTile(int x, int y, const char* label, char icon, uint16_t iconColor) {
+  _canvas.fillRoundRect(x, y, GAME_TILE_W, GAME_TILE_H, 12, menu::CELL_BG);
+  _canvas.drawRoundRect(x, y, GAME_TILE_W, GAME_TILE_H, 12, BTN_BORDER);
+  const int cx = x + GAME_TILE_W / 2, cy = y + 34;
+  if (icon == 'j') {  // Doodle Jump: the doodler bouncing on a platform
+    const uint16_t plat = rgb565(45, 140, 70);  // platform (darker green)
+    _canvas.fillRoundRect(cx - 16, cy + 13, 32, 6, 3, plat);
+    _canvas.fillTriangle(cx - 4, cy - 15, cx + 4, cy - 15, cx, cy - 20, iconColor);  // jump arrow
+    _canvas.fillRoundRect(cx - 10, cy - 9, 20, 18, 6, iconColor);   // body
+    _canvas.fillRect(cx - 7, cy + 8, 4, 6, iconColor);              // feet
+    _canvas.fillRect(cx + 3, cy + 8, 4, 6, iconColor);
+    _canvas.fillCircle(cx - 4, cy - 3, 3, TFT_WHITE);               // eyes
+    _canvas.fillCircle(cx + 4, cy - 3, 3, TFT_WHITE);
+    _canvas.fillCircle(cx - 4, cy - 3, 1, menu::CELL_LABEL);
+    _canvas.fillCircle(cx + 4, cy - 3, 1, menu::CELL_LABEL);
+  } else {            // Bolinha: a yellow tennis ball with a curved seam
+    _canvas.fillCircle(cx, cy, 16, iconColor);
+    _canvas.drawCircle(cx, cy, 16, rgb565(150, 175, 40));  // rim
+    for (int dy = -14; dy <= 14; dy++) {                   // hourglass seam
+      const float f = 1.0f - (float)(dy * dy) / (14.0f * 14.0f);
+      const int off = (int)(7 * f);
+      _canvas.fillCircle(cx - 11 + off, cy + dy, 1, TFT_WHITE);
+      _canvas.fillCircle(cx + 11 - off, cy + dy, 1, TFT_WHITE);
+    }
+  }
+  _canvas.setTextColor(menu::CELL_LABEL);
+  _canvas.setTextSize(1);
+  _canvas.setCursor(cx - _canvas.textWidth(label) / 2, y + GAME_TILE_H - 15);
+  _canvas.print(label);
+}
+
 void Renderer::drawGamesMenu() {
   _canvas.fillScreen(menu::BG);
   _canvas.setTextColor(TFT_WHITE);
@@ -341,14 +514,12 @@ void Renderer::drawGamesMenu() {
   _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 20);
   _canvas.print(title);
 
-  drawPillButton(GAME_BTN_X, GAME_DOODLE_Y, GAME_BTN_W, GAME_BTN_H,
-                 "Doodle Jump", rgb565(70, 170, 90));
-  drawPillButton(GAME_BTN_X, GAME_BALL_Y, GAME_BTN_W, GAME_BTN_H,
-                 "Bolinha", rgb565(90, 90, 110));
+  drawGameTile(GAME_COL_L, GAME_TILE_Y, "Jump!", 'j', menu::IC_DOODLE);
+  drawGameTile(GAME_COL_R, GAME_TILE_Y, "Bolinha", 'b', menu::IC_BALL);
   _canvas.setTextSize(1);
   _canvas.setTextColor(menu::TEXT_DIM);
-  const char* soon = "(em breve)";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(soon) / 2, GAME_BALL_Y + GAME_BTN_H + 4);
+  const char* soon = "Bolinha: em breve";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(soon) / 2, GAME_TILE_Y + GAME_TILE_H + 8);
   _canvas.print(soon);
 
   drawPillButton(GAMES_BACK_X, GAMES_BACK_Y, GAMES_BACK_W, GAMES_BACK_H,
@@ -493,8 +664,8 @@ void Renderer::drawBattery(Battery& battery) {
 }
 
 void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
-                    bool menuOpen, int volume, bool wifiOn, const char* ip,
-                    bool clockActive, Clock& clock) {
+                    bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
+                    bool wifiOn, const char* ip, bool clockActive, Clock& clock) {
   // Theme follows the real time of day (06-16 day, 16-18 afternoon, else
   // night). Without a synced clock, fall back to the pet's sleep state.
   enum { TOD_DAY, TOD_AFTERNOON, TOD_NIGHT } tod;
@@ -537,7 +708,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     drawStatBar(126, 150, "HIGI", pet.hygiene());
     drawButtons();
     if (menuOpen) {
-      drawMenu(volume, wifiOn, ip);
+      drawMenu(menuPage, volume, ledBright, wifiOn, ip);
     } else {
       drawMenuHandle();   // config menu (top)
       drawRightHandle();  // games menu (right)

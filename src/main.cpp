@@ -39,6 +39,7 @@ static unsigned long lastSaveMs = 0;
 static unsigned long lastInteractionMs = 0;  // for clock mode (idle timer)
 static bool wasSleeping = false;
 static bool menuOpen = false;
+static ui::MenuPage menuPage = ui::PAGE_MAIN;  // which config sub-page is showing
 
 // Release-based tap for the game screens: true once when a finger lifts.
 static bool g_touchDown = false;
@@ -48,6 +49,14 @@ static bool tapReleased(int32_t& ox, int32_t& oy) {
   if (lcd.getTouch(&x, &y)) { g_touchDown = true; g_touchX = x; g_touchY = y; return false; }
   if (g_touchDown) { g_touchDown = false; ox = g_touchX; oy = g_touchY; return true; }
   return false;
+}
+
+// Idle time since a timestamp, saturating at 0. A web command handled in
+// web.handle() sets lastInteractionMs to a millis() slightly AFTER this loop's
+// captured `now`; a plain `now - since` would underflow (unsigned) to a huge
+// value and, e.g., flash the idle clock for a frame. This clamps that away.
+static unsigned long idleSince(unsigned long now, unsigned long since) {
+  return now >= since ? now - since : 0;
 }
 
 // Runs a game action (shared by touch, BOOT button and the web portal).
@@ -65,9 +74,20 @@ void doAction(Action a) {
 
 static void handleUi(ui::UiHit hit) {
   switch (hit) {
-    case ui::UI_MENU_TOGGLE: menuOpen = !menuOpen; break;
+    case ui::UI_MENU_TOGGLE:
+      menuOpen = !menuOpen;
+      if (menuOpen) menuPage = ui::PAGE_MAIN;  // always open on the main page
+      break;
+    case ui::UI_MENU_BACK:   menuPage = ui::PAGE_MAIN;  break;
+    case ui::UI_OPEN_AUDIO:  menuPage = ui::PAGE_AUDIO; break;
+    case ui::UI_OPEN_LIGHT:  menuPage = ui::PAGE_LIGHT; break;
+    case ui::UI_OPEN_QR:     menuPage = ui::PAGE_QR;    break;
     case ui::UI_VOL_DOWN:    audio.setVolume(audio.volume() - 10); break;
     case ui::UI_VOL_UP:      audio.setVolume(audio.volume() + 10); break;
+    case ui::UI_LED_DOWN:    led.setBrightness(led.brightness() - 10); break;
+    case ui::UI_LED_UP:      led.setBrightness(led.brightness() + 10); break;
+    case ui::UI_SCR_DOWN:    renderer.setScreenBrightness(renderer.screenBrightness() - 10); break;
+    case ui::UI_SCR_UP:      renderer.setScreenBrightness(renderer.screenBrightness() + 10); break;
     case ui::UI_WIFI:        menuOpen = false; web.startConfigPortal(); break;
     default: break;
   }
@@ -145,7 +165,7 @@ static void loopDoodle(unsigned long now) {
     if (down) lastInteractionMs = now;
     const int timeout = petClock.menuTimeoutSec();
     const unsigned long idleFrom = lastInteractionMs > g_deadAtMs ? lastInteractionMs : g_deadAtMs;
-    if (timeout > 0 && now - idleFrom > (unsigned long)timeout * 1000) leaveDoodle();
+    if (timeout > 0 && idleSince(now, idleFrom) > (unsigned long)timeout * 1000) leaveDoodle();
   }
   renderer.drawDoodle(doodle);
 }
@@ -162,7 +182,7 @@ static void loopGamesMenu(unsigned long now) {
   if (g_touchDown || tapped) lastInteractionMs = now;  // any touch resets idle
   const int timeout = petClock.menuTimeoutSec();
   if (timeout > 0 && screen == SCREEN_GAMES &&
-      now - lastInteractionMs > (unsigned long)timeout * 1000) {
+      idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
     screen = SCREEN_PET;
   }
   renderer.drawGamesMenu();
@@ -263,9 +283,9 @@ void loop() {
 
   // --- pet screen ---
   const bool clockActive = petClock.enabled() && petClock.synced() && !menuOpen &&
-                           (now - lastInteractionMs > (unsigned long)petClock.idleSec() * 1000);
+                           (idleSince(now, lastInteractionMs) > (unsigned long)petClock.idleSec() * 1000);
 
-  InputEvent ev = input.poll(lcd, menuOpen);
+  InputEvent ev = input.poll(lcd, menuOpen, menuPage);
   if (ev.ui != ui::UI_NONE || ev.action != ACTION_NONE) {
     lastInteractionMs = now;
     if (clockActive) {
@@ -282,13 +302,14 @@ void loop() {
 
   // Auto-close the config menu after the configured idle timeout (0 = never).
   const int menuTimeout = petClock.menuTimeoutSec();
-  if (menuOpen && menuTimeout > 0 && now - lastInteractionMs > (unsigned long)menuTimeout * 1000) {
+  if (menuOpen && menuTimeout > 0 &&
+      idleSince(now, lastInteractionMs) > (unsigned long)menuTimeout * 1000) {
     menuOpen = false;
   }
 
   String ip = web.connected() ? web.ip() : String();
-  renderer.draw(pet, battery, ferret, menuOpen, audio.volume(), web.connected(),
-                ip.c_str(), clockActive, petClock);
+  renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
+                led.brightness(), web.connected(), ip.c_str(), clockActive, petClock);
 
   delay(30);
 }

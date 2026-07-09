@@ -23,8 +23,9 @@ struct InputEvent {
 class InputController {
  public:
   void begin();
-  // menuOpen: when true, touches are interpreted against the config menu.
-  InputEvent poll(LGFX_BallV2& lcd, bool menuOpen);
+  // menuOpen: when true, touches are interpreted against the config menu;
+  // page selects which config sub-page is showing.
+  InputEvent poll(LGFX_BallV2& lcd, bool menuOpen, ui::MenuPage page);
 
  private:
   unsigned long _bootPressMs = 0;
@@ -35,5 +36,5 @@ class InputController {
   int32_t _startX = 0, _startY = 0;
   int32_t _lastX = 0, _lastY = 0;
 
-  InputEvent releaseEvent(bool menuOpen);
+  InputEvent releaseEvent(bool menuOpen, ui::MenuPage page);
 };

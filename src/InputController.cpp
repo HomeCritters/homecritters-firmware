@@ -19,7 +19,7 @@ void InputController::begin() {
 }
 
 // Turns the end of a touch into an event: swipe (menu toggle) or tap.
-InputEvent InputController::releaseEvent(bool menuOpen) {
+InputEvent InputController::releaseEvent(bool menuOpen, ui::MenuPage page) {
   InputEvent ev;
   const int32_t dx = _lastX - _startX;
   const int32_t dy = _lastY - _startY;
@@ -36,7 +36,7 @@ InputEvent InputController::releaseEvent(bool menuOpen) {
 
   // TAP: resolved at the touch start point.
   const int32_t px = _startX, py = _startY;
-  if (menuOpen) { ev.ui = ui::menuHit(px, py); return ev; }
+  if (menuOpen) { ev.ui = ui::menuHit(page, px, py); return ev; }
   if (ui::inHandle(px, py)) { ev.ui = ui::UI_MENU_TOGGLE; return ev; }
   if (ui::inRightHandle(px, py)) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
   int idx = ui::buttonAt(px, py);
@@ -49,7 +49,7 @@ InputEvent InputController::releaseEvent(bool menuOpen) {
   return ev;
 }
 
-InputEvent InputController::poll(LGFX_BallV2& lcd, bool menuOpen) {
+InputEvent InputController::poll(LGFX_BallV2& lcd, bool menuOpen, ui::MenuPage page) {
   InputEvent ev;
   const unsigned long now = millis();
 
@@ -60,7 +60,7 @@ InputEvent InputController::poll(LGFX_BallV2& lcd, bool menuOpen) {
     _lastX = tx; _lastY = ty;
   } else if (_touching) {
     _touching = false;
-    ev = releaseEvent(menuOpen);
+    ev = releaseEvent(menuOpen, page);
     if (ev.action != ACTION_NONE || ev.ui != ui::UI_NONE) return ev;
   }
 

@@ -118,6 +118,16 @@ namespace menu {
   constexpr uint16_t TEXT_DIM    = rgb565(190, 180, 220);
   constexpr uint16_t VOL_BTN     = rgb565(90, 74, 150);
   constexpr uint16_t VOL_TRACK   = rgb565(60, 52, 90);
+  // Grid tiles: light background + colored icons (like the interaction buttons).
+  constexpr uint16_t CELL_BG     = BTN_BG;                  // light tile
+  constexpr uint16_t CELL_LABEL  = rgb565(45, 35, 65);     // dark label on tile
+  constexpr uint16_t IC_AUDIO    = rgb565(55, 120, 225);   // speaker (blue)
+  constexpr uint16_t IC_AUDIO2   = rgb565(120, 175, 245);  // sound waves (light blue)
+  constexpr uint16_t IC_SUN      = rgb565(245, 165, 25);   // sun body (amber)
+  constexpr uint16_t IC_SUN2     = rgb565(250, 205, 80);   // sun rays (light amber)
+  constexpr uint16_t IC_WIFI     = rgb565(55, 180, 110);   // signal bars (green)
+  constexpr uint16_t IC_DOODLE   = rgb565(70, 185, 95);    // doodle jump (green)
+  constexpr uint16_t IC_BALL     = rgb565(205, 230, 65);   // tennis ball (yellow-green)
   constexpr uint16_t WIFI_BTN    = rgb565(70, 150, 230);
   constexpr uint16_t CLOSE_BTN   = rgb565(120, 90, 170);
   constexpr uint16_t EXIT_BTN    = rgb565(200, 80, 80);

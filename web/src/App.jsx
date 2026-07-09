@@ -166,7 +166,7 @@ function GamePad({ send, score, onBack }) {
   return (
     <Card size="small" style={{ marginTop: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <Text strong style={{ fontSize: 16 }}>🕹️ Doodle Jump</Text>
+        <Text strong style={{ fontSize: 16 }}>🕹️ Jump!</Text>
         <Text strong style={{ fontSize: 18 }}>{score ?? 0}</Text>
       </div>
       <div
