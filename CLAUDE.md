@@ -41,7 +41,8 @@ include/
   Theme.h              # paletas de cores (dia/noite + menu)
   UiLayout.h           # geometria da UI (arco, menu) + hit-test compartilhado
   LGFX_BallV2.h        # config do LovyanGFX (display + touch)
-  ferret_anim.h        # frames de animação do furão em RGB565 (gerado)
+  ferret_anim.h        # frames do furão em RGB565, 80px, cena (gerado)
+  ferret_game.h        # sprite do furão 40px p/ o mini-game (gerado)
   sleep_music.h        # MP3 do ronco (dormir) em PROGMEM (gerado)
   sfx_eat.h, sfx_drink.h, sfx_tap.h, sfx_wake.h, sfx_jump.h  # efeitos (gerados)
   web_index.h          # portal React (single-file, gzip) em PROGMEM (gerado)
@@ -114,12 +115,14 @@ README.md
   portal e habilita. Toque só "acorda" a tela. Persistido em NVS (com migração
   de versão).
 - **Game mode**: um **pull da direita** (⟨, aba na borda / swipe pra esquerda)
-  abre o **menu de jogos**. Hoje: **Doodle Jump** (`DoodleGame`) — o furão pula
-  entre plataformas, o jogador controla só a horizontal (touch: posição do dedo
-  vira tilt; wrap nas bordas). Botão "voltar" no canto sup. esq.; game over →
-  toque volta ao menu. Tela do jogo sempre no hardware. O `main` tem uma
-  máquina de estados de tela (`SCREEN_PET`/`GAMES`/`DOODLE`); durante os jogos
-  o pet continua vivo em background (decaimento, som, portal, animação no WS).
+  abre o **menu de jogos**. Hoje: **Doodle Jump** (`DoodleGame`) — o furão (sprite
+  oficial de 40px, `ferret_game.h`) pula entre plataformas; o jogador controla a
+  horizontal **seguindo o dedo** (não é tilt). Algumas plataformas têm **mola**
+  (boost, pulo bem maior). Som de pulo a cada quicada e som de morte no game
+  over. Botão "voltar" no canto sup. esq.; game over → toque volta ao menu. Tela
+  do jogo sempre no hardware. O `main` tem uma máquina de estados de tela
+  (`SCREEN_PET`/`GAMES`/`DOODLE`); durante os jogos o pet continua vivo em
+  background (decaimento, som, portal, animação no WS).
 - **LED RGB** reflete o humor (verde/amarelo/laranja/vermelho/azul/âmbar).
 - Estado salvo na NVS a cada 60s (`Pet::save()`).
 

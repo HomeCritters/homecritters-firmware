@@ -2,6 +2,7 @@
 #include <cstring>
 #include <qrcode.h>
 #include "GameConfig.h"
+#include "ferret_game.h"  // small ferret sprite for the mini-game (only here)
 
 using namespace theme;
 using namespace ui;
@@ -355,19 +356,12 @@ void Renderer::drawGamesMenu() {
   _canvas.pushSprite(0, 0);
 }
 
-// A small ferret avatar for the game (the 80px sprite is too big here).
+// The official ferret sprite (game-sized), jump animation, centered at (cx,cy).
 void Renderer::drawDoodleFerret(int cx, int cy, bool faceLeft) {
-  const uint16_t body = rgb565(120, 82, 52);
-  const uint16_t dark = rgb565(90, 60, 38);
-  const uint16_t belly = rgb565(205, 185, 155);
-  const int hx = cx + (faceLeft ? -7 : 7);  // head offset
-  _canvas.fillCircle(cx, cy + 3, 11, body);
-  _canvas.fillCircle(cx, cy + 6, 7, belly);
-  _canvas.fillCircle(hx, cy - 5, 8, body);
-  _canvas.fillCircle(hx - 4, cy - 11, 2, dark);
-  _canvas.fillCircle(hx + 4, cy - 11, 2, dark);
-  _canvas.fillCircle(hx + (faceLeft ? -3 : 3), cy - 6, 1, TFT_BLACK);  // eye
-  _canvas.fillCircle(hx + (faceLeft ? -8 : 8), cy - 3, 1, dark);       // nose
+  const int idx = (millis() / 80) % FERRET_G_JUMP_FRAMES;
+  const uint16_t* fr = faceLeft ? &ferret_g_jump_l[idx][0] : &ferret_g_jump[idx][0];
+  _canvas.pushImage(cx - FERRET_G_FRAME_W / 2, cy - FERRET_G_FRAME_H / 2,
+                    FERRET_G_FRAME_W, FERRET_G_FRAME_H, fr, FERRET_G_TRANSPARENT_KEY);
 }
 
 void Renderer::drawDoodle(DoodleGame& game) {
@@ -377,11 +371,18 @@ void Renderer::drawDoodle(DoodleGame& game) {
   for (int i = 0; i < DoodleGame::PLAT_COUNT; i++) {
     const auto& p = plats[i];
     if (!p.active) continue;
-    _canvas.fillRoundRect((int)p.x, (int)p.y, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, rgb565(70, 175, 80));
-    _canvas.drawRoundRect((int)p.x, (int)p.y, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, rgb565(45, 120, 55));
+    const int px = (int)p.x, py = (int)p.y;
+    _canvas.fillRoundRect(px, py, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, rgb565(70, 175, 80));
+    _canvas.drawRoundRect(px, py, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, rgb565(45, 120, 55));
+    if (p.spring) {  // spring boost marker on top of the platform
+      const int sx = px + DoodleGame::PLAT_W / 2 - 4, sy = py - 6;
+      _canvas.fillRect(sx, sy, 8, 6, rgb565(235, 150, 40));
+      _canvas.drawFastHLine(sx, sy + 1, 8, rgb565(120, 70, 20));
+      _canvas.drawFastHLine(sx, sy + 4, 8, rgb565(120, 70, 20));
+    }
   }
 
-  drawDoodleFerret((int)game.ferretX(), (int)game.ferretY() + 13, game.faceLeft());
+  drawDoodleFerret((int)game.ferretX(), (int)game.ferretY() + 6, game.faceLeft());
 
   // score (top center)
   _canvas.setTextColor(rgb565(30, 50, 70));

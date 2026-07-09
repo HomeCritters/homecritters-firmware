@@ -73,17 +73,19 @@ static void handleUi(ui::UiHit hit) {
   }
 }
 
-// Doodle Jump screen: horizontal control from touch, back to the menu on
-// the corner button or on game over.
+static bool g_doodleWasDead = false;
+
+// Doodle Jump screen: the ferret follows the finger horizontally; back to the
+// menu on the corner button or on game over.
 static void loopDoodle(unsigned long now) {
   int32_t x, y;
   const bool down = lcd.getTouch(&x, &y);
-  float control = 0.0f;
-  if (down && !ui::inGameBack(x, y)) {
-    control = constrain((x - 120) / 90.0f, -1.0f, 1.0f);
-  }
-  doodle.update(now, control);
+  const float targetX = (down && !ui::inGameBack(x, y)) ? (float)x : -1.0f;
+  doodle.update(now, targetX);
+
   if (doodle.bounced()) audio.playJump();
+  if (!g_doodleWasDead && doodle.gameOver()) audio.playDeath();
+  g_doodleWasDead = doodle.gameOver();
 
   if (down) { g_touchDown = true; g_touchX = x; g_touchY = y; }
   else if (g_touchDown) {
@@ -97,7 +99,7 @@ static void loopDoodle(unsigned long now) {
 static void loopGamesMenu() {
   int32_t tx, ty;
   if (tapReleased(tx, ty)) {
-    if (ui::inGameDoodle(tx, ty)) { doodle.reset(); screen = SCREEN_DOODLE; }
+    if (ui::inGameDoodle(tx, ty)) { doodle.reset(); g_doodleWasDead = false; screen = SCREEN_DOODLE; }
     else if (ui::inGamesBack(tx, ty)) screen = SCREEN_PET;
   }
   renderer.drawGamesMenu();
