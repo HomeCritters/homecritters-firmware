@@ -83,6 +83,7 @@ static void loopDoodle(unsigned long now) {
     control = constrain((x - 120) / 90.0f, -1.0f, 1.0f);
   }
   doodle.update(now, control);
+  if (doodle.bounced()) audio.playJump();
 
   if (down) { g_touchDown = true; g_touchX = x; g_touchY = y; }
   else if (g_touchDown) {

@@ -10,6 +10,7 @@
 #include "sfx_drink.h"
 #include "sfx_tap.h"
 #include "sfx_wake.h"
+#include "sfx_jump.h"
 
 // ============================================================
 // Minimal ES8311 driver (playback/DAC only).
@@ -124,6 +125,7 @@ void AudioPlayer::playWake()      { play(sfx_wake_mp3,     sfx_wake_mp3_len); }
 void AudioPlayer::playEat()       { play(sfx_eat_mp3,      sfx_eat_mp3_len); }
 void AudioPlayer::playDrink()     { play(sfx_drink_mp3,    sfx_drink_mp3_len); }
 void AudioPlayer::playPat()       { play(sfx_tap_mp3,      sfx_tap_mp3_len); }
+void AudioPlayer::playJump()      { play(sfx_jump_mp3,     sfx_jump_mp3_len); }
 void AudioPlayer::stop()          { _stopReq = true; }
 
 void AudioPlayer::startDecode() {

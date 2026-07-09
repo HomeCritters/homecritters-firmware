@@ -20,6 +20,7 @@ class DoodleGame {
   void update(unsigned long now, float control);  // control -1..1 (horizontal)
 
   bool gameOver() const { return _dead; }
+  bool bounced() const { return _bounced; }  // true on the frame it bounced
   int score() const { return (int)(_climb / 10.0f); }
 
   float ferretX() const { return _fx; }  // center x
@@ -32,5 +33,6 @@ class DoodleGame {
   float _climb = 0;  // total scrolled distance (score source)
   Platform _plats[PLAT_COUNT];
   bool _dead = false;
+  bool _bounced = false;
   unsigned long _lastUpdate = 0;
 };

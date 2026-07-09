@@ -24,6 +24,7 @@ void DoodleGame::reset() {
 }
 
 void DoodleGame::update(unsigned long now, float control) {
+  _bounced = false;
   if (_dead) return;
   float dt = (now - _lastUpdate) / 1000.0f;
   _lastUpdate = now;
@@ -48,6 +49,7 @@ void DoodleGame::update(unsigned long now, float control) {
       if (prevFeet <= p.y && feet >= p.y &&
           _fx + FHW > p.x && _fx - FHW < p.x + PLAT_W) {
         _vy = JUMP_VY;
+        _bounced = true;
         break;
       }
     }

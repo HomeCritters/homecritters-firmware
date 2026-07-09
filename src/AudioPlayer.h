@@ -24,6 +24,7 @@ class AudioPlayer {
   void playEat();        // feeding
   void playDrink();      // bath / water
   void playPat();        // petting
+  void playJump();       // doodle-jump bounce
 
   void stop();
   bool isPlaying() const { return _playing; }

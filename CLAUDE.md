@@ -43,7 +43,7 @@ include/
   LGFX_BallV2.h        # config do LovyanGFX (display + touch)
   ferret_anim.h        # frames de animação do furão em RGB565 (gerado)
   sleep_music.h        # MP3 do ronco (dormir) em PROGMEM (gerado)
-  sfx_eat.h, sfx_drink.h, sfx_tap.h, sfx_wake.h  # efeitos sonoros (gerados)
+  sfx_eat.h, sfx_drink.h, sfx_tap.h, sfx_wake.h, sfx_jump.h  # efeitos (gerados)
   web_index.h          # portal React (single-file, gzip) em PROGMEM (gerado)
 src/
   main.cpp             # orquestração: junta os módulos e roda o loop
