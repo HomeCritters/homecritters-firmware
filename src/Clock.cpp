@@ -19,6 +19,7 @@ void Clock::begin() {
   if (_prefs.isKey("tz"))   _tz = _prefs.getString("tz");      else _prefs.putString("tz", _tz);
   if (_prefs.isKey("idle")) _idleSec = _prefs.getInt("idle");  else _prefs.putInt("idle", _idleSec);
   if (_prefs.isKey("h24"))  _h24 = _prefs.getBool("h24");      else _prefs.putBool("h24", _h24);
+  if (_prefs.isKey("dmy"))  _dmy = _prefs.getBool("dmy");      else _prefs.putBool("dmy", _dmy);
   _prefs.end();
   if (tzKnown()) { setenv("TZ", _tz.c_str(), 1); tzset(); }
 }
@@ -68,6 +69,13 @@ void Clock::setH24(bool v) {
   _prefs.end();
 }
 
+void Clock::setDateDmy(bool v) {
+  _dmy = v;
+  _prefs.begin("clock", false);
+  _prefs.putBool("dmy", v);
+  _prefs.end();
+}
+
 void Clock::setTz(const String& tz) {
   _tz = tz;
   _prefs.begin("clock", false);
@@ -84,7 +92,7 @@ void Clock::format(char* timeStr, size_t tn, char* dateStr, size_t dn) const {
   localtime_r(&t, &lt);
   const char colon = (lt.tm_sec % 2) ? ' ' : ':';  // blink every second
   char date[12];
-  strftime(date, sizeof(date), "%d/%m/%Y", &lt);
+  strftime(date, sizeof(date), _dmy ? "%d/%m/%Y" : "%m/%d/%Y", &lt);
   if (_h24) {
     snprintf(timeStr, tn, "%02d%c%02d", lt.tm_hour, colon, lt.tm_min);
     snprintf(dateStr, dn, "%s", date);

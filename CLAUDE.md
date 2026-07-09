@@ -101,7 +101,7 @@ README.md
   o app React gzipado; `WebSocketsServer` (porta 81) **empurra o estado**
   (~10x/s andando, ~2x/s parado, + push imediato quando a animação muda) e
   recebe comandos de texto: `feed`/`pat`/`clean`/`sleep`, `name:X`, `vol:N`,
-  `clock:on|off`, `fmt:12|24`, `tz:<posix>`, `idle:<seg>`. O portal espelha a
+  `clock:on|off`, `fmt:12|24`, `date:dmy|mdy`, `tz:<posix>`, `idle:<seg>`. O portal espelha a
   **mesma animação/posição** do furão (spritesheet próprio + CSS steps), tem
   barras 2x2, botões de ação e drawer de configurações. Comandos rodam via
   `doAction()`/`applyCommand()` no loop principal (thread-safe). mDNS:

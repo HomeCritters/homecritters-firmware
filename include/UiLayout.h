@@ -59,7 +59,7 @@ constexpr int16_t HANDLE_CX = 120, HANDLE_TOP = 0, HANDLE_W = 54, HANDLE_H = 16;
 constexpr ButtonSlot MENU_VOL_MINUS = {40, 64};
 constexpr ButtonSlot MENU_VOL_PLUS  = {200, 64};
 constexpr int16_t MENU_BTN_R = 17;
-constexpr int16_t MENU_QR_TOP = 102;  // top of the QR code (when connected)
+constexpr int16_t MENU_QR_TOP = 106;  // top of the QR code (when connected)
 
 // Bottom buttons: WiFi (setup) and Close.
 constexpr int16_t MENU_WIFI_X = 44,  MENU_WIFI_Y = 182, MENU_WIFI_W = 72, MENU_WIFI_H = 32;

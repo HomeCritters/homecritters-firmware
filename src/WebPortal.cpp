@@ -108,6 +108,8 @@ void WebPortal::applyCommand(const String& msg) {
     if (msg == "clock:off") { _clock->setEnabled(false); return; }
     if (msg == "fmt:24")    { _clock->setH24(true);  return; }
     if (msg == "fmt:12")    { _clock->setH24(false); return; }
+    if (msg == "date:dmy")  { _clock->setDateDmy(true);  return; }
+    if (msg == "date:mdy")  { _clock->setDateDmy(false); return; }
     if (msg.startsWith("tz:"))   { _clock->setTz(msg.substring(3)); return; }
     if (msg.startsWith("idle:")) { _clock->setIdleSec(msg.substring(5).toInt()); return; }
   }
@@ -136,6 +138,7 @@ String WebPortal::stateJson() const {
   j += "\"tz\":\"" + String(_clock ? _clock->tz() : String("")) + "\",";
   j += "\"idleSec\":" + String(_clock ? _clock->idleSec() : 30) + ",";
   j += "\"h24\":" + String(_clock && _clock->h24() ? "true" : "false") + ",";
+  j += "\"dmy\":" + String(!_clock || _clock->dateDmy() ? "true" : "false") + ",";
   j += "\"anim\":\"" + String(_ferret ? _ferret->animName() : "idle") + "\",";
   j += "\"seq\":" + String(_ferret ? _ferret->animSeq() : 0) + ",";
   j += "\"flip\":" + String(_ferret && _ferret->faceLeft() ? "true" : "false") + ",";

@@ -366,7 +366,7 @@ export default function App() {
 
           <div style={{ marginTop: 16 }}>
             <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
-              Formato
+              Formato da hora
             </Text>
             <Segmented
               block
@@ -374,6 +374,19 @@ export default function App() {
               options={['24h', '12h']}
               disabled={!state?.clockOn}
               onChange={(v) => send(v === '24h' ? 'fmt:24' : 'fmt:12')}
+            />
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+              Formato da data
+            </Text>
+            <Segmented
+              block
+              value={state?.dmy === false ? 'MM/DD/AAAA' : 'DD/MM/AAAA'}
+              options={['DD/MM/AAAA', 'MM/DD/AAAA']}
+              disabled={!state?.clockOn}
+              onChange={(v) => send(v === 'DD/MM/AAAA' ? 'date:dmy' : 'date:mdy')}
             />
           </div>
         </Drawer>

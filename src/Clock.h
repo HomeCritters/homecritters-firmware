@@ -26,6 +26,8 @@ class Clock {
   void setIdleSec(int s);
   bool h24() const { return _h24; }
   void setH24(bool v);
+  bool dateDmy() const { return _dmy; }  // true = DD/MM/YYYY, false = MM/DD/YYYY
+  void setDateDmy(bool v);
 
   // Fills "HH:MM" (with a blinking ':') and the date "[AM/PM] DD/MM/YYYY".
   void format(char* timeStr, size_t tn, char* dateStr, size_t dn) const;
@@ -37,6 +39,7 @@ class Clock {
   String _tz = "";
   int _idleSec = 30;
   bool _h24 = true;
+  bool _dmy = true;  // date order: DD/MM/YYYY (BR default)
   bool _sntpStarted = false;
   bool _synced = false;
   Preferences _prefs;

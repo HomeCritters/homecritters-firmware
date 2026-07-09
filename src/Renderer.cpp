@@ -265,13 +265,17 @@ void Renderer::drawMenu(int volume, bool wifiOn, const char* ip) {
   _canvas.setTextSize(1);
   _canvas.setTextColor(menu::TEXT_DIM);
   if (wifiOn && ip && ip[0]) {
-    char url[40];
-    snprintf(url, sizeof(url), "http://%s/", ip);
-    // friendly name on screen (ferret.local); QR carries the IP (always resolves)
-    const char* friendly = "ferret.local";
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(friendly) / 2, MENU_QR_TOP - 12);
-    _canvas.print(friendly);
-    drawQr(url, MENU_QR_TOP);
+    // Both addresses with the protocol; QR carries the IP (always resolves).
+    const char* host = "http://ferret.local";
+    char urlIp[40];
+    snprintf(urlIp, sizeof(urlIp), "http://%s", ip);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(host) / 2, MENU_QR_TOP - 20);
+    _canvas.print(host);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(urlIp) / 2, MENU_QR_TOP - 10);
+    _canvas.print(urlIp);
+    char qrUrl[40];
+    snprintf(qrUrl, sizeof(qrUrl), "http://%s/", ip);
+    drawQr(qrUrl, MENU_QR_TOP);
   } else {
     const char* h1 = "Sem WiFi conectado";
     _canvas.setCursor(CENTER_X - _canvas.textWidth(h1) / 2, 118);
@@ -393,7 +397,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   enum { TOD_DAY, TOD_AFTERNOON, TOD_NIGHT } tod;
   const int h = clock.localHour();
   if (h < 0) {
-    tod = pet.sleeping() ? TOD_NIGHT : TOD_DAY;
+    tod = TOD_DAY;  // no synced clock -> always day
   } else if (h >= 6 && h < 16) {
     tod = TOD_DAY;
   } else if (h >= 16 && h < 18) {
@@ -424,10 +428,10 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     // idle mode: clock replaces bars + buttons
     drawClock(clock);
   } else {
-    drawStatBar(14,  136, "FOOD", pet.hunger());
-    drawStatBar(126, 136, "JOY",  pet.joy());
-    drawStatBar(14,  150, "ENE",  pet.energy());
-    drawStatBar(126, 150, "HYG",  pet.hygiene());
+    drawStatBar(14,  136, "FOME", pet.hunger());
+    drawStatBar(126, 136, "ALEG", pet.joy());
+    drawStatBar(14,  150, "ENER", pet.energy());
+    drawStatBar(126, 150, "HIGI", pet.hygiene());
     drawButtons();
     if (menuOpen) {
       drawMenu(volume, wifiOn, ip);
