@@ -357,7 +357,7 @@ export default function App() {
             {/* Game launcher: open Doodle Jump on the hardware, play from here */}
             <Card size="small" style={{ marginTop: 12 }}>
               <Button block disabled={!online} onClick={() => send('game:start')} style={{ height: 48, fontSize: 16 }}>
-                🎮 Doodle Jump
+                🎮 Jump!
               </Button>
             </Card>
           </>
