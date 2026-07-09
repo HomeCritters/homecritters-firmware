@@ -277,7 +277,7 @@ export default function App() {
         </Card>
 
         <div style={{ textAlign: 'center', marginTop: 14 }}>
-          <Badge status={online ? 'success' : 'error'} text={online ? 'ao vivo' : 'reconectando…'} />
+          <Badge status={online ? 'success' : 'error'} text={online ? 'Ao vivo' : 'Reconectando…'} />
         </div>
 
         {/* Settings: name + volume + clock */}
