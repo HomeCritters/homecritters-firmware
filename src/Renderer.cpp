@@ -195,11 +195,18 @@ void Renderer::drawClock(Clock& clock) {
 }
 
 void Renderer::drawMenuHandle() {
-  // Small "v" tab at the top, hinting at pull-down.
+  // Small "v" tab at the top, hinting at pull-down (config menu).
   _canvas.fillRoundRect(HANDLE_CX - HANDLE_W / 2, -6, HANDLE_W, HANDLE_H + 4, 6, BTN_BG);
   _canvas.drawRoundRect(HANDLE_CX - HANDLE_W / 2, -6, HANDLE_W, HANDLE_H + 4, 6, BTN_BORDER);
-  // chevron
   _canvas.fillTriangle(HANDLE_CX - 7, 4, HANDLE_CX + 7, 4, HANDLE_CX, 11, BTN_BORDER);
+}
+
+void Renderer::drawRightHandle() {
+  // Tab on the right edge with a "<" chevron, hinting at pull-left (games).
+  const int rx = SCREEN_W - RHANDLE_W, ry = RHANDLE_CY - RHANDLE_H / 2;
+  _canvas.fillRoundRect(rx, ry, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BG);
+  _canvas.drawRoundRect(rx, ry, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BORDER);
+  _canvas.fillTriangle(rx + 9, RHANDLE_CY - 7, rx + 9, RHANDLE_CY + 7, rx + 2, RHANDLE_CY, BTN_BORDER);
 }
 
 // Draws a QR code (version 3, byte mode) centered horizontally.
@@ -323,6 +330,94 @@ void Renderer::drawWifiConfig(const char* apName) {
   _canvas.pushSprite(0, 0);
 }
 
+// ------------------- Games -------------------
+
+void Renderer::drawGamesMenu() {
+  _canvas.fillScreen(menu::BG);
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setTextSize(2);
+  const char* title = "Jogos";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 20);
+  _canvas.print(title);
+
+  drawPillButton(GAME_BTN_X, GAME_DOODLE_Y, GAME_BTN_W, GAME_BTN_H,
+                 "Doodle Jump", rgb565(70, 170, 90));
+  drawPillButton(GAME_BTN_X, GAME_BALL_Y, GAME_BTN_W, GAME_BTN_H,
+                 "Bolinha", rgb565(90, 90, 110));
+  _canvas.setTextSize(1);
+  _canvas.setTextColor(menu::TEXT_DIM);
+  const char* soon = "(em breve)";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(soon) / 2, GAME_BALL_Y + GAME_BTN_H + 4);
+  _canvas.print(soon);
+
+  drawPillButton(GAMES_BACK_X, GAMES_BACK_Y, GAMES_BACK_W, GAMES_BACK_H,
+                 "Voltar", menu::CLOSE_BTN);
+  _canvas.pushSprite(0, 0);
+}
+
+// A small ferret avatar for the game (the 80px sprite is too big here).
+void Renderer::drawDoodleFerret(int cx, int cy, bool faceLeft) {
+  const uint16_t body = rgb565(120, 82, 52);
+  const uint16_t dark = rgb565(90, 60, 38);
+  const uint16_t belly = rgb565(205, 185, 155);
+  const int hx = cx + (faceLeft ? -7 : 7);  // head offset
+  _canvas.fillCircle(cx, cy + 3, 11, body);
+  _canvas.fillCircle(cx, cy + 6, 7, belly);
+  _canvas.fillCircle(hx, cy - 5, 8, body);
+  _canvas.fillCircle(hx - 4, cy - 11, 2, dark);
+  _canvas.fillCircle(hx + 4, cy - 11, 2, dark);
+  _canvas.fillCircle(hx + (faceLeft ? -3 : 3), cy - 6, 1, TFT_BLACK);  // eye
+  _canvas.fillCircle(hx + (faceLeft ? -8 : 8), cy - 3, 1, dark);       // nose
+}
+
+void Renderer::drawDoodle(DoodleGame& game) {
+  _canvas.fillScreen(rgb565(150, 205, 235));  // light sky
+
+  const auto* plats = game.platforms();
+  for (int i = 0; i < DoodleGame::PLAT_COUNT; i++) {
+    const auto& p = plats[i];
+    if (!p.active) continue;
+    _canvas.fillRoundRect((int)p.x, (int)p.y, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, rgb565(70, 175, 80));
+    _canvas.drawRoundRect((int)p.x, (int)p.y, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, rgb565(45, 120, 55));
+  }
+
+  drawDoodleFerret((int)game.ferretX(), (int)game.ferretY() + 13, game.faceLeft());
+
+  // score (top center)
+  _canvas.setTextColor(rgb565(30, 50, 70));
+  _canvas.setTextSize(2);
+  char sc[12];
+  snprintf(sc, sizeof(sc), "%d", game.score());
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(sc) / 2, 8);
+  _canvas.print(sc);
+
+  // back button (top-left)
+  _canvas.fillCircle(18, 16, 12, BTN_BG);
+  _canvas.drawCircle(18, 16, 12, BTN_BORDER);
+  _canvas.fillTriangle(22, 11, 22, 21, 14, 16, BTN_BORDER);
+
+  if (game.gameOver()) {
+    _canvas.fillRoundRect(34, 92, 172, 58, 10, menu::CLOCK_BG);
+    _canvas.drawRoundRect(34, 92, 172, 58, 10, menu::CLOCK_EDGE);
+    _canvas.setTextColor(TFT_WHITE);
+    _canvas.setTextSize(2);
+    const char* go = "Fim!";
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(go) / 2, 100);
+    _canvas.print(go);
+    _canvas.setTextSize(1);
+    _canvas.setTextColor(menu::CLOCK_DATE);
+    char l[24];
+    snprintf(l, sizeof(l), "Score: %d", game.score());
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(l) / 2, 122);
+    _canvas.print(l);
+    const char* h = "toque p/ voltar";
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(h) / 2, 134);
+    _canvas.print(h);
+  }
+
+  _canvas.pushSprite(0, 0);
+}
+
 void Renderer::drawFerret(FerretActor& ferret) {
   const uint16_t* fr = ferret.frame();
   if (!fr) return;
@@ -436,7 +531,8 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     if (menuOpen) {
       drawMenu(volume, wifiOn, ip);
     } else {
-      drawMenuHandle();  // the handle only shows while the menu is closed
+      drawMenuHandle();   // config menu (top)
+      drawRightHandle();  // games menu (right)
     }
   }
 

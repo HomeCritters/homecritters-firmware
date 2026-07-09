@@ -56,6 +56,7 @@ src/
   Battery.{h,cpp}      # ADC + curva de bateria
   AudioPlayer.{h,cpp}  # ES8311 + I2S + task de áudio (efeitos + ronco) + volume
   Clock.{h,cpp}        # relógio NTP (timezone POSIX, 12/24h, ociosidade)
+  DoodleGame.{h,cpp}   # mini-game estilo doodle jump (física; Renderer desenha)
   WebPortal.{h,cpp}    # WiFiManager + WebServer + WebSocket + mDNS (portal)
 assets/
   ferret-sprite-sheet.{png,json}  # spritesheet do Aseprite (fonte da animação)
@@ -112,6 +113,13 @@ README.md
   desabilitado e sem fuso** — o navegador detecta o fuso (`Intl`) ao abrir o
   portal e habilita. Toque só "acorda" a tela. Persistido em NVS (com migração
   de versão).
+- **Game mode**: um **pull da direita** (⟨, aba na borda / swipe pra esquerda)
+  abre o **menu de jogos**. Hoje: **Doodle Jump** (`DoodleGame`) — o furão pula
+  entre plataformas, o jogador controla só a horizontal (touch: posição do dedo
+  vira tilt; wrap nas bordas). Botão "voltar" no canto sup. esq.; game over →
+  toque volta ao menu. Tela do jogo sempre no hardware. O `main` tem uma
+  máquina de estados de tela (`SCREEN_PET`/`GAMES`/`DOODLE`); durante os jogos
+  o pet continua vivo em background (decaimento, som, portal, animação no WS).
 - **LED RGB** reflete o humor (verde/amarelo/laranja/vermelho/azul/âmbar).
 - Estado salvo na NVS a cada 60s (`Pet::save()`).
 
@@ -174,7 +182,8 @@ pio device monitor       # log serial, 115200 baud
       `Clock` já sincroniza NTP — dá pra salvar o timestamp e computar o gap).
 - [ ] Curva de bateria em `Battery::percent()` é aproximada — vale calibrar
       com a tensão real da bateria em repouso.
-- [ ] Sem modo "brincar" / mini-jogo (CST816 suporta gestos, dá pra explorar).
+- [~] **Game mode** iniciado (Doodle Jump por touch). Próximos: controle pelo
+      **celular** (tilt via WS, tela só no hardware) e o jogo da **bolinha**.
 - [ ] Animação **Death** do sheet ainda não é usada (ex.: stat zerado por
       muito tempo).
 - [ ] Acesso remoto (fora de casa): plano discutido = Tailscale num aparelho

@@ -51,9 +51,16 @@ inline int buttonAt(int32_t tx, int32_t ty) {
 // ------------------- Config menu (full screen) -------------------
 // Opens with a swipe down (or a tap on the top handle). Takes over the
 // whole screen (not a modal). Closes with a swipe up or the Close button.
-enum UiHit { UI_NONE, UI_MENU_TOGGLE, UI_VOL_DOWN, UI_VOL_UP, UI_WIFI };
+enum UiHit { UI_NONE, UI_MENU_TOGGLE, UI_VOL_DOWN, UI_VOL_UP, UI_WIFI, UI_GAMES_TOGGLE };
 
 constexpr int16_t HANDLE_CX = 120, HANDLE_TOP = 0, HANDLE_W = 54, HANDLE_H = 16;
+
+// Right-edge handle to open the games menu (swipe left from the edge, or tap).
+constexpr int16_t RHANDLE_W = 14, RHANDLE_H = 54, RHANDLE_CY = 120;
+inline bool inRightHandle(int32_t tx, int32_t ty) {
+  return tx > SCREEN_W - RHANDLE_W - 2 &&
+         ty > RHANDLE_CY - RHANDLE_H / 2 && ty < RHANDLE_CY + RHANDLE_H / 2;
+}
 
 // Volume: big buttons on the sides, track in the middle.
 constexpr ButtonSlot MENU_VOL_MINUS = {40, 64};
@@ -95,5 +102,21 @@ inline UiHit menuHit(int32_t tx, int32_t ty) {
 inline bool inWifiExit(int32_t tx, int32_t ty) {
   return inRect(tx, ty, WIFI_EXIT_X, WIFI_EXIT_Y, WIFI_EXIT_W, WIFI_EXIT_H);
 }
+
+// ------------------- Games menu (full screen) -------------------
+constexpr int16_t GAME_BTN_X = 44, GAME_BTN_W = 152, GAME_BTN_H = 42;
+constexpr int16_t GAME_DOODLE_Y = 76, GAME_BALL_Y = 126;
+constexpr int16_t GAMES_BACK_X = 70, GAMES_BACK_Y = 188, GAMES_BACK_W = 100, GAMES_BACK_H = 34;
+
+inline bool inGameDoodle(int32_t tx, int32_t ty) {
+  return inRect(tx, ty, GAME_BTN_X, GAME_DOODLE_Y, GAME_BTN_W, GAME_BTN_H);
+}
+inline bool inGamesBack(int32_t tx, int32_t ty) {
+  return inRect(tx, ty, GAMES_BACK_X, GAMES_BACK_Y, GAMES_BACK_W, GAMES_BACK_H);
+}
+
+// In a game: small back button in the top-left corner (rest of the screen
+// controls the character).
+inline bool inGameBack(int32_t tx, int32_t ty) { return tx < 42 && ty < 32; }
 
 }  // namespace ui

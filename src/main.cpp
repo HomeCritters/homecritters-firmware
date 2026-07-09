@@ -10,6 +10,7 @@
 #include "FerretActor.h"
 #include "WebPortal.h"
 #include "Clock.h"
+#include "DoodleGame.h"
 
 // ============================================================
 // Desk tamagotchi (ferret) - Ball V2
@@ -27,12 +28,27 @@ AudioPlayer      audio;
 FerretActor      ferret;
 WebPortal        web;
 Clock            petClock;
+DoodleGame       doodle;
+
+// Which screen is showing.
+enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE };
+static Screen screen = SCREEN_PET;
 
 static unsigned long lastTickMs = 0;
 static unsigned long lastSaveMs = 0;
 static unsigned long lastInteractionMs = 0;  // for clock mode (idle timer)
 static bool wasSleeping = false;
 static bool menuOpen = false;
+
+// Release-based tap for the game screens: true once when a finger lifts.
+static bool g_touchDown = false;
+static int32_t g_touchX = 0, g_touchY = 0;
+static bool tapReleased(int32_t& ox, int32_t& oy) {
+  int32_t x, y;
+  if (lcd.getTouch(&x, &y)) { g_touchDown = true; g_touchX = x; g_touchY = y; return false; }
+  if (g_touchDown) { g_touchDown = false; ox = g_touchX; oy = g_touchY; return true; }
+  return false;
+}
 
 // Runs a game action (shared by touch, BOOT button and the web portal).
 // The sleep/wake sound is played by the transition detector in loop().
@@ -55,6 +71,35 @@ static void handleUi(ui::UiHit hit) {
     case ui::UI_WIFI:        menuOpen = false; web.startConfigPortal(); break;
     default: break;
   }
+}
+
+// Doodle Jump screen: horizontal control from touch, back to the menu on
+// the corner button or on game over.
+static void loopDoodle(unsigned long now) {
+  int32_t x, y;
+  const bool down = lcd.getTouch(&x, &y);
+  float control = 0.0f;
+  if (down && !ui::inGameBack(x, y)) {
+    control = constrain((x - 120) / 90.0f, -1.0f, 1.0f);
+  }
+  doodle.update(now, control);
+
+  if (down) { g_touchDown = true; g_touchX = x; g_touchY = y; }
+  else if (g_touchDown) {
+    g_touchDown = false;
+    if (doodle.gameOver() || ui::inGameBack(g_touchX, g_touchY)) screen = SCREEN_GAMES;
+  }
+  renderer.drawDoodle(doodle);
+}
+
+// Games menu screen: tap a game to start, or Back to the pet scene.
+static void loopGamesMenu() {
+  int32_t tx, ty;
+  if (tapReleased(tx, ty)) {
+    if (ui::inGameDoodle(tx, ty)) { doodle.reset(); screen = SCREEN_DOODLE; }
+    else if (ui::inGamesBack(tx, ty)) screen = SCREEN_PET;
+  }
+  renderer.drawGamesMenu();
 }
 
 void setup() {
@@ -90,33 +135,14 @@ void loop() {
     return;
   }
 
-  // --- stat decay for the elapsed time ---
+  // --- shared background (runs on every screen) ---
   const float deltaMin = (now - lastTickMs) / 60000.0f;
   if (deltaMin > 0) {
     pet.update(deltaMin);
     lastTickMs = now;
   }
-
-  // --- clock mode: active when enabled, synced and idle ---
   petClock.update(web.connected());
-  const bool clockActive = petClock.enabled() && petClock.synced() && !menuOpen &&
-                           (now - lastInteractionMs > (unsigned long)petClock.idleSec() * 1000);
 
-  // --- input (touch / BOOT) ---
-  InputEvent ev = input.poll(lcd, menuOpen);
-  if (ev.ui != ui::UI_NONE || ev.action != ACTION_NONE) {
-    lastInteractionMs = now;
-    if (clockActive) {
-      // in clock mode a touch only wakes the screen (doesn't run the action)
-    } else if (ev.ui != ui::UI_NONE) {
-      handleUi(ev.ui);
-    } else {
-      doAction(ev.action);
-      if (ev.buttonIdx >= 0) renderer.flashButton(ev.buttonIdx);
-    }
-  }
-
-  // --- sleep/wake sound: fires on the state transition ---
   const bool sleeping = pet.sleeping();
   if (sleeping && !wasSleeping) {
     audio.playSleepTune();
@@ -125,19 +151,14 @@ void loop() {
   }
   wasSleeping = sleeping;
 
-  // --- periodic persistence ---
   if (now - lastSaveMs > game::SAVE_INTERVAL_MS) {
     pet.save();
     lastSaveMs = now;
   }
 
-  // --- web portal (serves requests; brings the server up on connect) ---
   web.handle();
 
-  // --- ferret animation + render + LED ---
   ferret.update(pet, now);
-
-  // mirror animation changes to the portal immediately (WS push)
   static uint32_t lastSeq = 0xFFFFFFFF;
   static bool lastFlip = false;
   if (ferret.animSeq() != lastSeq || ferret.faceLeft() != lastFlip) {
@@ -146,10 +167,42 @@ void loop() {
     web.pushState();
   }
 
+  led.update(pet.mood());
+
+  // --- game screens ---
+  if (screen == SCREEN_DOODLE) {
+    loopDoodle(now);
+    delay(12);
+    return;
+  }
+  if (screen == SCREEN_GAMES) {
+    loopGamesMenu();
+    delay(30);
+    return;
+  }
+
+  // --- pet screen ---
+  const bool clockActive = petClock.enabled() && petClock.synced() && !menuOpen &&
+                           (now - lastInteractionMs > (unsigned long)petClock.idleSec() * 1000);
+
+  InputEvent ev = input.poll(lcd, menuOpen);
+  if (ev.ui != ui::UI_NONE || ev.action != ACTION_NONE) {
+    lastInteractionMs = now;
+    if (clockActive) {
+      // in clock mode a touch only wakes the screen (doesn't run the action)
+    } else if (ev.ui == ui::UI_GAMES_TOGGLE) {
+      if (!menuOpen) screen = SCREEN_GAMES;
+    } else if (ev.ui != ui::UI_NONE) {
+      handleUi(ev.ui);
+    } else {
+      doAction(ev.action);
+      if (ev.buttonIdx >= 0) renderer.flashButton(ev.buttonIdx);
+    }
+  }
+
   String ip = web.connected() ? web.ip() : String();
   renderer.draw(pet, battery, ferret, menuOpen, audio.volume(), web.connected(),
                 ip.c_str(), clockActive, petClock);
-  led.update(pet.mood());
 
   delay(30);
 }

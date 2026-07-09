@@ -6,6 +6,7 @@
 #include "Battery.h"
 #include "FerretActor.h"
 #include "Clock.h"
+#include "DoodleGame.h"
 
 // ============================================================
 // Renderer: owns the display and the canvas (double buffer) and
@@ -24,6 +25,10 @@ class Renderer {
 
   // Full-screen WiFi setup screen (captive portal active) with Exit button.
   void drawWifiConfig(const char* apName);
+
+  // Game screens.
+  void drawGamesMenu();
+  void drawDoodle(DoodleGame& game);
 
   // Visual feedback: highlight the tapped button for a few ms.
   void flashButton(int idx);
@@ -50,7 +55,9 @@ class Renderer {
   void drawSparkles(bool night);
   void drawHeader(const Pet& pet, bool wifiOn);
   void drawMenuHandle();
+  void drawRightHandle();
   void drawClock(Clock& clock);
+  void drawDoodleFerret(int cx, int cy, bool faceLeft);
   void drawMenu(int volume, bool wifiOn, const char* ip);
   void drawQr(const char* text, int topY);
   void drawPillButton(int x, int y, int w, int h, const char* label, uint16_t bg);

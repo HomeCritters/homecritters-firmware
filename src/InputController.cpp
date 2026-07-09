@@ -25,16 +25,20 @@ InputEvent InputController::releaseEvent(bool menuOpen) {
   const int32_t dy = _lastY - _startY;
   const int32_t adx = abs(dx), ady = abs(dy);
 
-  // GESTURE: dominant, long vertical swipe.
-  if (ady > 45 && ady > adx) {
+  // GESTURE: dominant, long swipe.
+  if (ady > 45 && ady > adx) {  // vertical -> config menu
     if (dy > 0 && _startY < 120) { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // down -> open
     if (dy < 0 && menuOpen)      { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // up   -> close
+  }
+  if (adx > 45 && adx > ady) {  // horizontal -> games menu
+    if (dx < 0 && _startX > 175) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; } // left from right edge
   }
 
   // TAP: resolved at the touch start point.
   const int32_t px = _startX, py = _startY;
   if (menuOpen) { ev.ui = ui::menuHit(px, py); return ev; }
   if (ui::inHandle(px, py)) { ev.ui = ui::UI_MENU_TOGGLE; return ev; }
+  if (ui::inRightHandle(px, py)) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
   int idx = ui::buttonAt(px, py);
   if (idx >= 0) {
     ev.action = actionForButton(idx);
