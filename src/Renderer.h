@@ -43,6 +43,7 @@ class Renderer {
   void drawStars();
   void drawMoon();
   void drawSun();
+  void drawSunset();
   void drawForest(bool night);   // treeline + cabin + grass + trees
   void drawCabin(int bx, int by, bool night);
   void drawPineTree(int bx, int baseY, int size);

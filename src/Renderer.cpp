@@ -74,6 +74,13 @@ void Renderer::drawSun() {
   }
 }
 
+void Renderer::drawSunset() {
+  // Big low sun near the horizon, on the right, with a warm halo.
+  const int sx = 180, sy = 86;
+  _canvas.fillCircle(sx, sy, 24, SUNSET_GLOW);
+  _canvas.fillCircle(sx, sy, 17, SUNSET);
+}
+
 // A simple pine tree: trunk + stacked triangular foliage layers.
 void Renderer::drawPineTree(int bx, int baseY, int size) {
   _canvas.fillRect(bx - 1, baseY - size / 5, 3, size / 5, _p.treeTrunk);
@@ -381,13 +388,29 @@ void Renderer::drawBattery(Battery& battery) {
 void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
                     bool menuOpen, int volume, bool wifiOn, const char* ip,
                     bool clockActive, Clock& clock) {
-  const bool night = pet.sleeping();  // sleeping = night; awake = day
-  _p = night ? NIGHT : DAY;
+  // Theme follows the real time of day (06-16 day, 16-18 afternoon, else
+  // night). Without a synced clock, fall back to the pet's sleep state.
+  enum { TOD_DAY, TOD_AFTERNOON, TOD_NIGHT } tod;
+  const int h = clock.localHour();
+  if (h < 0) {
+    tod = pet.sleeping() ? TOD_NIGHT : TOD_DAY;
+  } else if (h >= 6 && h < 16) {
+    tod = TOD_DAY;
+  } else if (h >= 16 && h < 18) {
+    tod = TOD_AFTERNOON;
+  } else {
+    tod = TOD_NIGHT;
+  }
+
+  const bool night = (tod == TOD_NIGHT);
+  _p = (tod == TOD_NIGHT) ? NIGHT : (tod == TOD_AFTERNOON ? AFTERNOON : DAY);
 
   drawSky();
-  if (night) {
+  if (tod == TOD_NIGHT) {
     drawStars();
     drawMoon();
+  } else if (tod == TOD_AFTERNOON) {
+    drawSunset();
   } else {
     drawSun();
   }

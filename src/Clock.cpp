@@ -37,6 +37,14 @@ void Clock::update(bool wifiConnected) {
   }
 }
 
+int Clock::localHour() const {
+  if (!_synced) return -1;
+  time_t t = time(nullptr);
+  struct tm lt;
+  localtime_r(&t, &lt);
+  return lt.tm_hour;
+}
+
 void Clock::setEnabled(bool e) {
   _enabled = e;
   _prefs.begin("clock", false);

@@ -70,8 +70,10 @@ README.md
 
 - **4 stats** decaindo com o tempo: Fome (`hunger`), Energia (`energy`),
   Alegria (`joy`), Higiene (`hygiene`) — na classe `Pet`.
-- **Cena: floresta mágica**, dia/noite: acordado = dia (céu turquesa, **sol**);
-  dormindo = noite (céu roxo mágico, estrelas, **lua**, janela da cabana acesa).
+- **Cena: floresta mágica** com tema pela **hora real** (NTP): 06-16 = **dia**
+  (céu turquesa, sol); 16-18 = **tarde** (pôr do sol dourado); 18-06 = **noite**
+  (céu roxo mágico, estrelas, lua, janela da cabana acesa). Sem relógio
+  sincronizado, cai no fallback pelo estado de sono (acordado=dia, dormindo=noite).
   Elementos: treeline distante, **cabana de madeira** ao fundo, pinheiros,
   grama e poeira mágica/vaga-lumes que cintilam. HUD por cima: 2x2 barras de
   status e 4 botões num **arco** na base. Cores/paletas em `Theme.h`.

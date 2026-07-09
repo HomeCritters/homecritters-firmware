@@ -15,6 +15,7 @@ class Clock {
   void begin();
   void update(bool wifiConnected);  // starts/checks SNTP
   bool synced() const { return _synced; }
+  int localHour() const;            // 0..23, or -1 if not synced yet
 
   bool enabled() const { return _enabled; }
   void setEnabled(bool e);

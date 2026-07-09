@@ -50,6 +50,23 @@ constexpr ScenePalette DAY = {
   rgb565(210, 220, 205),  // barBg (light)
 };
 
+constexpr ScenePalette AFTERNOON = {
+  rgb565(210, 110, 120),  // skyTop   - dusky rose (golden hour)
+  rgb565(255, 180, 110),  // skyBottom - warm orange glow near the horizon
+  rgb565(120, 105, 90),   // treeFar  - warm hazy
+  rgb565(110, 125, 65),   // ground   - golden grass
+  rgb565(80, 95, 48),     // groundDark
+  rgb565(60, 70, 42),     // treeNear
+  rgb565(90, 60, 42),     // treeTrunk
+  rgb565(150, 100, 62),   // cabinWall
+  rgb565(100, 60, 42),    // cabinRoof
+  rgb565(120, 90, 55),    // cabinWindow (unlit, warm wood)
+  rgb565(255, 240, 200),  // sparkle
+  rgb565(55, 30, 30),     // text (dark on warm sky)
+  rgb565(100, 65, 55),    // textDim
+  rgb565(220, 195, 175),  // barBg (warm light)
+};
+
 constexpr ScenePalette NIGHT = {
   rgb565(25, 15, 55),     // skyTop   - deep magic purple
   rgb565(70, 45, 110),    // skyBottom - lit purple
@@ -70,6 +87,8 @@ constexpr ScenePalette NIGHT = {
 // --- Celestial bodies ---
 constexpr uint16_t SUN         = rgb565(255, 210, 90);
 constexpr uint16_t SUN_GLOW    = rgb565(255, 235, 160);
+constexpr uint16_t SUNSET      = rgb565(255, 115, 55);   // low setting sun
+constexpr uint16_t SUNSET_GLOW = rgb565(255, 165, 90);
 constexpr uint16_t MOON        = rgb565(235, 235, 215);
 constexpr uint16_t MOON_CRATER = rgb565(205, 205, 185);
 constexpr uint16_t MOON_GLOW   = rgb565(60, 70, 110);
