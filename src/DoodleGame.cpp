@@ -9,6 +9,7 @@ static constexpr float GAP = 46.0f;        // vertical gap between platforms
 static constexpr float TRACK = 20.0f;      // finger tracking speed (higher = snappier)
 static constexpr int   FEET = 26;          // ferret height (top y -> feet)
 static constexpr int   FHW = 11;           // ferret half-width
+static constexpr float MOVE_SPEED = 55.0f; // sliding-platform speed (px/s)
 
 static float randPlatformX() {
   return 6 + (esp_random() % (240 - DoodleGame::PLAT_W - 12));
@@ -19,11 +20,18 @@ void DoodleGame::spawnPlatform(Platform& p, float x, float y, bool allowSpring) 
   p.y = y;
   p.active = true;
   p.spring = allowSpring && (esp_random() % 100) < 18;  // ~18% springs
+  // A non-spring platform may instead slide sideways (~22%), in a random
+  // direction. Springs stay put (a moving spring is too chaotic).
+  if (!p.spring && allowSpring && (esp_random() % 100) < 22) {
+    p.vx = (esp_random() & 1) ? MOVE_SPEED : -MOVE_SPEED;
+  } else {
+    p.vx = 0;
+  }
 }
 
 void DoodleGame::reset() {
   _fx = 120; _fy = 150; _vy = JUMP_VY;
-  _climb = 0; _dead = false; _bounced = false; _faceLeft = false;
+  _climb = 0; _dead = false; _bounced = false; _boosted = false; _faceLeft = false;
   _lastUpdate = millis();
   spawnPlatform(_plats[0], 100, 200, false);  // starting platform (no spring)
   for (int i = 1; i < PLAT_COUNT; i++) {
@@ -37,6 +45,14 @@ void DoodleGame::update(unsigned long now, float targetX) {
   float dt = (now - _lastUpdate) / 1000.0f;
   _lastUpdate = now;
   if (dt > 0.05f) dt = 0.05f;  // clamp after long pauses
+
+  // slide moving platforms; bounce them off the walls
+  for (auto& p : _plats) {
+    if (!p.active || p.vx == 0) continue;
+    p.x += p.vx * dt;
+    if (p.x < 0)              { p.x = 0;              p.vx = -p.vx; }
+    if (p.x > 240 - PLAT_W)   { p.x = 240 - PLAT_W;   p.vx = -p.vx; }
+  }
 
   // horizontal: follow the finger directly (snappy, no perceptible lag)
   if (targetX >= 0) {
@@ -64,6 +80,7 @@ void DoodleGame::update(unsigned long now, float targetX) {
           _fx + FHW > p.x && _fx - FHW < p.x + PLAT_W) {
         _vy = p.spring ? SPRING_VY : JUMP_VY;
         _bounced = true;
+        _boosted = p.spring;
         break;
       }
     }

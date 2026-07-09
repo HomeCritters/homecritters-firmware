@@ -6,10 +6,11 @@
 
 static constexpr const char* HOSTNAME = "ferret";  // -> ferret.local
 
-void WebPortal::begin(Pet* pet, AudioPlayer* audio, FerretActor* ferret, Clock* clock,
-                      std::function<void(Action)> onAction) {
+void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
+                      Clock* clock, std::function<void(Action)> onAction) {
   _pet = pet;
   _audio = audio;
+  _led = led;
   _ferret = ferret;
   _clock = clock;
   _onAction = onAction;
@@ -88,19 +89,34 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     msg.reserve(len);
     for (size_t i = 0; i < len; i++) msg += (char)payload[i];
     applyCommand(msg);
-    broadcastState();  // reflect immediately to every client
+    // High-frequency joystick input ("game:x:...") must not trigger a full
+    // state broadcast on every frame; everything else reflects immediately.
+    if (!msg.startsWith("game:x:")) broadcastState();
   }
 }
 
-// Commands from React: "feed"/"pat"/"clean"/"sleep", "name:NewName",
-// "vol:N", "clock:on|off", "fmt:12|24", "tz:<posix>", "idle:<sec>".
+// Commands from React: "feed"/"pat"/"clean"/"sleep", "name:NewName", "vol:N",
+// "led:N", "clock:on|off", "fmt:12|24", "tz:<posix>", "idle:<sec>", "menu:<sec>",
+// plus game control: "game:start"/"game:back"/"game:x:<0..1>".
 void WebPortal::applyCommand(const String& msg) {
+  // Game controller (Doodle Jump from the phone).
+  if (msg.startsWith("game:x:")) {
+    _gameTx = msg.substring(7).toFloat();  // normalized [0..1]
+    _gameTxMs = millis();
+    return;
+  }
+  if (msg == "game:start") { _navReq = NAV_START; return; }
+  if (msg == "game:back")  { _navReq = NAV_BACK;  return; }
   if (msg.startsWith("name:")) {
     if (_pet) _pet->setName(msg.substring(5));
     return;
   }
   if (msg.startsWith("vol:")) {
     if (_audio) _audio->setVolume(msg.substring(4).toInt());
+    return;
+  }
+  if (msg.startsWith("led:")) {
+    if (_led) _led->setBrightness(msg.substring(4).toInt());
     return;
   }
   if (_clock) {
@@ -112,6 +128,7 @@ void WebPortal::applyCommand(const String& msg) {
     if (msg == "date:mdy")  { _clock->setDateDmy(false); return; }
     if (msg.startsWith("tz:"))   { _clock->setTz(msg.substring(3)); return; }
     if (msg.startsWith("idle:")) { _clock->setIdleSec(msg.substring(5).toInt()); return; }
+    if (msg.startsWith("menu:")) { _clock->setMenuTimeoutSec(msg.substring(5).toInt()); return; }
   }
   if (!_onAction) return;
   if (msg == "feed")       _onAction(ACTION_FEED);
@@ -122,6 +139,20 @@ void WebPortal::applyCommand(const String& msg) {
 
 void WebPortal::pushState() { broadcastState(); }
 
+WebPortal::GameNav WebPortal::consumeGameNav() {
+  GameNav n = _navReq;
+  _navReq = NAV_NONE;
+  return n;
+}
+
+// Latest horizontal target from the phone, or -1 if none/stale (finger lifted
+// or connection dropped mid-drag -> stop steering rather than drift).
+float WebPortal::gameTargetXNorm() {
+  if (_gameTx < 0) return -1.0f;
+  if (millis() - _gameTxMs > 400) return -1.0f;
+  return _gameTx;
+}
+
 void WebPortal::broadcastState() {
   if (!_serverUp) return;
   String s = stateJson();
@@ -131,12 +162,16 @@ void WebPortal::broadcastState() {
 String WebPortal::stateJson() const {
   const Pet& p = *_pet;
   String j = "{";
+  j += "\"screen\":\"" + String(_screenName) + "\",";
+  j += "\"score\":" + String(_gameScore) + ",";
   j += "\"name\":\"" + p.name() + "\",";
   j += "\"sleeping\":" + String(p.sleeping() ? "true" : "false") + ",";
   j += "\"volume\":" + String(_audio ? _audio->volume() : 0) + ",";
+  j += "\"ledBright\":" + String(_led ? _led->brightness() : 50) + ",";
   j += "\"clockOn\":" + String(_clock && _clock->enabled() ? "true" : "false") + ",";
   j += "\"tz\":\"" + String(_clock ? _clock->tz() : String("")) + "\",";
   j += "\"idleSec\":" + String(_clock ? _clock->idleSec() : 30) + ",";
+  j += "\"menuSec\":" + String(_clock ? _clock->menuTimeoutSec() : 15) + ",";
   j += "\"h24\":" + String(_clock && _clock->h24() ? "true" : "false") + ",";
   j += "\"dmy\":" + String(!_clock || _clock->dateDmy() ? "true" : "false") + ",";
   j += "\"anim\":\"" + String(_ferret ? _ferret->animName() : "idle") + "\",";

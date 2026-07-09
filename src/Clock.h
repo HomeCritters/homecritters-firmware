@@ -24,6 +24,9 @@ class Clock {
   void setTz(const String& tz);
   int idleSec() const { return _idleSec; }
   void setIdleSec(int s);
+  // Auto-close the config/games menu after this many idle seconds (0 = never).
+  int menuTimeoutSec() const { return _menuSec; }
+  void setMenuTimeoutSec(int s);
   bool h24() const { return _h24; }
   void setH24(bool v);
   bool dateDmy() const { return _dmy; }  // true = DD/MM/YYYY, false = MM/DD/YYYY
@@ -38,6 +41,7 @@ class Clock {
   bool _enabled = false;
   String _tz = "";
   int _idleSec = 30;
+  int _menuSec = 15;  // menu auto-close idle timeout (0 = never)
   bool _h24 = true;
   bool _dmy = true;  // date order: DD/MM/YYYY (BR default)
   bool _sntpStarted = false;

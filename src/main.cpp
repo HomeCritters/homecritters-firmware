@@ -74,33 +74,96 @@ static void handleUi(ui::UiHit hit) {
 }
 
 static bool g_doodleWasDead = false;
+static unsigned long g_deadAtMs = 0;      // when the current game over started
+static unsigned long g_pressStartMs = 0;  // when the current touch began
 
-// Doodle Jump screen: the ferret follows the finger horizontally; back to the
-// menu on the corner button or on game over.
+// After a game over, ignore taps for this long AND require a fresh press that
+// started after the death - so the same finger that killed you (or a reflex
+// tap) can't dismiss the score screen by accident.
+static constexpr unsigned long DEATH_GRACE_MS = 900;
+
+static void startDoodle(unsigned long now) {
+  doodle.reset();
+  g_doodleWasDead = false;
+  g_deadAtMs = 0;
+  g_touchDown = false;
+  led.endGame();  // clear any leftover death effect
+  screen = SCREEN_DOODLE;
+}
+
+// Leave Doodle Jump back to the games menu (also stops the game-over LED).
+// Refresh the idle timer so the menu doesn't instantly auto-close on return.
+static void leaveDoodle() {
+  led.endGame();
+  lastInteractionMs = millis();
+  screen = SCREEN_GAMES;
+}
+
+// Doodle Jump screen: the ferret follows the finger (hardware touch) or the
+// phone joystick (over WebSocket). Back to the menu on the corner button or a
+// fresh tap after game over.
 static void loopDoodle(unsigned long now) {
   int32_t x, y;
   const bool down = lcd.getTouch(&x, &y);
-  const float targetX = (down && !ui::inGameBack(x, y)) ? (float)x : -1.0f;
+
+  // Horizontal target: hardware touch wins; otherwise follow the phone.
+  float targetX = -1.0f;
+  if (down && !ui::inGameBack(x, y)) {
+    targetX = (float)x;
+  } else {
+    const float wnorm = web.gameTargetXNorm();
+    if (wnorm >= 0) targetX = wnorm * 240.0f;
+  }
   doodle.update(now, targetX);
 
-  if (doodle.bounced()) audio.playJump();
-  if (!g_doodleWasDead && doodle.gameOver()) audio.playDeath();
+  if (doodle.bounced()) doodle.boosted() ? audio.playBoost() : audio.playJump();
+  if (!g_doodleWasDead && doodle.gameOver()) {
+    audio.playDeath();
+    led.startDeath();  // 3 fast red blinks, then solid red until leaving
+    g_deadAtMs = now;
+    web.setGameScore(doodle.score());
+    web.pushState();  // let the phone show the final score
+  }
   g_doodleWasDead = doodle.gameOver();
 
-  if (down) { g_touchDown = true; g_touchX = x; g_touchY = y; }
-  else if (g_touchDown) {
+  // Touch: track press start so we can require a "fresh" tap to dismiss.
+  if (down && !g_touchDown) { g_touchDown = true; g_pressStartMs = now; g_touchX = x; g_touchY = y; }
+  else if (down) { g_touchX = x; g_touchY = y; }
+  else if (g_touchDown) {  // release
     g_touchDown = false;
-    if (doodle.gameOver() || ui::inGameBack(g_touchX, g_touchY)) screen = SCREEN_GAMES;
+    if (doodle.gameOver()) {
+      const bool fresh = g_pressStartMs > g_deadAtMs;  // began after the death
+      if (fresh && now - g_deadAtMs > DEATH_GRACE_MS) leaveDoodle();
+    } else if (ui::inGameBack(g_touchX, g_touchY)) {
+      leaveDoodle();
+    }
+  }
+
+  // Auto-close the game-over screen after the configured idle timeout (0 =
+  // never). The countdown restarts on any touch of the death screen.
+  if (screen == SCREEN_DOODLE && doodle.gameOver()) {
+    if (down) lastInteractionMs = now;
+    const int timeout = petClock.menuTimeoutSec();
+    const unsigned long idleFrom = lastInteractionMs > g_deadAtMs ? lastInteractionMs : g_deadAtMs;
+    if (timeout > 0 && now - idleFrom > (unsigned long)timeout * 1000) leaveDoodle();
   }
   renderer.drawDoodle(doodle);
 }
 
-// Games menu screen: tap a game to start, or Back to the pet scene.
-static void loopGamesMenu() {
+// Games menu screen: tap a game to start, or Back to the pet scene. Auto-closes
+// to the pet scene after the configured idle timeout (0 = never).
+static void loopGamesMenu(unsigned long now) {
   int32_t tx, ty;
-  if (tapReleased(tx, ty)) {
-    if (ui::inGameDoodle(tx, ty)) { doodle.reset(); g_doodleWasDead = false; screen = SCREEN_DOODLE; }
+  const bool tapped = tapReleased(tx, ty);
+  if (tapped) {
+    if (ui::inGameDoodle(tx, ty)) startDoodle(now);
     else if (ui::inGamesBack(tx, ty)) screen = SCREEN_PET;
+  }
+  if (g_touchDown || tapped) lastInteractionMs = now;  // any touch resets idle
+  const int timeout = petClock.menuTimeoutSec();
+  if (timeout > 0 && screen == SCREEN_GAMES &&
+      now - lastInteractionMs > (unsigned long)timeout * 1000) {
+    screen = SCREEN_PET;
   }
   renderer.drawGamesMenu();
 }
@@ -118,7 +181,7 @@ void setup() {
   ferret.begin();
   petClock.begin();
   audio.begin();  // I2C + ES8311 + I2S + audio task
-  web.begin(&pet, &audio, &ferret, &petClock, doAction);  // WiFi + portal
+  web.begin(&pet, &audio, &led, &ferret, &petClock, doAction);  // WiFi + portal
 
   wasSleeping = pet.sleeping();
   lastTickMs = lastSaveMs = lastInteractionMs = millis();
@@ -172,14 +235,28 @@ void loop() {
 
   led.update(pet.mood());
 
+  // Report the current screen to the portal and honor phone game nav (start/
+  // back), so Doodle Jump can be launched and steered entirely from the phone.
+  web.setScreen(screen == SCREEN_DOODLE ? "doodle" : screen == SCREEN_GAMES ? "games" : "pet");
+  switch (web.consumeGameNav()) {
+    case WebPortal::NAV_START:
+      if (screen != SCREEN_DOODLE) { startDoodle(now); web.pushState(); }
+      break;
+    case WebPortal::NAV_BACK:
+      if (screen == SCREEN_DOODLE) { leaveDoodle(); web.pushState(); }
+      break;
+    default: break;
+  }
+
   // --- game screens ---
   if (screen == SCREEN_DOODLE) {
+    web.setGameScore(doodle.score());
     loopDoodle(now);
     delay(12);
     return;
   }
   if (screen == SCREEN_GAMES) {
-    loopGamesMenu();
+    loopGamesMenu(now);
     delay(30);
     return;
   }
@@ -201,6 +278,12 @@ void loop() {
       doAction(ev.action);
       if (ev.buttonIdx >= 0) renderer.flashButton(ev.buttonIdx);
     }
+  }
+
+  // Auto-close the config menu after the configured idle timeout (0 = never).
+  const int menuTimeout = petClock.menuTimeoutSec();
+  if (menuOpen && menuTimeout > 0 && now - lastInteractionMs > (unsigned long)menuTimeout * 1000) {
+    menuOpen = false;
   }
 
   String ip = web.connected() ? web.ip() : String();

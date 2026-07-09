@@ -15,7 +15,8 @@ class DoodleGame {
   static constexpr int PLAT_W = 46;
   static constexpr int PLAT_H = 7;
 
-  struct Platform { float x, y; bool active; bool spring; };
+  // vx != 0 -> the platform slides sideways (bounces off the walls).
+  struct Platform { float x, y, vx; bool active; bool spring; };
 
   void reset();
   // targetX: finger x in [0,240] to follow, or < 0 for no horizontal input.
@@ -23,6 +24,7 @@ class DoodleGame {
 
   bool gameOver() const { return _dead; }
   bool bounced() const { return _bounced; }  // true on the frame it bounced
+  bool boosted() const { return _boosted; }  // that bounce was off a spring
   int score() const { return (int)(_climb / 10.0f); }
 
   float ferretX() const { return _fx; }  // center x
@@ -37,6 +39,7 @@ class DoodleGame {
   Platform _plats[PLAT_COUNT];
   bool _dead = false;
   bool _bounced = false;
+  bool _boosted = false;
   unsigned long _lastUpdate = 0;
 
   void spawnPlatform(Platform& p, float x, float y, bool allowSpring);

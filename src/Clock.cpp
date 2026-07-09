@@ -18,6 +18,7 @@ void Clock::begin() {
   if (_prefs.isKey("en"))   _enabled = _prefs.getBool("en");   else _prefs.putBool("en", _enabled);
   if (_prefs.isKey("tz"))   _tz = _prefs.getString("tz");      else _prefs.putString("tz", _tz);
   if (_prefs.isKey("idle")) _idleSec = _prefs.getInt("idle");  else _prefs.putInt("idle", _idleSec);
+  if (_prefs.isKey("menu")) _menuSec = _prefs.getInt("menu");  else _prefs.putInt("menu", _menuSec);
   if (_prefs.isKey("h24"))  _h24 = _prefs.getBool("h24");      else _prefs.putBool("h24", _h24);
   if (_prefs.isKey("dmy"))  _dmy = _prefs.getBool("dmy");      else _prefs.putBool("dmy", _dmy);
   _prefs.end();
@@ -59,6 +60,15 @@ void Clock::setIdleSec(int s) {
   _idleSec = s;
   _prefs.begin("clock", false);
   _prefs.putInt("idle", s);
+  _prefs.end();
+}
+
+void Clock::setMenuTimeoutSec(int s) {
+  if (s < 0) s = 0;
+  if (s > 3600) s = 3600;
+  _menuSec = s;
+  _prefs.begin("clock", false);
+  _prefs.putInt("menu", s);
   _prefs.end();
 }
 

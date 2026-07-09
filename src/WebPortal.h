@@ -6,6 +6,7 @@
 #include <functional>
 #include "Pet.h"
 #include "AudioPlayer.h"
+#include "StatusLed.h"
 #include "FerretActor.h"
 #include "Clock.h"
 
@@ -25,10 +26,19 @@
 
 class WebPortal {
  public:
-  void begin(Pet* pet, AudioPlayer* audio, FerretActor* ferret, Clock* clock,
-             std::function<void(Action)> onAction);
+  // Phone game controller: navigation requested over WebSocket.
+  enum GameNav { NAV_NONE, NAV_START, NAV_BACK };
+
+  void begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
+             Clock* clock, std::function<void(Action)> onAction);
   void handle();               // call every loop (when connected)
   void pushState();            // force an immediate state broadcast
+
+  // --- phone game controller (Doodle Jump played from the phone) ---
+  void setScreen(const char* name) { _screenName = name; }  // report current screen
+  void setGameScore(int s) { _gameScore = s; }              // shown on the phone
+  GameNav consumeGameNav();     // pending start/back request (clears it)
+  float gameTargetXNorm();      // horizontal target [0..1] from the phone, -1 if none/stale
 
   void startConfigPortal();    // opens WiFiManager (non-blocking)
   void process();              // pump the portal while configuring
@@ -45,12 +55,20 @@ class WebPortal {
   WiFiManager _wm;
   Pet* _pet = nullptr;
   AudioPlayer* _audio = nullptr;
+  StatusLed* _led = nullptr;
   FerretActor* _ferret = nullptr;
   Clock* _clock = nullptr;
   std::function<void(Action)> _onAction;
   bool _serverUp = false;
   bool _configuring = false;
   unsigned long _lastBroadcast = 0;
+
+  // phone game controller state
+  const char* _screenName = "pet";
+  int _gameScore = 0;
+  volatile float _gameTx = -1.0f;             // last target x [0..1] from the phone
+  volatile unsigned long _gameTxMs = 0;       // when it arrived (for staleness)
+  volatile GameNav _navReq = NAV_NONE;        // pending start/back request
 
   void startServer();
   void handleRoot();

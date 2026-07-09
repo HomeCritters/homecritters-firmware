@@ -44,6 +44,15 @@ const IDLE_OPTIONS = [
   { label: '5 minutos', value: 300 },
 ];
 
+const MENU_TIMEOUT_OPTIONS = [
+  { label: 'Desativado', value: 0 },
+  { label: '5 segundos', value: 5 },
+  { label: '10 segundos', value: 10 },
+  { label: '15 segundos', value: 15 },
+  { label: '30 segundos', value: 30 },
+  { label: '1 minuto', value: 60 },
+];
+
 const STATS = [
   { key: 'hunger', label: 'Fome' },
   { key: 'energy', label: 'Energia' },
@@ -132,6 +141,66 @@ function FerretSprite({ anim = 'idle', flip = false, size = 96 }) {
   );
 }
 
+// Doodle Jump controller: a drag strip that steers the ferret on the hardware.
+// Dragging sends the finger's normalized x (0=left, 1=right) as "game:x:<v>";
+// the firmware makes the ferret follow it. Releasing stops steering.
+function GamePad({ send, score, onBack }) {
+  const stripRef = useRef(null);
+  const dragging = useRef(false);
+  const lastSent = useRef(0);
+
+  const steer = (clientX) => {
+    const el = stripRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    let n = (clientX - r.left) / r.width;
+    n = n < 0 ? 0 : n > 1 ? 1 : n;
+    const t = performance.now();
+    if (t - lastSent.current >= 33) {
+      // throttle to ~30/s
+      send('game:x:' + n.toFixed(3));
+      lastSent.current = t;
+    }
+  };
+
+  return (
+    <Card size="small" style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <Text strong style={{ fontSize: 16 }}>🕹️ Doodle Jump</Text>
+        <Text strong style={{ fontSize: 18 }}>{score ?? 0}</Text>
+      </div>
+      <div
+        ref={stripRef}
+        onPointerDown={(e) => {
+          dragging.current = true;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          steer(e.clientX);
+        }}
+        onPointerMove={(e) => dragging.current && steer(e.clientX)}
+        onPointerUp={() => (dragging.current = false)}
+        onPointerCancel={() => (dragging.current = false)}
+        style={{
+          height: 140,
+          borderRadius: 14,
+          background: 'linear-gradient(90deg,#2c2247,#3a2f55,#2c2247)',
+          border: '1px solid #4a3d6b',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          touchAction: 'none',
+          userSelect: 'none',
+          cursor: 'ew-resize',
+        }}
+      >
+        <Text type="secondary">← arraste para mover →</Text>
+      </div>
+      <Button block onClick={onBack} style={{ marginTop: 12, height: 46 }}>
+        ← Voltar
+      </Button>
+    </Card>
+  );
+}
+
 // The "stage" where the ferret walks sideways, mirroring the hardware
 // position. The transition only runs while WALKING; standing still it
 // snaps (otherwise it would keep sliding during idle).
@@ -162,9 +231,11 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [name, setName] = useState('');
   const [vol, setVol] = useState(80);
+  const [ledBright, setLedBright] = useState(50);
   const wsRef = useRef(null);
   const nameDirty = useRef(false);
   const volDirty = useRef(false);
+  const ledDirty = useRef(false);
   const autoTz = useRef(false);
 
   // WebSocket: state arrives by push (no polling).
@@ -185,6 +256,7 @@ export default function App() {
           setState(j);
           if (!nameDirty.current) setName(j.name);
           if (!volDirty.current && typeof j.volume === 'number') setVol(j.volume);
+          if (!ledDirty.current && typeof j.ledBright === 'number') setLedBright(j.ledBright);
           // Device has no timezone yet -> detect it here and enable the clock.
           if (!autoTz.current && (!j.tz || j.tz === '')) {
             autoTz.current = true;
@@ -212,6 +284,7 @@ export default function App() {
   };
 
   const val = (k) => Math.round(state ? state[k] : 0);
+  const playing = state?.screen === 'doodle';
 
   return (
     <ConfigProvider
@@ -243,38 +316,52 @@ export default function App() {
           />
         </div>
 
-        {/* 2x2 stat bars, hardware style */}
-        <Card size="small" style={{ marginTop: 8 }}>
-          <Row gutter={[16, 8]}>
-            {STATS.map((s) => (
-              <Col span={12} key={s.key}>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {s.label}
-                </Text>
-                <Progress
-                  percent={val(s.key)}
-                  strokeColor={barColor(val(s.key))}
-                  trailColor="#3a2f55"
-                  strokeWidth={12}
-                  format={(p) => `${p}%`}
-                />
-              </Col>
-            ))}
-          </Row>
-        </Card>
+        {playing ? (
+          /* Game controller: steer Doodle Jump on the hardware from the phone */
+          <GamePad send={send} score={state?.score} onBack={() => send('game:back')} />
+        ) : (
+          <>
+            {/* 2x2 stat bars, hardware style */}
+            <Card size="small" style={{ marginTop: 8 }}>
+              <Row gutter={[16, 8]}>
+                {STATS.map((s) => (
+                  <Col span={12} key={s.key}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {s.label}
+                    </Text>
+                    <Progress
+                      percent={val(s.key)}
+                      strokeColor={barColor(val(s.key))}
+                      trailColor="#3a2f55"
+                      strokeWidth={12}
+                      format={(p) => `${p}%`}
+                    />
+                  </Col>
+                ))}
+              </Row>
+            </Card>
 
-        {/* Actions: 4 equally sized buttons (2x2) */}
-        <Card size="small" style={{ marginTop: 12 }}>
-          <Row gutter={[12, 12]}>
-            {ACTIONS.map((a) => (
-              <Col span={12} key={a.id}>
-                <Button block disabled={!online} onClick={() => send(a.id)} style={{ height: 54, fontSize: 16 }}>
-                  {a.label}
-                </Button>
-              </Col>
-            ))}
-          </Row>
-        </Card>
+            {/* Actions: 4 equally sized buttons (2x2) */}
+            <Card size="small" style={{ marginTop: 12 }}>
+              <Row gutter={[12, 12]}>
+                {ACTIONS.map((a) => (
+                  <Col span={12} key={a.id}>
+                    <Button block disabled={!online} onClick={() => send(a.id)} style={{ height: 54, fontSize: 16 }}>
+                      {a.label}
+                    </Button>
+                  </Col>
+                ))}
+              </Row>
+            </Card>
+
+            {/* Game launcher: open Doodle Jump on the hardware, play from here */}
+            <Card size="small" style={{ marginTop: 12 }}>
+              <Button block disabled={!online} onClick={() => send('game:start')} style={{ height: 48, fontSize: 16 }}>
+                🎮 Doodle Jump
+              </Button>
+            </Card>
+          </>
+        )}
 
         <div style={{ textAlign: 'center', marginTop: 14 }}>
           <Badge status={online ? 'success' : 'error'} text={online ? 'Ao vivo' : 'Reconectando…'} />
@@ -325,6 +412,37 @@ export default function App() {
                 send('vol:' + v);
                 volDirty.current = false;
               }}
+            />
+          </div>
+
+          <div style={{ marginTop: 20 }}>
+            <Text strong>Brilho do LED: {ledBright}%</Text>
+            <Slider
+              min={0}
+              max={100}
+              step={5}
+              value={ledBright}
+              onChange={(v) => {
+                setLedBright(v);
+                ledDirty.current = true;
+              }}
+              onChangeComplete={(v) => {
+                send('led:' + v);
+                ledDirty.current = false;
+              }}
+            />
+          </div>
+
+          <div style={{ marginTop: 20 }}>
+            <Text strong>Fechar menus sozinho</Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2, marginBottom: 4 }}>
+              Fecha config/jogos sem interação
+            </Text>
+            <Select
+              style={{ width: '100%' }}
+              value={state?.menuSec}
+              options={MENU_TIMEOUT_OPTIONS}
+              onChange={(v) => send('menu:' + v)}
             />
           </div>
 

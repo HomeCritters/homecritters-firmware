@@ -360,8 +360,12 @@ void Renderer::drawGamesMenu() {
 void Renderer::drawDoodleFerret(int cx, int cy, bool faceLeft) {
   const int idx = (millis() / 80) % FERRET_G_JUMP_FRAMES;
   const uint16_t* fr = faceLeft ? &ferret_g_jump_l[idx][0] : &ferret_g_jump[idx][0];
+  // Cast the key to uint16_t so the same (transparency-applying) pushImage
+  // overload is picked as the scene ferret - a bare 0xF81F macro is an int
+  // literal and selects a variant that leaves the magenta background opaque.
   _canvas.pushImage(cx - FERRET_G_FRAME_W / 2, cy - FERRET_G_FRAME_H / 2,
-                    FERRET_G_FRAME_W, FERRET_G_FRAME_H, fr, FERRET_G_TRANSPARENT_KEY);
+                    FERRET_G_FRAME_W, FERRET_G_FRAME_H, fr,
+                    (uint16_t)FERRET_G_TRANSPARENT_KEY);
 }
 
 void Renderer::drawDoodle(DoodleGame& game) {
@@ -372,8 +376,11 @@ void Renderer::drawDoodle(DoodleGame& game) {
     const auto& p = plats[i];
     if (!p.active) continue;
     const int px = (int)p.x, py = (int)p.y;
-    _canvas.fillRoundRect(px, py, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, rgb565(70, 175, 80));
-    _canvas.drawRoundRect(px, py, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, rgb565(45, 120, 55));
+    // Sliding platforms are tinted blue so the player can anticipate them.
+    const uint16_t fill = p.vx != 0 ? rgb565(70, 150, 200) : rgb565(70, 175, 80);
+    const uint16_t edge = p.vx != 0 ? rgb565(40, 95, 140) : rgb565(45, 120, 55);
+    _canvas.fillRoundRect(px, py, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, fill);
+    _canvas.drawRoundRect(px, py, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, edge);
     if (p.spring) {  // spring boost marker on top of the platform
       const int sx = px + DoodleGame::PLAT_W / 2 - 4, sy = py - 6;
       _canvas.fillRect(sx, sy, 8, 6, rgb565(235, 150, 40));
