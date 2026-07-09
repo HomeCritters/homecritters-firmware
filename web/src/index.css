@@ -1,0 +1,43 @@
+:root {
+  color-scheme: dark;
+}
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  background: #16101f;
+}
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Ferret sprite: animates 8 frames of one sprite-sheet row.
+   The component sets size, row (background-position-y), duration, timing
+   and --end (final animation position). Loop -> steps 8 frames (overflows
+   and wraps to 0); one-shot -> steps 7 frames with jump-none, holding the
+   real 8th frame. */
+.sprite {
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+  animation-name: ferret-run;
+}
+@keyframes ferret-run {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: var(--end);
+  }
+}
+
+/* Segmented (24h/12h): track and thumb with matching radii (the global
+   borderRadius makes the track too pill-shaped, misaligning the thumb). */
+.ant-segmented {
+  border-radius: 10px !important;
+  padding: 3px !important;
+}
+.ant-segmented .ant-segmented-item,
+.ant-segmented .ant-segmented-thumb {
+  border-radius: 7px !important;
+}
