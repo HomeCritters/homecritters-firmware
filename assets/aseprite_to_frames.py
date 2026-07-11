@@ -44,10 +44,14 @@ ANIM_EXPORT = [
     ("Sleep",     "ferret_sleep",     False),
 ]
 
-# Mini-game character (1.25x -> 40px): just the jump animation.
+# Mini-game character (1.25x -> 40px): jump (Doodle) + walk/idle (Bolinha).
 GAME_EXPORT = [
-    ("Jump", "ferret_g_jump",   False),
-    ("Jump", "ferret_g_jump_l", True),
+    ("Jump",     "ferret_g_jump",   False),
+    ("Jump",     "ferret_g_jump_l", True),
+    ("Movement", "ferret_g_walk",   False),
+    ("Movement", "ferret_g_walk_l", True),
+    ("Idle",     "ferret_g_idle",   False),
+    ("Idle",     "ferret_g_idle_l", True),
 ]
 
 

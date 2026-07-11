@@ -7,6 +7,7 @@
 #include "FerretActor.h"
 #include "Clock.h"
 #include "DoodleGame.h"
+#include "BallGame.h"
 
 // ============================================================
 // Renderer: owns the display and the canvas (double buffer) and
@@ -34,6 +35,7 @@ class Renderer {
   // Game screens.
   void drawGamesMenu();
   void drawDoodle(DoodleGame& game);
+  void drawBall(BallGame& game);
 
   // Visual feedback: highlight the tapped button for a few ms.
   void flashButton(int idx);
@@ -64,6 +66,10 @@ class Renderer {
   void drawRightHandle();
   void drawClock(Clock& clock);
   void drawDoodleFerret(int cx, int cy, bool faceLeft);
+  // mode: 0 = idle, 1 = walking, 2 = jumping (celebration). zoom scales the
+  // 40px game sprite (2 -> 80px, matching the scene ferret in Bolinha).
+  void drawGameFerret(int cx, int cy, int mode, bool faceLeft, int zoom = 1);
+  void drawTennisBall(int cx, int cy, int r);
   void drawMenu(ui::MenuPage page, int volume, int ledBright, bool wifiOn, const char* ip);
   void drawMenuMain(bool wifiOn, const char* ip);
   void drawMenuAudio(int volume);

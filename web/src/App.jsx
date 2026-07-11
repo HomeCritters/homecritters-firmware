@@ -201,6 +201,57 @@ function GamePad({ send, score, onBack }) {
   );
 }
 
+// Bolinha controller: swipe up on the pad to throw the ball on the hardware.
+// The swipe vector is normalized by the pad size and sent as "ball:t:<nx>:<ny>".
+function BallPad({ send, score, onBack }) {
+  const padRef = useRef(null);
+  const start = useRef(null);
+
+  return (
+    <Card size="small" style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <Text strong style={{ fontSize: 16 }}>🎾 Bolinha</Text>
+        <Text strong style={{ fontSize: 18 }}>{score ?? 0}</Text>
+      </div>
+      <div
+        ref={padRef}
+        onPointerDown={(e) => {
+          start.current = { x: e.clientX, y: e.clientY };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerUp={(e) => {
+          const s = start.current;
+          start.current = null;
+          const el = padRef.current;
+          if (!s || !el) return;
+          const r = el.getBoundingClientRect();
+          const nx = (e.clientX - s.x) / r.width;
+          const ny = (e.clientY - s.y) / r.height;
+          if (ny < -0.1) send(`ball:t:${nx.toFixed(3)}:${ny.toFixed(3)}`);
+        }}
+        onPointerCancel={() => (start.current = null)}
+        style={{
+          height: 180,
+          borderRadius: 14,
+          background: 'linear-gradient(180deg,#2c2247,#264a2e)',
+          border: '1px solid #4a3d6b',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          touchAction: 'none',
+          userSelect: 'none',
+          cursor: 'grab',
+        }}
+      >
+        <Text type="secondary">↑ arraste para cima para lançar ↑</Text>
+      </div>
+      <Button block onClick={onBack} style={{ marginTop: 12, height: 46 }}>
+        ← Voltar
+      </Button>
+    </Card>
+  );
+}
+
 // The "stage" where the ferret walks sideways, mirroring the hardware
 // position. The transition only runs while WALKING; standing still it
 // snaps (otherwise it would keep sliding during idle).
@@ -285,6 +336,7 @@ export default function App() {
 
   const val = (k) => Math.round(state ? state[k] : 0);
   const playing = state?.screen === 'doodle';
+  const playingBall = state?.screen === 'ball';
 
   return (
     <ConfigProvider
@@ -319,6 +371,9 @@ export default function App() {
         {playing ? (
           /* Game controller: steer Doodle Jump on the hardware from the phone */
           <GamePad send={send} score={state?.score} onBack={() => send('game:back')} />
+        ) : playingBall ? (
+          /* Bolinha controller: swipe up to throw the ball on the hardware */
+          <BallPad send={send} score={state?.score} onBack={() => send('game:back')} />
         ) : (
           <>
             {/* 2x2 stat bars, hardware style */}
@@ -354,11 +409,20 @@ export default function App() {
               </Row>
             </Card>
 
-            {/* Game launcher: open Doodle Jump on the hardware, play from here */}
+            {/* Game launchers: open a game on the hardware, play from here */}
             <Card size="small" style={{ marginTop: 12 }}>
-              <Button block disabled={!online} onClick={() => send('game:start')} style={{ height: 48, fontSize: 16 }}>
-                🎮 Jump!
-              </Button>
+              <Row gutter={[12, 12]}>
+                <Col span={12}>
+                  <Button block disabled={!online} onClick={() => send('game:start')} style={{ height: 48, fontSize: 16 }}>
+                    🎮 Jump!
+                  </Button>
+                </Col>
+                <Col span={12}>
+                  <Button block disabled={!online} onClick={() => send('game:ball')} style={{ height: 48, fontSize: 16 }}>
+                    🎾 Bolinha
+                  </Button>
+                </Col>
+              </Row>
             </Card>
           </>
         )}

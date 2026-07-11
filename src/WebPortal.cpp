@@ -47,12 +47,22 @@ void WebPortal::handle() {
   if (!_serverUp) return;
   _server.handleClient();
   _ws.loop();
-  // While walking, push position ~10x/s (keeps the portal ~1:1 with the
-  // hardware); when still, ~2x/s is plenty for the stats.
-  unsigned long now = millis();
-  bool walking = _ferret && strcmp(_ferret->animName(), "walk") == 0;
-  unsigned long interval = walking ? 100 : 500;
-  if (now - _lastBroadcast > interval) {
+  // Single broadcast point, rate-limited. Pending changes (_dirty) go out
+  // quickly but coalesced. During a game the portal shows a controller (not
+  // the pet mirror), so we only need score/heartbeat - NOT the ~10x/s position
+  // stream, which would stall the tight game loop with TCP writes.
+  const unsigned long now = millis();
+  const bool inGame = !strcmp(_screenName, "doodle") || !strcmp(_screenName, "ball");
+  unsigned long interval;
+  if (inGame) {
+    interval = 200;  // flat ~5/s: enough for the score, light on the game loop
+  } else if (_dirty) {
+    interval = 40;   // pending change: reflect quickly (coalesced)
+  } else {
+    const bool walking = _ferret && strcmp(_ferret->animName(), "walk") == 0;
+    interval = walking ? 100 : 500;  // mirror the walking pet, else idle refresh
+  }
+  if (now - _lastBroadcast >= interval) {
     broadcastState();
     _lastBroadcast = now;
   }
@@ -64,6 +74,10 @@ void WebPortal::startServer() {
   _server.begin();
   _ws.begin();
   _ws.onEvent([this](uint8_t n, WStype_t t, uint8_t* p, size_t l) { onWsEvent(n, t, p, l); });
+  // Ping every 15s, expect a pong within 3s, drop after 2 misses. Without
+  // this, a phone that sleeps or leaves WiFi keeps a half-open socket and
+  // every broadcast BLOCKS on the dead TCP write - felt as screen freezes.
+  _ws.enableHeartbeat(15000, 3000, 2);
   // mDNS: friendly access via ferret.local (Bonjour/Avahi)
   if (MDNS.begin(HOSTNAME)) {
     MDNS.addService("http", "tcp", 80);
@@ -82,22 +96,24 @@ void WebPortal::handleRoot() {
 
 void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
   if (type == WStype_CONNECTED) {
-    String s = stateJson();
-    _ws.sendTXT(num, s);  // send the current state on connect
+    char buf[512];
+    stateJson(buf, sizeof(buf));
+    _ws.sendTXT(num, buf);  // send the current state on connect
   } else if (type == WStype_TEXT) {
     String msg;
     msg.reserve(len);
     for (size_t i = 0; i < len; i++) msg += (char)payload[i];
     applyCommand(msg);
-    // High-frequency joystick input ("game:x:...") must not trigger a full
-    // state broadcast on every frame; everything else reflects immediately.
-    if (!msg.startsWith("game:x:")) broadcastState();
+    // Don't broadcast from here: just mark dirty and let handle() send one
+    // coalesced frame. Joystick input ("game:x:...") never marks dirty.
+    if (!msg.startsWith("game:x:")) _dirty = true;
   }
 }
 
 // Commands from React: "feed"/"pat"/"clean"/"sleep", "name:NewName", "vol:N",
 // "led:N", "clock:on|off", "fmt:12|24", "tz:<posix>", "idle:<sec>", "menu:<sec>",
-// plus game control: "game:start"/"game:back"/"game:x:<0..1>".
+// plus game control: "game:start" (Jump!), "game:ball" (Bolinha), "game:back",
+// "game:x:<0..1>" (Jump! steering), "ball:t:<nx>:<ny>" (Bolinha throw).
 void WebPortal::applyCommand(const String& msg) {
   // Game controller (Doodle Jump from the phone).
   if (msg.startsWith("game:x:")) {
@@ -106,7 +122,17 @@ void WebPortal::applyCommand(const String& msg) {
     return;
   }
   if (msg == "game:start") { _navReq = NAV_START; return; }
+  if (msg == "game:ball")  { _navReq = NAV_BALL;  return; }
   if (msg == "game:back")  { _navReq = NAV_BACK;  return; }
+  if (msg.startsWith("ball:t:")) {  // "ball:t:<nx>:<ny>" normalized swipe
+    const int sep = msg.indexOf(':', 7);
+    if (sep > 0) {
+      _throwNx = msg.substring(7, sep).toFloat();
+      _throwNy = msg.substring(sep + 1).toFloat();
+      _throwReq = true;
+    }
+    return;
+  }
   if (msg.startsWith("name:")) {
     if (_pet) _pet->setName(msg.substring(5));
     return;
@@ -137,12 +163,18 @@ void WebPortal::applyCommand(const String& msg) {
   else if (msg == "sleep") _onAction(ACTION_TOGGLE_SLEEP);
 }
 
-void WebPortal::pushState() { broadcastState(); }
-
 WebPortal::GameNav WebPortal::consumeGameNav() {
   GameNav n = _navReq;
   _navReq = NAV_NONE;
   return n;
+}
+
+bool WebPortal::consumeBallThrow(float& nx, float& ny) {
+  if (!_throwReq) return false;
+  _throwReq = false;
+  nx = _throwNx;
+  ny = _throwNy;
+  return true;
 }
 
 // Latest horizontal target from the phone, or -1 if none/stale (finger lifted
@@ -155,32 +187,37 @@ float WebPortal::gameTargetXNorm() {
 
 void WebPortal::broadcastState() {
   if (!_serverUp) return;
-  String s = stateJson();
-  _ws.broadcastTXT(s);
+  _dirty = false;
+  if (_ws.connectedClients() == 0) return;  // nobody listening: skip the work
+  char buf[512];
+  stateJson(buf, sizeof(buf));
+  _ws.broadcastTXT(buf);
 }
 
-String WebPortal::stateJson() const {
+// One snprintf into a stack buffer: no String concatenation churn (the old
+// version did ~40 heap allocations per frame, up to 10x/s -> fragmentation
+// and avoidable latency on the render loop).
+void WebPortal::stateJson(char* out, size_t n) const {
   const Pet& p = *_pet;
-  String j = "{";
-  j += "\"screen\":\"" + String(_screenName) + "\",";
-  j += "\"score\":" + String(_gameScore) + ",";
-  j += "\"name\":\"" + p.name() + "\",";
-  j += "\"sleeping\":" + String(p.sleeping() ? "true" : "false") + ",";
-  j += "\"volume\":" + String(_audio ? _audio->volume() : 0) + ",";
-  j += "\"ledBright\":" + String(_led ? _led->brightness() : 50) + ",";
-  j += "\"clockOn\":" + String(_clock && _clock->enabled() ? "true" : "false") + ",";
-  j += "\"tz\":\"" + String(_clock ? _clock->tz() : String("")) + "\",";
-  j += "\"idleSec\":" + String(_clock ? _clock->idleSec() : 30) + ",";
-  j += "\"menuSec\":" + String(_clock ? _clock->menuTimeoutSec() : 15) + ",";
-  j += "\"h24\":" + String(_clock && _clock->h24() ? "true" : "false") + ",";
-  j += "\"dmy\":" + String(!_clock || _clock->dateDmy() ? "true" : "false") + ",";
-  j += "\"anim\":\"" + String(_ferret ? _ferret->animName() : "idle") + "\",";
-  j += "\"seq\":" + String(_ferret ? _ferret->animSeq() : 0) + ",";
-  j += "\"flip\":" + String(_ferret && _ferret->faceLeft() ? "true" : "false") + ",";
-  j += "\"x\":" + String(_ferret ? _ferret->xNorm() : 0.5f, 3) + ",";
-  j += "\"hunger\":" + String(p.hunger(), 1) + ",";
-  j += "\"energy\":" + String(p.energy(), 1) + ",";
-  j += "\"joy\":" + String(p.joy(), 1) + ",";
-  j += "\"hygiene\":" + String(p.hygiene(), 1) + "}";
-  return j;
+  snprintf(out, n,
+           "{\"screen\":\"%s\",\"score\":%d,\"name\":\"%s\",\"sleeping\":%s,"
+           "\"volume\":%d,\"ledBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
+           "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
+           "\"anim\":\"%s\",\"seq\":%u,\"flip\":%s,\"x\":%.3f,"
+           "\"hunger\":%.1f,\"energy\":%.1f,\"joy\":%.1f,\"hygiene\":%.1f}",
+           _screenName, _gameScore, p.name().c_str(),
+           p.sleeping() ? "true" : "false",
+           _audio ? _audio->volume() : 0,
+           _led ? _led->brightness() : 50,
+           _clock && _clock->enabled() ? "true" : "false",
+           _clock ? _clock->tz().c_str() : "",
+           _clock ? _clock->idleSec() : 30,
+           _clock ? _clock->menuTimeoutSec() : 15,
+           _clock && _clock->h24() ? "true" : "false",
+           (!_clock || _clock->dateDmy()) ? "true" : "false",
+           _ferret ? _ferret->animName() : "idle",
+           _ferret ? (unsigned)_ferret->animSeq() : 0u,
+           _ferret && _ferret->faceLeft() ? "true" : "false",
+           _ferret ? _ferret->xNorm() : 0.5f,
+           p.hunger(), p.energy(), p.joy(), p.hygiene());
 }

@@ -27,18 +27,26 @@
 class WebPortal {
  public:
   // Phone game controller: navigation requested over WebSocket.
-  enum GameNav { NAV_NONE, NAV_START, NAV_BACK };
+  enum GameNav { NAV_NONE, NAV_START, NAV_BALL, NAV_BACK };
 
   void begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
              Clock* clock, std::function<void(Action)> onAction);
   void handle();               // call every loop (when connected)
-  void pushState();            // force an immediate state broadcast
+  // Request a state broadcast. Coalesced: handle() sends at most one every
+  // few ms no matter how many requests pile up (spam-clicking the portal
+  // must not turn into a burst of synchronous TCP writes).
+  void pushState() { _dirty = true; }
 
   // --- phone game controller (Doodle Jump played from the phone) ---
   void setScreen(const char* name) { _screenName = name; }  // report current screen
-  void setGameScore(int s) { _gameScore = s; }              // shown on the phone
+  // Score shown on the phone. Only nudges a broadcast when it actually changes,
+  // so calling this every game frame costs nothing.
+  void setGameScore(int s) { if (s != _gameScore) { _gameScore = s; _dirty = true; } }
   GameNav consumeGameNav();     // pending start/back request (clears it)
   float gameTargetXNorm();      // horizontal target [0..1] from the phone, -1 if none/stale
+  // Pending Bolinha throw from the phone (normalized swipe). True once; fills
+  // nx/ny in roughly [-1..1] (ny negative = upward).
+  bool consumeBallThrow(float& nx, float& ny);
 
   void startConfigPortal();    // opens WiFiManager (non-blocking)
   void process();              // pump the portal while configuring
@@ -61,6 +69,7 @@ class WebPortal {
   std::function<void(Action)> _onAction;
   bool _serverUp = false;
   bool _configuring = false;
+  bool _dirty = false;             // a state change is waiting to be broadcast
   unsigned long _lastBroadcast = 0;
 
   // phone game controller state
@@ -69,11 +78,14 @@ class WebPortal {
   volatile float _gameTx = -1.0f;             // last target x [0..1] from the phone
   volatile unsigned long _gameTxMs = 0;       // when it arrived (for staleness)
   volatile GameNav _navReq = NAV_NONE;        // pending start/back request
+  volatile bool _throwReq = false;            // pending Bolinha throw
+  volatile float _throwNx = 0, _throwNy = 0;  // normalized swipe of that throw
 
   void startServer();
   void handleRoot();
   void onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len);
   void applyCommand(const String& msg);
   void broadcastState();
-  String stateJson() const;
+  // Builds the state JSON into a caller-provided buffer (no heap churn).
+  void stateJson(char* out, size_t n) const;
 };

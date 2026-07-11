@@ -161,6 +161,9 @@ constexpr int16_t GAMES_BACK_X = 70, GAMES_BACK_Y = 186, GAMES_BACK_W = 100, GAM
 inline bool inGameDoodle(int32_t tx, int32_t ty) {
   return inRect(tx, ty, GAME_COL_L, GAME_TILE_Y, GAME_TILE_W, GAME_TILE_H);
 }
+inline bool inGameBall(int32_t tx, int32_t ty) {
+  return inRect(tx, ty, GAME_COL_R, GAME_TILE_Y, GAME_TILE_W, GAME_TILE_H);
+}
 inline bool inGamesBack(int32_t tx, int32_t ty) {
   return inRect(tx, ty, GAMES_BACK_X, GAMES_BACK_Y, GAMES_BACK_W, GAMES_BACK_H);
 }

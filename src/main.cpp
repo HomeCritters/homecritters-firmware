@@ -11,6 +11,7 @@
 #include "WebPortal.h"
 #include "Clock.h"
 #include "DoodleGame.h"
+#include "BallGame.h"
 
 // ============================================================
 // Desk tamagotchi (ferret) - Ball V2
@@ -29,9 +30,10 @@ FerretActor      ferret;
 WebPortal        web;
 Clock            petClock;
 DoodleGame       doodle;
+BallGame         ball;
 
 // Which screen is showing.
-enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE };
+enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL };
 static Screen screen = SCREEN_PET;
 
 static unsigned long lastTickMs = 0;
@@ -136,9 +138,14 @@ static void loopDoodle(unsigned long now) {
   }
   doodle.update(now, targetX);
 
-  if (doodle.bounced()) doodle.boosted() ? audio.playBoost() : audio.playJump();
+  if (doodle.bounced()) {
+    if (doodle.boosted())       audio.playBoost();
+    else if (doodle.crumbled()) audio.playCrumble();  // dirt platform broke
+    else                        audio.playJump();
+  }
   if (!g_doodleWasDead && doodle.gameOver()) {
-    audio.playDeath();
+    // A new record earns the celebration jingle instead of the death sound.
+    doodle.newRecord() ? audio.playRecord() : audio.playDeath();
     led.startDeath();  // 3 fast red blinks, then solid red until leaving
     g_deadAtMs = now;
     web.setGameScore(doodle.score());
@@ -170,6 +177,51 @@ static void loopDoodle(unsigned long now) {
   renderer.drawDoodle(doodle);
 }
 
+// Bolinha (fetch) screen: swipe up to throw (hardware touch or the phone);
+// the ferret chases and catches. Exit via the back button or the phone.
+static int32_t g_ballDragX = 0, g_ballDragY = 0;  // where the current touch began
+static void leaveBall(unsigned long now) {
+  lastInteractionMs = now;
+  screen = SCREEN_GAMES;
+}
+
+static void loopBall(unsigned long now) {
+  int32_t x, y;
+  const bool down = lcd.getTouch(&x, &y);
+  if (down && !g_touchDown) {
+    g_touchDown = true;
+    g_ballDragX = x; g_ballDragY = y;
+  }
+  if (down) { g_touchX = x; g_touchY = y; }
+  else if (g_touchDown) {  // release: left-edge pull to exit, or a throw
+    g_touchDown = false;
+    const int32_t dx = g_touchX - g_ballDragX;
+    const int32_t dy = g_touchY - g_ballDragY;
+    if (g_ballDragX < 26 && dx > 45 && abs(dx) > abs(dy)) {
+      leaveBall(now);  // pull from the left edge -> quit the game
+    } else if (ball.ready() && dy < -25 && abs(dy) > abs(dx)) {
+      // upward swipe = throw (direction/force follow the gesture)
+      float vx = constrain((float)dx * 3.0f, -420.0f, 420.0f);
+      float vy = constrain((float)dy * 3.2f, -760.0f, -360.0f);
+      ball.throwBall(vx, vy);
+      audio.playThrow();
+    }
+  }
+
+  // Throw requested from the phone (normalized swipe -> same speed ranges).
+  float nx, ny;
+  if (web.consumeBallThrow(nx, ny) && ball.ready() && ny < -0.08f) {
+    float vx = constrain(nx * 900.0f, -420.0f, 420.0f);
+    float vy = constrain(ny * 1000.0f, -760.0f, -360.0f);
+    ball.throwBall(vx, vy);
+    audio.playThrow();
+  }
+
+  ball.update(now);
+  if (ball.takeCaught()) audio.playPat();  // caught it!
+  renderer.drawBall(ball);
+}
+
 // Games menu screen: tap a game to start, or Back to the pet scene. Auto-closes
 // to the pet scene after the configured idle timeout (0 = never).
 static void loopGamesMenu(unsigned long now) {
@@ -177,6 +229,7 @@ static void loopGamesMenu(unsigned long now) {
   const bool tapped = tapReleased(tx, ty);
   if (tapped) {
     if (ui::inGameDoodle(tx, ty)) startDoodle(now);
+    else if (ui::inGameBall(tx, ty)) { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; }
     else if (ui::inGamesBack(tx, ty)) screen = SCREEN_PET;
   }
   if (g_touchDown || tapped) lastInteractionMs = now;  // any touch resets idle
@@ -200,6 +253,7 @@ void setup() {
   pet.begin();
   ferret.begin();
   petClock.begin();
+  doodle.begin();  // load the Jump! high score
   audio.begin();  // I2C + ES8311 + I2S + audio task
   web.begin(&pet, &audio, &led, &ferret, &petClock, doAction);  // WiFi + portal
 
@@ -245,25 +299,33 @@ void loop() {
   web.handle();
 
   ferret.update(pet, now);
+  // Mirror the pet's animation to the portal only on the pet screen; during a
+  // game the portal isn't showing the pet, so skip the extra broadcasts.
   static uint32_t lastSeq = 0xFFFFFFFF;
   static bool lastFlip = false;
   if (ferret.animSeq() != lastSeq || ferret.faceLeft() != lastFlip) {
     lastSeq = ferret.animSeq();
     lastFlip = ferret.faceLeft();
-    web.pushState();
+    if (screen == SCREEN_PET) web.pushState();
   }
 
   led.update(pet.mood());
 
   // Report the current screen to the portal and honor phone game nav (start/
   // back), so Doodle Jump can be launched and steered entirely from the phone.
-  web.setScreen(screen == SCREEN_DOODLE ? "doodle" : screen == SCREEN_GAMES ? "games" : "pet");
+  web.setScreen(screen == SCREEN_DOODLE ? "doodle" :
+                screen == SCREEN_BALL   ? "ball"   :
+                screen == SCREEN_GAMES  ? "games"  : "pet");
   switch (web.consumeGameNav()) {
     case WebPortal::NAV_START:
       if (screen != SCREEN_DOODLE) { startDoodle(now); web.pushState(); }
       break;
+    case WebPortal::NAV_BALL:
+      if (screen != SCREEN_BALL) { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; web.pushState(); }
+      break;
     case WebPortal::NAV_BACK:
       if (screen == SCREEN_DOODLE) { leaveDoodle(); web.pushState(); }
+      else if (screen == SCREEN_BALL) { leaveBall(now); web.pushState(); }
       break;
     default: break;
   }
@@ -273,6 +335,12 @@ void loop() {
     web.setGameScore(doodle.score());
     loopDoodle(now);
     delay(12);
+    return;
+  }
+  if (screen == SCREEN_BALL) {
+    web.setGameScore(ball.catches());
+    loopBall(now);
+    delay(20);  // the forest backdrop is heavier to redraw; 50fps is plenty
     return;
   }
   if (screen == SCREEN_GAMES) {
@@ -307,7 +375,10 @@ void loop() {
     menuOpen = false;
   }
 
-  String ip = web.connected() ? web.ip() : String();
+  // The IP string is only rendered inside the config menu; skip the per-frame
+  // String allocation otherwise.
+  String ip;
+  if (menuOpen && web.connected()) ip = web.ip();
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock);
 

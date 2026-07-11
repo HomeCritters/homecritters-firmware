@@ -12,7 +12,10 @@
 #include "sfx_wake.h"
 #include "sfx_jump.h"
 #include "sfx_boost.h"
+#include "sfx_crumble.h"
+#include "sfx_record.h"
 #include "sfx_death.h"
+#include "sfx_throw.h"
 
 // ============================================================
 // Minimal ES8311 driver (playback/DAC only).
@@ -129,7 +132,10 @@ void AudioPlayer::playDrink()     { play(sfx_drink_mp3,    sfx_drink_mp3_len); }
 void AudioPlayer::playPat()       { play(sfx_tap_mp3,      sfx_tap_mp3_len); }
 void AudioPlayer::playJump()      { play(sfx_jump_mp3,     sfx_jump_mp3_len); }
 void AudioPlayer::playBoost()     { play(sfx_boost_mp3,    sfx_boost_mp3_len); }
+void AudioPlayer::playCrumble()   { play(sfx_crumble_mp3,  sfx_crumble_mp3_len); }
+void AudioPlayer::playRecord()    { play(sfx_record_mp3,   sfx_record_mp3_len); }
 void AudioPlayer::playDeath()     { play(sfx_death_mp3,    sfx_death_mp3_len); }
+void AudioPlayer::playThrow()     { play(sfx_throw_mp3,    sfx_throw_mp3_len); }
 void AudioPlayer::stop()          { _stopReq = true; }
 
 void AudioPlayer::startDecode() {

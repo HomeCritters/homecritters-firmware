@@ -516,11 +516,6 @@ void Renderer::drawGamesMenu() {
 
   drawGameTile(GAME_COL_L, GAME_TILE_Y, "Jump!", 'j', menu::IC_DOODLE);
   drawGameTile(GAME_COL_R, GAME_TILE_Y, "Bolinha", 'b', menu::IC_BALL);
-  _canvas.setTextSize(1);
-  _canvas.setTextColor(menu::TEXT_DIM);
-  const char* soon = "Bolinha: em breve";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(soon) / 2, GAME_TILE_Y + GAME_TILE_H + 8);
-  _canvas.print(soon);
 
   drawPillButton(GAMES_BACK_X, GAMES_BACK_Y, GAMES_BACK_W, GAMES_BACK_H,
                  "Voltar", menu::CLOSE_BTN);
@@ -542,16 +537,33 @@ void Renderer::drawDoodleFerret(int cx, int cy, bool faceLeft) {
 void Renderer::drawDoodle(DoodleGame& game) {
   _canvas.fillScreen(rgb565(150, 205, 235));  // light sky
 
+  // parallax clouds: drift down slower than the platforms as the run climbs
+  static const int16_t clouds[3][2] = {{52, 34}, {182, 96}, {96, 168}};
+  const int coff = (int)(game.climbPx() * 0.35f);
+  const uint16_t cloudCol = rgb565(226, 240, 250);
+  for (auto& c : clouds) {
+    const int cy = ((c[1] + coff) % 280) - 20;
+    _canvas.fillCircle(c[0], cy, 10, cloudCol);
+    _canvas.fillCircle(c[0] - 12, cy + 3, 7, cloudCol);
+    _canvas.fillCircle(c[0] + 12, cy + 3, 7, cloudCol);
+  }
+
   const auto* plats = game.platforms();
   for (int i = 0; i < DoodleGame::PLAT_COUNT; i++) {
     const auto& p = plats[i];
     if (!p.active) continue;
     const int px = (int)p.x, py = (int)p.y;
-    // Sliding platforms are tinted blue so the player can anticipate them.
-    const uint16_t fill = p.vx != 0 ? rgb565(70, 150, 200) : rgb565(70, 175, 80);
-    const uint16_t edge = p.vx != 0 ? rgb565(40, 95, 140) : rgb565(45, 120, 55);
+    // Color says type: green = solid, blue = sliding, beige+crack = crumble.
+    uint16_t fill = rgb565(70, 175, 80), edge = rgb565(45, 120, 55);
+    if (p.vx != 0)       { fill = rgb565(70, 150, 200); edge = rgb565(40, 95, 140); }
+    else if (p.crumble)  { fill = rgb565(215, 190, 145); edge = rgb565(150, 125, 85); }
     _canvas.fillRoundRect(px, py, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, fill);
     _canvas.drawRoundRect(px, py, DoodleGame::PLAT_W, DoodleGame::PLAT_H, 3, edge);
+    if (p.crumble) {  // crack marks
+      const int mx = px + DoodleGame::PLAT_W / 2;
+      _canvas.drawLine(mx - 4, py + 1, mx, py + DoodleGame::PLAT_H - 2, edge);
+      _canvas.drawLine(mx, py + DoodleGame::PLAT_H - 2, mx + 5, py + 1, edge);
+    }
     if (p.spring) {  // spring boost marker on top of the platform
       const int sx = px + DoodleGame::PLAT_W / 2 - 4, sy = py - 6;
       _canvas.fillRect(sx, sy, 8, 6, rgb565(235, 150, 40));
@@ -562,13 +574,20 @@ void Renderer::drawDoodle(DoodleGame& game) {
 
   drawDoodleFerret((int)game.ferretX(), (int)game.ferretY() + 6, game.faceLeft());
 
-  // score (top center)
+  // score (top center) + record (top right, small)
   _canvas.setTextColor(rgb565(30, 50, 70));
   _canvas.setTextSize(2);
   char sc[12];
   snprintf(sc, sizeof(sc), "%d", game.score());
   _canvas.setCursor(CENTER_X - _canvas.textWidth(sc) / 2, 8);
   _canvas.print(sc);
+  if (game.hiScore() > 0) {
+    _canvas.setTextSize(1);
+    char hs[16];
+    snprintf(hs, sizeof(hs), "rec %d", game.hiScore());
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(hs) / 2, 26);
+    _canvas.print(hs);
+  }
 
   // back button (top-left)
   _canvas.fillCircle(18, 16, 12, BTN_BG);
@@ -576,22 +595,115 @@ void Renderer::drawDoodle(DoodleGame& game) {
   _canvas.fillTriangle(22, 11, 22, 21, 14, 16, BTN_BORDER);
 
   if (game.gameOver()) {
-    _canvas.fillRoundRect(34, 92, 172, 58, 10, menu::CLOCK_BG);
-    _canvas.drawRoundRect(34, 92, 172, 58, 10, menu::CLOCK_EDGE);
+    _canvas.fillRoundRect(34, 86, 172, 72, 10, menu::CLOCK_BG);
+    _canvas.drawRoundRect(34, 86, 172, 72, 10, menu::CLOCK_EDGE);
     _canvas.setTextColor(TFT_WHITE);
     _canvas.setTextSize(2);
     const char* go = "Fim!";
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(go) / 2, 100);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(go) / 2, 94);
     _canvas.print(go);
     _canvas.setTextSize(1);
     _canvas.setTextColor(menu::CLOCK_DATE);
     char l[24];
     snprintf(l, sizeof(l), "Score: %d", game.score());
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(l) / 2, 122);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(l) / 2, 116);
     _canvas.print(l);
+    if (game.newRecord()) {
+      _canvas.setTextColor(rgb565(250, 210, 60));
+      const char* nr = "NOVO RECORDE!";
+      _canvas.setCursor(CENTER_X - _canvas.textWidth(nr) / 2, 130);
+      _canvas.print(nr);
+      _canvas.setTextColor(menu::CLOCK_DATE);
+    } else {
+      char r[24];
+      snprintf(r, sizeof(r), "Recorde: %d", game.hiScore());
+      _canvas.setCursor(CENTER_X - _canvas.textWidth(r) / 2, 130);
+      _canvas.print(r);
+    }
     const char* h = "toque p/ voltar";
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(h) / 2, 134);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(h) / 2, 144);
     _canvas.print(h);
+  }
+
+  _canvas.pushSprite(0, 0);
+}
+
+// The game ferret with a mode-appropriate animation, centered at (cx,cy).
+// zoom>1 nearest-scales the 40px sprite (used at 2x in Bolinha).
+void Renderer::drawGameFerret(int cx, int cy, int mode, bool faceLeft, int zoom) {
+  const uint16_t* fr;
+  if (mode == 2) {        // jumping (celebration)
+    const int idx = (millis() / 80) % FERRET_G_JUMP_FRAMES;
+    fr = faceLeft ? &ferret_g_jump_l[idx][0] : &ferret_g_jump[idx][0];
+  } else if (mode == 1) { // walking (chase / stroll)
+    const int idx = (millis() / 90) % FERRET_G_WALK_FRAMES;
+    fr = faceLeft ? &ferret_g_walk_l[idx][0] : &ferret_g_walk[idx][0];
+  } else {                // idle (breathing loop)
+    const int idx = (millis() / 180) % FERRET_G_IDLE_FRAMES;
+    fr = faceLeft ? &ferret_g_idle_l[idx][0] : &ferret_g_idle[idx][0];
+  }
+  if (zoom <= 1) {
+    _canvas.pushImage(cx - FERRET_G_FRAME_W / 2, cy - FERRET_G_FRAME_H / 2,
+                      FERRET_G_FRAME_W, FERRET_G_FRAME_H, fr,
+                      (uint16_t)FERRET_G_TRANSPARENT_KEY);
+  } else {
+    _canvas.pushImageRotateZoom(cx, cy, FERRET_G_FRAME_W / 2.0f, FERRET_G_FRAME_H / 2.0f,
+                                0.0f, (float)zoom, (float)zoom,
+                                FERRET_G_FRAME_W, FERRET_G_FRAME_H, fr,
+                                (uint16_t)FERRET_G_TRANSPARENT_KEY);
+  }
+}
+
+// A tennis ball: yellow disc + rim + the white curved seam.
+void Renderer::drawTennisBall(int cx, int cy, int r) {
+  _canvas.fillCircle(cx, cy, r, menu::IC_BALL);
+  _canvas.drawCircle(cx, cy, r, rgb565(150, 175, 40));
+  const int span = r - 2;
+  for (int dy = -span; dy <= span; dy++) {  // hourglass seam ")("
+    const float f = 1.0f - (float)(dy * dy) / (float)(span * span);
+    const int off = (int)((r * 0.45f) * f);
+    _canvas.drawPixel(cx - (r - 3) + off, cy + dy, TFT_WHITE);
+    _canvas.drawPixel(cx + (r - 3) - off, cy + dy, TFT_WHITE);
+  }
+}
+
+void Renderer::drawBall(BallGame& game) {
+  // Reuse the day forest scene (sky, sun, cabin, pines, grass) as the backdrop.
+  _p = DAY;
+  drawSky();
+  drawSun();
+  drawForest(false);
+  drawSparkles(false);
+
+  // ferret at the home height (2x = 80px, feet on the grass), then the ball
+  const int mode = game.state() == BallGame::CELEBRATE ? 2 : (game.walking() ? 1 : 0);
+  drawGameFerret((int)game.ferretX(), 88, mode, game.faceLeft(), 2);
+  drawTennisBall((int)game.ballX(), (int)game.ballY(), 8);
+
+  // catch count (top center) on a small dark chip so it reads over the scene
+  char sc[12];
+  snprintf(sc, sizeof(sc), "%d", game.catches());
+  _canvas.setTextSize(2);
+  const int scw = _canvas.textWidth(sc);
+  _canvas.fillRoundRect(CENTER_X - scw / 2 - 6, 6, scw + 12, 20, 5, menu::CLOCK_BG);
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setCursor(CENTER_X - scw / 2, 9);
+  _canvas.print(sc);
+
+  // left-edge tab: pull right to exit. Chevron ">" points inward, fully
+  // inside the tab (x spans -6..RHANDLE_W, so keep the tip at <= RHANDLE_W-3).
+  _canvas.fillRoundRect(-6, RHANDLE_CY - RHANDLE_H / 2, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BG);
+  _canvas.drawRoundRect(-6, RHANDLE_CY - RHANDLE_H / 2, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BORDER);
+  _canvas.fillTriangle(4, RHANDLE_CY - 7, 4, RHANDLE_CY + 7, RHANDLE_W - 3, RHANDLE_CY, BTN_BORDER);
+
+  if (game.ready()) {
+    _canvas.setTextSize(1);
+    const char* hint = "arraste p/ lancar";
+    const int hw = _canvas.textWidth(hint);
+    _canvas.fillRoundRect(CENTER_X - hw / 2 - 5, 201, hw + 10, 13, 4, menu::CLOCK_BG);
+    _canvas.setTextColor(TFT_WHITE);
+    _canvas.setCursor(CENTER_X - hw / 2, 204);
+    _canvas.print(hint);
   }
 
   _canvas.pushSprite(0, 0);

@@ -26,7 +26,10 @@ class AudioPlayer {
   void playPat();        // petting
   void playJump();       // doodle-jump bounce
   void playBoost();      // doodle-jump spring boost
+  void playCrumble();    // doodle-jump dirt platform breaking
+  void playRecord();     // game over with a new high score
   void playDeath();      // game over
+  void playThrow();      // bolinha throw (whoosh)
 
   void stop();
   bool isPlaying() const { return _playing; }
