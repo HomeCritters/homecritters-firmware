@@ -44,6 +44,11 @@ class Pet {
   float joy()     const { return _joy; }
   float hygiene() const { return _hygiene; }
 
+  // Debug/testing: force the 4 stats (0..100) to preview visuals.
+  void debugSetStats(float h, float e, float j, float hy) {
+    _hunger = h; _energy = e; _joy = j; _hygiene = hy;
+  }
+
  private:
   float _hunger  = 0;
   float _energy  = 0;

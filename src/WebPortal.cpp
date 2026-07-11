@@ -2,15 +2,17 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <cstring>
+#include "Renderer.h"
 #include "web_index.h"  // gzipped single-file React portal
 
 static constexpr const char* HOSTNAME = "ferret";  // -> ferret.local
 
 void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
-                      Clock* clock, std::function<void(Action)> onAction) {
+                      Clock* clock, Renderer* renderer, std::function<void(Action)> onAction) {
   _pet = pet;
   _audio = audio;
   _led = led;
+  _renderer = renderer;
   _ferret = ferret;
   _clock = clock;
   _onAction = onAction;
@@ -41,11 +43,22 @@ void WebPortal::cancelConfig() {
   _configuring = false;
 }
 
+// The HTTP server serves only the static gzipped page (PROGMEM, no shared
+// mutable state), so it runs on its own core-0 task. That keeps the ~250KB
+// blocking page send off the render loop - loading the portal no longer
+// freezes the screen. The WebSocket (commands/state) stays on the main loop.
+void WebPortal::httpTask(void* arg) {
+  WebPortal* self = static_cast<WebPortal*>(arg);
+  for (;;) {
+    self->_server.handleClient();
+    vTaskDelay(1);
+  }
+}
+
 // ---- HTTP + WebSocket servers ----
 void WebPortal::handle() {
   if (!_serverUp && connected()) startServer();
   if (!_serverUp) return;
-  _server.handleClient();
   _ws.loop();
   // Single broadcast point, rate-limited. Pending changes (_dirty) go out
   // quickly but coalesced. During a game the portal shows a controller (not
@@ -70,6 +83,7 @@ void WebPortal::handle() {
 
 void WebPortal::startServer() {
   _server.on("/", [this]() { handleRoot(); });
+  _server.on("/shot.bmp", [this]() { handleShot(); });  // screenshot for the portal
   _server.onNotFound([this]() { handleRoot(); });  // SPA fallback
   _server.begin();
   _ws.begin();
@@ -84,6 +98,8 @@ void WebPortal::startServer() {
     MDNS.addService("ws", "tcp", 81);
   }
   _serverUp = true;
+  // Serve HTTP on core 0 so a big page load can't stall the render loop.
+  xTaskCreatePinnedToCore(httpTask, "http", 8192, this, 1, nullptr, 0);
   Serial.printf("[web] portal at http://%s.local/  (ip %s, ws :81)\n", HOSTNAME, ip().c_str());
 }
 
@@ -92,6 +108,57 @@ void WebPortal::handleRoot() {
   _server.sendHeader("Content-Encoding", "gzip");
   _server.sendHeader("Cache-Control", "no-cache");  // always fetch the current build
   _server.send_P(200, "text/html", (const char*)web_index_gz, web_index_gz_len);
+}
+
+// GET /shot.bmp -> the current screen as a 24-bit BMP. Runs on the HTTP task
+// (core 0): it asks the render loop for a stable snapshot, waits briefly, then
+// streams the BMP. Serving here (not the WS) keeps the ~170KB off the render.
+void WebPortal::handleShot() {
+  if (!_renderer) { _server.send(503, "text/plain", "no renderer"); return; }
+  _renderer->requestWebSnapshot();
+  const unsigned long t0 = millis();
+  while (!_renderer->webSnapshotReady() && millis() - t0 < 1500) delay(3);
+  if (!_renderer->webSnapshotReady()) { _server.send(504, "text/plain", "timeout"); return; }
+
+  const uint8_t* px = (const uint8_t*)_renderer->webSnapshot();
+  const int W = 240, H = 240;
+  const uint32_t dataSize = (uint32_t)W * H * 3;
+  const uint32_t fileSize = 54 + dataSize;
+  if (!_bmp) {
+    _bmp = (uint8_t*)ps_malloc(fileSize);
+    if (!_bmp) _bmp = (uint8_t*)malloc(fileSize);
+  }
+  if (!px || !_bmp) { _server.send(500, "text/plain", "no buffer"); return; }
+
+  // Assemble the whole BMP once, then send it in a single blocking write - many
+  // small chunked writes were truncating the response.
+  memset(_bmp, 0, 54);
+  _bmp[0] = 'B'; _bmp[1] = 'M';
+  _bmp[2] = fileSize; _bmp[3] = fileSize >> 8; _bmp[4] = fileSize >> 16; _bmp[5] = fileSize >> 24;
+  _bmp[10] = 54;                          // pixel data offset
+  _bmp[14] = 40;                          // DIB header size
+  _bmp[18] = W; _bmp[19] = W >> 8;
+  _bmp[22] = H; _bmp[23] = H >> 8;        // positive height -> bottom-up rows
+  _bmp[26] = 1;                           // planes
+  _bmp[28] = 24;                          // bits per pixel
+  _bmp[34] = dataSize; _bmp[35] = dataSize >> 8; _bmp[36] = dataSize >> 16; _bmp[37] = dataSize >> 24;
+
+  uint8_t* out = _bmp + 54;
+  for (int y = H - 1; y >= 0; y--) {  // BMP stores the bottom row first
+    const uint8_t* p = px + (uint32_t)y * W * 2;
+    for (int x = 0; x < W; x++) {
+      const uint16_t v = (p[2 * x] << 8) | p[2 * x + 1];  // canvas stores big-endian
+      *out++ = (v & 0x1F) << 3;          // B
+      *out++ = ((v >> 5) & 0x3F) << 2;   // G
+      *out++ = ((v >> 11) & 0x1F) << 3;  // R
+    }
+  }
+  _renderer->clearWebSnapshot();
+
+  _server.setContentLength(fileSize);
+  _server.sendHeader("Cache-Control", "no-store");
+  _server.send(200, "image/bmp", "");
+  _server.client().write(_bmp, fileSize);  // WiFiClient::write blocks until sent
 }
 
 void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
@@ -200,12 +267,12 @@ void WebPortal::broadcastState() {
 void WebPortal::stateJson(char* out, size_t n) const {
   const Pet& p = *_pet;
   snprintf(out, n,
-           "{\"screen\":\"%s\",\"score\":%d,\"name\":\"%s\",\"sleeping\":%s,"
+           "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"volume\":%d,\"ledBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
            "\"anim\":\"%s\",\"seq\":%u,\"flip\":%s,\"x\":%.3f,"
            "\"hunger\":%.1f,\"energy\":%.1f,\"joy\":%.1f,\"hygiene\":%.1f}",
-           _screenName, _gameScore, p.name().c_str(),
+           _screenName, _gameScore, _battery, p.name().c_str(),
            p.sleeping() ? "true" : "false",
            _audio ? _audio->volume() : 0,
            _led ? _led->brightness() : 50,

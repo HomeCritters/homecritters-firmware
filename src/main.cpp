@@ -95,6 +95,21 @@ static void handleUi(ui::UiHit hit) {
   }
 }
 
+static bool g_shotPending = false;  // serial "shot": capture after the next render
+// Serve pending screenshots (serial console + web portal) right after a render,
+// when the canvas holds a complete frame. Both play the camera shutter.
+static void serviceShots() {
+  if (g_shotPending) {
+    renderer.captureScreenshot();  // stream to serial (tools/hwshot.py)
+    g_shotPending = false;
+    audio.playCamera();
+  }
+  if (renderer.webShotRequested()) {
+    renderer.takeWebSnapshot();     // copy for the HTTP /shot.bmp handler
+    audio.playCamera();
+  }
+}
+
 static bool g_doodleWasDead = false;
 static unsigned long g_deadAtMs = 0;      // when the current game over started
 static unsigned long g_pressStartMs = 0;  // when the current touch began
@@ -241,6 +256,82 @@ static void loopGamesMenu(unsigned long now) {
   renderer.drawGamesMenu();
 }
 
+// ============================================================
+// Serial debug console: navigate to any screen/state and grab a screenshot,
+// so changes can be validated without eyes on the hardware. Driven by
+// tools/hwshot.py and tools/console.py. One command per line.
+// ============================================================
+static void printSerialHelp() {
+  Serial.println(F("[console] commands:"));
+  Serial.println(F("  shot                 - screenshot the current screen"));
+  Serial.println(F("  pet | games | doodle | ball"));
+  Serial.println(F("  menu[:main|audio|luz|qr]"));
+  Serial.println(F("  feed | pat | clean | sleep"));
+  Serial.println(F("  vol:N | led:N | scr:N        (0..100)"));
+  Serial.println(F("  stats:H,E,J,Hy               (0..100 each)"));
+}
+
+static void dispatchSerialCmd(const String& c) {
+  const unsigned long now = millis();
+
+  // Passive commands don't count as interaction, so a screenshot captures the
+  // screen exactly as-is (idle clock included) instead of waking it.
+  if (c == "shot")        { g_shotPending = true; return; }  // captured post-render
+  if (c == "help" || c == "?") { printSerialHelp(); return; }
+  if (c == "bat")         { Serial.printf("[bat] %.3fV -> %d%%\n", battery.voltage(), battery.percent()); return; }
+
+  lastInteractionMs = now;  // everything below is an interaction (leaves clock mode)
+  if (c == "pet")         { menuOpen = false; screen = SCREEN_PET; return; }
+  if (c == "games")       { menuOpen = false; screen = SCREEN_GAMES; return; }
+  if (c == "doodle")      { startDoodle(now); return; }
+  if (c == "ball")        { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; return; }
+
+  if (c.startsWith("menu")) {
+    screen = SCREEN_PET; menuOpen = true;
+    const String pg = c.substring(4);  // "" or ":audio"/":luz"/":qr"/":main"
+    menuPage = pg == ":audio" ? ui::PAGE_AUDIO
+             : pg == ":luz"   ? ui::PAGE_LIGHT
+             : pg == ":qr"    ? ui::PAGE_QR
+                              : ui::PAGE_MAIN;
+    return;
+  }
+
+  if (c == "feed")  { doAction(ACTION_FEED);  return; }
+  if (c == "pat")   { doAction(ACTION_PAT);   return; }
+  if (c == "clean") { doAction(ACTION_CLEAN); return; }
+  if (c == "sleep") { doAction(ACTION_TOGGLE_SLEEP); return; }
+
+  if (c.startsWith("vol:")) { audio.setVolume(c.substring(4).toInt()); return; }
+  if (c.startsWith("led:")) { led.setBrightness(c.substring(4).toInt()); return; }
+  if (c.startsWith("scr:")) { renderer.setScreenBrightness(c.substring(4).toInt()); return; }
+
+  if (c.startsWith("stats:")) {  // "stats:H,E,J,Hy"
+    const String v = c.substring(6);
+    int a = v.indexOf(','), b = v.indexOf(',', a + 1), d = v.indexOf(',', b + 1);
+    if (a > 0 && b > 0 && d > 0) {
+      pet.debugSetStats(v.substring(0, a).toFloat(), v.substring(a + 1, b).toFloat(),
+                        v.substring(b + 1, d).toFloat(), v.substring(d + 1).toFloat());
+    }
+    return;
+  }
+
+  Serial.printf("[console] unknown: %s (try 'help')\n", c.c_str());
+}
+
+static void handleSerial() {
+  static String line;
+  while (Serial.available()) {
+    const char ch = (char)Serial.read();
+    if (ch == '\n' || ch == '\r') {
+      line.trim();
+      if (line.length()) dispatchSerialCmd(line);
+      line = "";
+    } else if (line.length() < 64) {
+      line += ch;
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -255,7 +346,8 @@ void setup() {
   petClock.begin();
   doodle.begin();  // load the Jump! high score
   audio.begin();  // I2C + ES8311 + I2S + audio task
-  web.begin(&pet, &audio, &led, &ferret, &petClock, doAction);  // WiFi + portal
+  web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, doAction);  // WiFi + portal
+  web.setBattery(battery.percent());  // seed the portal value
 
   wasSleeping = pet.sleeping();
   lastTickMs = lastSaveMs = lastInteractionMs = millis();
@@ -264,6 +356,8 @@ void setup() {
 
 void loop() {
   const unsigned long now = millis();
+
+  handleSerial();  // debug console (screenshots + navigation)
 
   // --- WiFi setup mode (captive portal active): own screen + Exit ---
   if (web.configuring()) {
@@ -294,6 +388,13 @@ void loop() {
   if (now - lastSaveMs > game::SAVE_INTERVAL_MS) {
     pet.save();
     lastSaveMs = now;
+  }
+
+  // Battery: sample every few seconds (ADC read) and share with the portal.
+  static unsigned long lastBattMs = 0;
+  if (now - lastBattMs > 5000) {
+    lastBattMs = now;
+    web.setBattery(battery.percent());
   }
 
   web.handle();
@@ -334,17 +435,20 @@ void loop() {
   if (screen == SCREEN_DOODLE) {
     web.setGameScore(doodle.score());
     loopDoodle(now);
+    serviceShots();
     delay(12);
     return;
   }
   if (screen == SCREEN_BALL) {
     web.setGameScore(ball.catches());
     loopBall(now);
+    serviceShots();
     delay(20);  // the forest backdrop is heavier to redraw; 50fps is plenty
     return;
   }
   if (screen == SCREEN_GAMES) {
     loopGamesMenu(now);
+    serviceShots();
     delay(30);
     return;
   }
@@ -381,6 +485,7 @@ void loop() {
   if (menuOpen && web.connected()) ip = web.ip();
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock);
+  serviceShots();
 
   delay(30);
 }

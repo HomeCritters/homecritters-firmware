@@ -30,6 +30,7 @@ class AudioPlayer {
   void playRecord();     // game over with a new high score
   void playDeath();      // game over
   void playThrow();      // bolinha throw (whoosh)
+  void playCamera();     // screenshot shutter
 
   void stop();
   bool isPlaying() const { return _playing; }

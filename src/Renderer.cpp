@@ -33,6 +33,18 @@ void Renderer::begin() {
   _canvas.createSprite(SCREEN_W, SCREEN_H);
   // Ferret frames are big-endian RGB565; without this brown turns green.
   _canvas.setSwapBytes(true);
+
+  // Snapshot buffer for the web screenshot (PSRAM; falls back to heap).
+  _snap = (uint16_t*)ps_malloc(SCREEN_W * SCREEN_H * 2);
+  if (!_snap) _snap = (uint16_t*)malloc(SCREEN_W * SCREEN_H * 2);
+}
+
+// Copy the finished canvas into the stable snapshot buffer (render thread).
+void Renderer::takeWebSnapshot() {
+  const void* buf = _canvas.getBuffer();
+  if (_snap && buf) memcpy(_snap, buf, SCREEN_W * SCREEN_H * 2);
+  _snapReq = false;
+  _snapReady = true;
 }
 
 // Backlight brightness with a floor so the screen can never be turned fully
@@ -49,6 +61,25 @@ void Renderer::setScreenBrightness(int pct) {
 void Renderer::flashButton(int idx) {
   _pressedButton = idx;
   _pressedUntil = millis() + game::BUTTON_FLASH_MS;
+}
+
+// Dumps the last-rendered canvas (RGB565) over Serial. Framing: a text header
+// "@@SHOT <w> <h>\n", then exactly w*h*2 raw little-endian bytes, then "@@END".
+// The host reads a fixed byte count, so binary that happens to contain "@@END"
+// is harmless.
+void Renderer::captureScreenshot() {
+  const uint8_t* buf = (const uint8_t*)_canvas.getBuffer();  // raw RGB565, row-major
+  Serial.printf("\n@@SHOT %d %d\n", SCREEN_W, SCREEN_H);
+  if (buf) {
+    // Chunked writes keep the USB-CDC FIFO happy for the full 115KB frame.
+    const uint32_t total = (uint32_t)SCREEN_W * SCREEN_H * 2;
+    for (uint32_t off = 0; off < total; off += 1024) {
+      const uint32_t n = (total - off < 1024) ? (total - off) : 1024;
+      Serial.write(buf + off, n);
+      Serial.flush();
+    }
+  }
+  Serial.print("\n@@END\n");
 }
 
 void Renderer::drawSky() {
@@ -177,17 +208,22 @@ void Renderer::drawHeader(const Pet& pet, bool wifiOn) {
   _canvas.setCursor(CENTER_X - _canvas.textWidth(pet.name().c_str()) / 2, 20);
   _canvas.print(pet.name());
 
-  // WiFi indicator (small dot) on the right edge
-  if (wifiOn) _canvas.fillCircle(228, 10, 3, _p.sparkle);
+  // WiFi indicator (small dot), inside the visible circle next to the status
+  if (wifiOn) _canvas.fillCircle(196, 42, 3, _p.sparkle);
 
+  // "Dormindo" only when actually asleep; MOOD_SLEEPY while awake means tired.
   const char* status = "Feliz";
-  switch (mood) {
-    case MOOD_HAPPY:   status = "Feliz";            break;
-    case MOOD_NEUTRAL: status = "Tranquilo";        break;
-    case MOOD_SAD:     status = "Triste";           break;
-    case MOOD_HUNGRY:  status = "Com fome";         break;
-    case MOOD_SLEEPY:  status = "Dormindo";         break;
-    case MOOD_DIRTY:   status = "Precisa de banho"; break;
+  if (pet.sleeping()) {
+    status = "Dormindo";
+  } else {
+    switch (mood) {
+      case MOOD_HAPPY:   status = "Feliz";            break;
+      case MOOD_NEUTRAL: status = "Tranquilo";        break;
+      case MOOD_SAD:     status = "Triste";           break;
+      case MOOD_HUNGRY:  status = "Com fome";         break;
+      case MOOD_SLEEPY:  status = "Com sono";         break;
+      case MOOD_DIRTY:   status = "Precisa de banho"; break;
+    }
   }
   _canvas.setTextSize(1);
   _canvas.setTextColor(_p.textDim);
@@ -336,22 +372,23 @@ void Renderer::drawGridCell(int x, int y, const char* label, char icon) {
 }
 
 void Renderer::drawMenu(ui::MenuPage page, int volume, int ledBright,
-                        bool wifiOn, const char* ip) {
+                        int batteryPct, bool wifiOn, const char* ip) {
   _canvas.fillScreen(menu::BG);  // full-screen dark purple background
   if (page == PAGE_AUDIO)      drawMenuAudio(volume);
   else if (page == PAGE_LIGHT) drawMenuLight(ledBright);
   else if (page == PAGE_QR)    drawMenuQr(wifiOn, ip);
-  else                         drawMenuMain(wifiOn, ip);
+  else                         drawMenuMain(batteryPct, wifiOn, ip);
 }
 
-// Main page: a perfect 2x2 grid - Audio/Luz (top), WiFi/QR (bottom). The QR
-// tile shows the code and is tappable (opens the QR detail page). + Voltar.
-void Renderer::drawMenuMain(bool wifiOn, const char* ip) {
+// Main page: title + battery, a 2x2 grid - Audio/Luz (top), WiFi/QR (bottom).
+// The QR tile shows the code and is tappable (opens the QR detail page). + Voltar.
+void Renderer::drawMenuMain(int batteryPct, bool wifiOn, const char* ip) {
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
   const char* title = "Config";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 8);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 6);
   _canvas.print(title);
+  drawBatteryPill(26, batteryPct, TFT_WHITE, menu::TEXT_DIM);
 
   drawGridCell(MENU_COL_L, MENU_ROW_1, "Audio", 'a');
   drawGridCell(MENU_COL_R, MENU_ROW_1, "Luz", 'l');
@@ -364,7 +401,7 @@ void Renderer::drawMenuMain(bool wifiOn, const char* ip) {
   if (wifiOn && ip && ip[0]) {
     char qrUrl[40];
     snprintf(qrUrl, sizeof(qrUrl), "http://%s/", ip);
-    drawQr(qrUrl, MENU_ROW_2 + 4, MENU_QR_CX, 1);  // 62px, fits the rounded tile
+    drawQr(qrUrl, MENU_ROW_2 + 2, MENU_QR_CX, 1);  // 62px, centered in the 66px tile
   } else {
     _canvas.setTextSize(1);
     _canvas.setTextColor(menu::CELL_LABEL);
@@ -768,12 +805,27 @@ void Renderer::drawButtons() {
   }
 }
 
-void Renderer::drawBattery(Battery& battery) {
+// A small battery pill (icon + %). Placed high but INSIDE the visible circle
+// (the corners are hidden behind the round bezel). Reused by the pet scene and
+// the config menu; `outline`/`txt` adapt it to each background.
+void Renderer::drawBatteryPill(int topY, int pct, uint16_t outline, uint16_t txt) {
+  const uint16_t lvl = pct <= 20 ? rgb565(230, 70, 60)
+                     : pct <= 50 ? rgb565(240, 190, 60)
+                                 : rgb565(90, 200, 110);
+  char t[6];
+  snprintf(t, sizeof(t), "%d%%", pct);
   _canvas.setTextSize(1);
-  _canvas.setTextColor(_p.textDim);
-  _canvas.setCursor(6, 6);
-  _canvas.printf("%d%%", battery.percent());
+  const int tw = _canvas.textWidth(t);
+  const int total = 20 + 3 + tw;  // 18px body + 2px nub + gap + text
+  const int bx = CENTER_X - total / 2, by = topY;
+  _canvas.drawRoundRect(bx, by, 18, 9, 2, outline);
+  _canvas.fillRect(bx + 18, by + 3, 2, 3, outline);            // nub
+  _canvas.fillRect(bx + 2, by + 2, (14 * pct) / 100, 5, lvl);  // level
+  _canvas.setTextColor(txt);
+  _canvas.setCursor(bx + 20 + 3, by + 1);
+  _canvas.print(t);
 }
+
 
 void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
                     bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
@@ -808,7 +860,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   drawSparkles(night);
   drawHeader(pet, wifiOn);
   drawFerret(ferret);
-  drawBattery(battery);
+  // battery is shown in the config menu (not the home scene)
 
   if (clockActive) {
     // idle mode: clock replaces bars + buttons
@@ -820,7 +872,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     drawStatBar(126, 150, "HIGI", pet.hygiene());
     drawButtons();
     if (menuOpen) {
-      drawMenu(menuPage, volume, ledBright, wifiOn, ip);
+      drawMenu(menuPage, volume, ledBright, battery.percent(), wifiOn, ip);
     } else {
       drawMenuHandle();   // config menu (top)
       drawRightHandle();  // games menu (right)

@@ -5,17 +5,18 @@
 #include <AudioFileSourcePROGMEM.h>
 #include <AudioOutputI2S.h>
 #include "pins.h"
-#include "sleep_music.h"
-#include "sfx_eat.h"
-#include "sfx_drink.h"
-#include "sfx_tap.h"
-#include "sfx_wake.h"
-#include "sfx_jump.h"
-#include "sfx_boost.h"
-#include "sfx_crumble.h"
-#include "sfx_record.h"
-#include "sfx_death.h"
-#include "sfx_throw.h"
+#include "sounds/sleep_music.h"
+#include "sounds/sfx_eat.h"
+#include "sounds/sfx_drink.h"
+#include "sounds/sfx_tap.h"
+#include "sounds/sfx_wake.h"
+#include "sounds/sfx_jump.h"
+#include "sounds/sfx_boost.h"
+#include "sounds/sfx_crumble.h"
+#include "sounds/sfx_record.h"
+#include "sounds/sfx_death.h"
+#include "sounds/sfx_throw.h"
+#include "sounds/sfx_camera.h"
 
 // ============================================================
 // Minimal ES8311 driver (playback/DAC only).
@@ -136,6 +137,7 @@ void AudioPlayer::playCrumble()   { play(sfx_crumble_mp3,  sfx_crumble_mp3_len);
 void AudioPlayer::playRecord()    { play(sfx_record_mp3,   sfx_record_mp3_len); }
 void AudioPlayer::playDeath()     { play(sfx_death_mp3,    sfx_death_mp3_len); }
 void AudioPlayer::playThrow()     { play(sfx_throw_mp3,    sfx_throw_mp3_len); }
+void AudioPlayer::playCamera()    { play(sfx_camera_mp3,   sfx_camera_mp3_len); }
 void AudioPlayer::stop()          { _stopReq = true; }
 
 void AudioPlayer::startDecode() {

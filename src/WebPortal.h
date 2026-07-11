@@ -10,6 +10,8 @@
 #include "FerretActor.h"
 #include "Clock.h"
 
+class Renderer;  // for the /shot.bmp screenshot endpoint
+
 // ============================================================
 // WebPortal: WiFi connectivity + web portal (React) + WebSocket.
 //   - begin(): reconnects to the saved network (non-blocking).
@@ -30,7 +32,7 @@ class WebPortal {
   enum GameNav { NAV_NONE, NAV_START, NAV_BALL, NAV_BACK };
 
   void begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
-             Clock* clock, std::function<void(Action)> onAction);
+             Clock* clock, Renderer* renderer, std::function<void(Action)> onAction);
   void handle();               // call every loop (when connected)
   // Request a state broadcast. Coalesced: handle() sends at most one every
   // few ms no matter how many requests pile up (spam-clicking the portal
@@ -42,6 +44,7 @@ class WebPortal {
   // Score shown on the phone. Only nudges a broadcast when it actually changes,
   // so calling this every game frame costs nothing.
   void setGameScore(int s) { if (s != _gameScore) { _gameScore = s; _dirty = true; } }
+  void setBattery(int pct) { if (pct != _battery) { _battery = pct; _dirty = true; } }
   GameNav consumeGameNav();     // pending start/back request (clears it)
   float gameTargetXNorm();      // horizontal target [0..1] from the phone, -1 if none/stale
   // Pending Bolinha throw from the phone (normalized swipe). True once; fills
@@ -64,6 +67,8 @@ class WebPortal {
   Pet* _pet = nullptr;
   AudioPlayer* _audio = nullptr;
   StatusLed* _led = nullptr;
+  Renderer* _renderer = nullptr;
+  uint8_t* _bmp = nullptr;  // assembled BMP for /shot.bmp (lazy, PSRAM)
   FerretActor* _ferret = nullptr;
   Clock* _clock = nullptr;
   std::function<void(Action)> _onAction;
@@ -75,6 +80,7 @@ class WebPortal {
   // phone game controller state
   const char* _screenName = "pet";
   int _gameScore = 0;
+  int _battery = -1;
   volatile float _gameTx = -1.0f;             // last target x [0..1] from the phone
   volatile unsigned long _gameTxMs = 0;       // when it arrived (for staleness)
   volatile GameNav _navReq = NAV_NONE;        // pending start/back request
@@ -82,7 +88,9 @@ class WebPortal {
   volatile float _throwNx = 0, _throwNy = 0;  // normalized swipe of that throw
 
   void startServer();
+  static void httpTask(void* arg);  // runs the HTTP server on core 0
   void handleRoot();
+  void handleShot();  // GET /shot.bmp -> current screen as a BMP
   void onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len);
   void applyCommand(const String& msg);
   void broadcastState();

@@ -43,8 +43,9 @@ include/
   LGFX_BallV2.h        # config do LovyanGFX (display + touch)
   ferret_anim.h        # frames do furão em RGB565, 80px, cena (gerado)
   ferret_game.h        # sprite do furão 40px p/ o mini-game (gerado)
-  sleep_music.h        # MP3 do ronco (dormir) em PROGMEM (gerado)
-  sfx_eat.h, sfx_drink.h, sfx_tap.h, sfx_wake.h, sfx_jump.h  # efeitos (gerados)
+  sounds/              # TODOS os áudios (MP3→PROGMEM, gerados): sleep_music.h
+                       # + sfx_eat/drink/tap/wake/jump/boost/crumble/record/
+                       #   death/throw/camera.h
   web_index.h          # portal React (single-file, gzip) em PROGMEM (gerado)
 src/
   main.cpp             # orquestração: junta os módulos e roda o loop
@@ -58,7 +59,9 @@ src/
   AudioPlayer.{h,cpp}  # ES8311 + I2S + task de áudio (efeitos + ronco) + volume
   Clock.{h,cpp}        # relógio NTP (timezone POSIX, 12/24h, ociosidade)
   DoodleGame.{h,cpp}   # mini-game estilo doodle jump (física; Renderer desenha)
+  BallGame.{h,cpp}     # mini-game "Bolinha" (fetch: arremesso + furão busca)
   WebPortal.{h,cpp}    # WiFiManager + WebServer + WebSocket + mDNS (portal)
+tools/                 # debug: hwshot.py (print da tela→PNG) + console.py (serial)
 assets/
   ferret-sprite-sheet.{png,json}  # spritesheet do Aseprite (fonte da animação)
   aseprite_to_frames.py  # fatia o spritesheet → include/ferret_anim.h
@@ -150,12 +153,13 @@ não usar essa cor no desenho.
 
 ## Trocar os sons
 
-MP3s são embutidos como headers PROGMEM (sem passo de upload de filesystem):
+MP3s são embutidos como headers PROGMEM (sem passo de upload de filesystem).
+**Todos vão em `include/sounds/`** e são incluídos no `AudioPlayer.cpp` como
+`#include "sounds/xxx.h"`:
 
 ```bash
-python3 assets/mp3_to_header.py <arquivo.mp3> sleep_music_mp3 include/sleep_music.h
-python3 assets/mp3_to_header.py <arquivo.mp3> sfx_eat_mp3 include/sfx_eat.h
-# idem p/ sfx_drink, sfx_tap, sfx_wake
+python3 assets/mp3_to_header.py <arquivo.mp3> sfx_eat_mp3 include/sounds/sfx_eat.h
+# idem p/ sfx_drink, sfx_tap, sfx_wake, sfx_jump, sfx_camera, sleep_music, ...
 ```
 
 ## Regenerar o portal web (React)
@@ -178,6 +182,42 @@ pio run                 # compila
 pio run -t upload       # compila e grava (USB-C; segure BOOT se a porta não aparecer)
 pio device monitor       # log serial, 115200 baud
 ```
+
+## Debug tools (tirar "print" da tela + navegar por serial)
+
+Para validar UI **sem olhar o hardware**: o firmware tem um **console serial**
+(`dispatchSerialCmd` em `main.cpp`, um comando por linha) e o comando `shot`
+faz o `Renderer` despejar o buffer do canvas pela serial. Scripts no host
+(usam o python do PlatformIO, que já tem `pyserial` + `Pillow`) remontam num
+**PNG** — que dá pra abrir e inspecionar.
+
+```bash
+PY=~/.platformio/penv/bin/python
+$PY tools/hwshot.py -o shot.png                         # print da tela atual
+$PY tools/hwshot.py --cmd games -o games.png            # navega e depois captura
+$PY tools/hwshot.py --cmd "menu:luz" -o luz.png
+$PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
+```
+
+- Comandos: `shot`, `pet`, `games`, `doodle`, `ball`,
+  `menu[:main|audio|luz|qr]`, `feed`/`pat`/`clean`/`sleep`, `vol:N`, `led:N`,
+  `scr:N`, `stats:H,E,J,Hy`, `help`.
+- Os scripts abrem a porta com DTR/RTS baixos (**não resetam** a placa) e
+  auto-detectam `/dev/cu.usbmodem*`.
+- Detalhes de formato do dump (header `@@SHOT w h` + RGB565 **big-endian**,
+  pois o canvas usa `setSwapBytes`): `tools/README.md`.
+- **Também tem screenshot no portal web**: `GET /shot.bmp` (servido pelo task
+  HTTP no core 0) devolve a tela atual em BMP; o portal tem um botão **📸**. O
+  render loop copia o canvas pra um buffer estável (`takeWebSnapshot`) antes de
+  servir. Todo screenshot (serial ou web) toca o som de câmera (`playCamera`).
+- **IMPORTANTE — reset da serial:** abrir a porta serial **reinicia** a placa
+  (auto-reset do S3). Então print por **serial** mostra a tela recém-bootada e
+  NÃO captura estado vivo (relógio NTP, tema por horário — perdidos no reboot).
+  Pra ver o estado real, use a **web** (`curl http://ferret.local/shot.bmp` ou o
+  botão 📸). Serial serve pra checar UI navegada (menus/jogos).
+- **A captura acontece pós-render** (flag `g_shotPending` → `maybeShot()`); ler
+  o buffer no topo do loop dava tela preta. Usar `_canvas.getBuffer()`, não
+  `readRect` (retorna zeros).
 
 ## Pendências / próximos passos conhecidos
 

@@ -78,9 +78,9 @@ constexpr int16_t MENU_BTN_R = 17;  // +/- stepper button radius
 // Main page: a perfect 2x2 grid of equal squares - Audio, Luz (top row),
 // WiFi, QR (bottom row). All four are the same size; the QR tile is tappable
 // and opens the QR detail page.
-constexpr int16_t MENU_CELL_W = 70, MENU_CELL_H = 70;
+constexpr int16_t MENU_CELL_W = 70, MENU_CELL_H = 66;
 constexpr int16_t MENU_COL_L = 43, MENU_COL_R = 127;   // column x
-constexpr int16_t MENU_ROW_1 = 30, MENU_ROW_2 = 106;   // row y
+constexpr int16_t MENU_ROW_1 = 42, MENU_ROW_2 = 112;   // row y (battery pill above)
 constexpr int16_t MENU_QR_CX  = MENU_COL_R + MENU_CELL_W / 2;  // QR center x
 
 // Audio sub-page: one volume stepper (centered).

@@ -17,6 +17,8 @@ import {
   Typography,
   Badge,
   Space,
+  Modal,
+  Spin,
 } from 'antd';
 import ferretSheet from './ferret-sheet.png';
 
@@ -69,6 +71,21 @@ const ACTIONS = [
 
 // Same color rule as the hardware: red low, yellow mid, green high.
 const barColor = (v) => (v < 25 ? '#e04640' : v < 55 ? '#f0c846' : '#46c85a');
+
+// Small battery pill: an SVG icon whose fill/level mirrors the hardware.
+function BatteryTag({ pct }) {
+  const color = pct <= 20 ? '#e0563c' : pct <= 50 ? '#f0be40' : '#5ac86e';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, opacity: 0.9 }}>
+      <svg width="26" height="13" viewBox="0 0 26 13" aria-label="bateria">
+        <rect x="0.5" y="0.5" width="21" height="12" rx="2.5" fill="none" stroke="#8a8a99" />
+        <rect x="22.5" y="4" width="2.5" height="5" rx="1" fill="#8a8a99" />
+        <rect x="2" y="2" width={Math.max(0, (17 * pct) / 100)} height="9" rx="1" fill={color} />
+      </svg>
+      <span style={{ fontSize: 12, color: '#b9b3c8' }}>{pct}%</span>
+    </span>
+  );
+}
 
 // Detects the browser timezone -> POSIX TZ string. Tries to match the IANA
 // name against the list; otherwise falls back to a fixed offset (no DST).
@@ -280,6 +297,12 @@ export default function App() {
   const [state, setState] = useState(null);
   const [online, setOnline] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shotSrc, setShotSrc] = useState(null);   // /shot.bmp?t=... when the modal is open
+  const [shotLoading, setShotLoading] = useState(false);
+  const takeShot = () => {
+    setShotLoading(true);
+    setShotSrc(`/shot.bmp?t=${Date.now()}`);
+  };
   const [name, setName] = useState('');
   const [vol, setVol] = useState(80);
   const [ledBright, setLedBright] = useState(50);
@@ -348,6 +371,21 @@ export default function App() {
       <div style={{ maxWidth: 460, margin: '0 auto', padding: 16 }}>
         {/* Header: name on top, ferret below, settings gear in the corner */}
         <div style={{ position: 'relative', textAlign: 'center', paddingTop: 2 }}>
+          {typeof state?.battery === 'number' && state.battery >= 0 && (
+            <div style={{ position: 'absolute', left: 0, top: 4 }}>
+              <BatteryTag pct={state.battery} />
+            </div>
+          )}
+          <Button
+            shape="circle"
+            size="large"
+            disabled={!online}
+            onClick={takeShot}
+            style={{ position: 'absolute', right: 44, top: 0 }}
+            title="Print da tela do hardware"
+          >
+            📸
+          </Button>
           <Button
             shape="circle"
             size="large"
@@ -572,6 +610,65 @@ export default function App() {
             />
           </div>
         </Drawer>
+
+        {/* Hardware screenshot: /shot.bmp rendered by the firmware on demand */}
+        <Modal
+          title="📸 Tela do hardware"
+          open={!!shotSrc}
+          onCancel={() => setShotSrc(null)}
+          footer={[
+            <Button key="r" loading={shotLoading} onClick={takeShot}>
+              Atualizar
+            </Button>,
+            <Button key="c" type="primary" onClick={() => setShotSrc(null)}>
+              Fechar
+            </Button>,
+          ]}
+        >
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              aspectRatio: '1 / 1',
+              borderRadius: 12,
+              overflow: 'hidden',
+              background: '#241c3a',
+            }}
+          >
+            {shotLoading && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 12,
+                }}
+              >
+                <Spin size="large" />
+                <span style={{ color: '#b9b3c8', fontSize: 13 }}>Capturando…</span>
+              </div>
+            )}
+            {shotSrc && (
+              <img
+                src={shotSrc}
+                alt="tela do furão"
+                onLoad={() => setShotLoading(false)}
+                onError={() => setShotLoading(false)}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  imageRendering: 'pixelated',
+                  opacity: shotLoading ? 0 : 1,
+                  transition: 'opacity 0.2s',
+                }}
+              />
+            )}
+          </div>
+        </Modal>
       </div>
     </ConfigProvider>
   );

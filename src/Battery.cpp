@@ -7,9 +7,13 @@ void Battery::begin() {
 }
 
 float Battery::voltage() const {
-  // The board's divider makes the ADC read ~half the battery voltage.
-  int raw = analogRead(PIN_BATTERY_ADC);
-  return (raw / 4095.0f) * 3.3f * 2.0f;
+  // analogReadMilliVolts applies the chip's factory ADC calibration, which
+  // corrects the ESP32 ADC's nonlinearity (raw*Vref/4095 reads several % low,
+  // so a full 4.2V pack looked like ~90%). Average a few samples for stability.
+  uint32_t mv = 0;
+  for (int i = 0; i < 16; i++) mv += analogReadMilliVolts(PIN_BATTERY_ADC);
+  mv /= 16;
+  return (mv / 1000.0f) * 2.0f;  // undo the on-board /2 divider
 }
 
 int Battery::percent() const {

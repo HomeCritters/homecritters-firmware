@@ -40,6 +40,20 @@ class Renderer {
   // Visual feedback: highlight the tapped button for a few ms.
   void flashButton(int idx);
 
+  // Debug: stream the current canvas over Serial as raw RGB565, framed for the
+  // host tool (tools/hwshot.py) to reassemble into a PNG.
+  void captureScreenshot();
+
+  // Web screenshot: the HTTP task (core 0) requests a snapshot, the render loop
+  // (core 1) copies the finished canvas into a stable buffer, and the handler
+  // then serves it. Avoids reading the canvas while it's being drawn.
+  void requestWebSnapshot() { _snapReady = false; _snapReq = true; }
+  bool webShotRequested() const { return _snapReq; }
+  void takeWebSnapshot();  // main thread only
+  bool webSnapshotReady() const { return _snapReady; }
+  const uint16_t* webSnapshot() const { return _snap; }
+  void clearWebSnapshot() { _snapReady = false; }
+
  private:
   LGFX_BallV2& _lcd;
   LGFX_Sprite  _canvas;
@@ -47,6 +61,10 @@ class Renderer {
   int _pressedButton = -1;
   unsigned long _pressedUntil = 0;
   int _scrBright = 70;  // screen backlight brightness (0..100)
+
+  uint16_t* _snap = nullptr;       // stable copy of the canvas for /shot.bmp
+  volatile bool _snapReq = false;  // HTTP task -> render loop
+  volatile bool _snapReady = false;
 
   // Palette active for the current frame (day or night). Set at the top
   // of draw() and read by the helpers, instead of threading a parameter.
@@ -70,8 +88,9 @@ class Renderer {
   // 40px game sprite (2 -> 80px, matching the scene ferret in Bolinha).
   void drawGameFerret(int cx, int cy, int mode, bool faceLeft, int zoom = 1);
   void drawTennisBall(int cx, int cy, int r);
-  void drawMenu(ui::MenuPage page, int volume, int ledBright, bool wifiOn, const char* ip);
-  void drawMenuMain(bool wifiOn, const char* ip);
+  void drawMenu(ui::MenuPage page, int volume, int ledBright, int batteryPct,
+                bool wifiOn, const char* ip);
+  void drawMenuMain(int batteryPct, bool wifiOn, const char* ip);
   void drawMenuAudio(int volume);
   void drawMenuLight(int ledBright);
   void drawMenuQr(bool wifiOn, const char* ip);
@@ -85,8 +104,9 @@ class Renderer {
   void drawQr(const char* text, int topY, int cx = ui::CENTER_X, int quiet = 3);
   void drawPillButton(int x, int y, int w, int h, const char* label, uint16_t bg);
   void drawFerret(FerretActor& ferret);
+  // A battery icon + % centered horizontally, top at `topY`.
+  void drawBatteryPill(int topY, int pct, uint16_t outline, uint16_t txt);
   void drawStatBar(int x, int y, const char* label, float value);
   void drawButtons();
   void drawIcon(ui::ButtonId id, int cx, int cy);
-  void drawBattery(Battery& battery);
 };
