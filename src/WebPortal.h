@@ -95,6 +95,7 @@ class WebPortal {
   static void httpTask(void* arg);  // runs the HTTP server on core 0
   void handleRoot();
   void handleShot();  // GET /shot.bmp -> current screen as a BMP
+  void handleInfo();  // GET /info -> identity JSON (HA config flow)
   void onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len);
   void applyCommand(const String& msg);
   void broadcastState();

@@ -6,6 +6,9 @@
 #include "web_index.h"  // gzipped single-file React portal
 
 static constexpr const char* HOSTNAME = "ferret";  // -> ferret.local
+static constexpr const char* FW_VERSION = "1.0.0";
+
+static void jsonEscape(const String& in, char* out, size_t n);  // defined below
 
 void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
                       Clock* clock, Renderer* renderer, std::function<void(Action)> onAction) {
@@ -102,6 +105,7 @@ void WebPortal::handle() {
 void WebPortal::startServer() {
   _server.on("/", [this]() { handleRoot(); });
   _server.on("/shot.bmp", [this]() { handleShot(); });  // screenshot for the portal
+  _server.on("/info", [this]() { handleInfo(); });      // device info (HA discovery)
   _server.onNotFound([this]() { handleRoot(); });  // SPA fallback
   _server.begin();
   _ws.begin();
@@ -110,15 +114,29 @@ void WebPortal::startServer() {
   // this, a phone that sleeps or leaves WiFi keeps a half-open socket and
   // every broadcast BLOCKS on the dead TCP write - felt as screen freezes.
   _ws.enableHeartbeat(15000, 3000, 2);
-  // mDNS: friendly access via ferret.local (Bonjour/Avahi)
+  // mDNS: friendly access via ferret.local (Bonjour/Avahi). The _ferretball
+  // service is what the Home Assistant integration discovers via zeroconf.
   if (MDNS.begin(HOSTNAME)) {
     MDNS.addService("http", "tcp", 80);
     MDNS.addService("ws", "tcp", 81);
+    MDNS.addService("ferretball", "tcp", 81);
+    MDNS.addServiceTxt("ferretball", "tcp", "mac", WiFi.macAddress());
   }
   _serverUp = true;
   // Serve HTTP on core 0 so a big page load can't stall the render loop.
   xTaskCreatePinnedToCore(httpTask, "http", 8192, this, 1, nullptr, 0);
   Serial.printf("[web] portal at http://%s.local/  (ip %s, ws :81)\n", HOSTNAME, ip().c_str());
+}
+
+// GET /info -> device identity JSON (used by the HA config flow).
+void WebPortal::handleInfo() {
+  char name[32];
+  jsonEscape(_pet ? _pet->name() : String("Furao"), name, sizeof(name));
+  char b[192];
+  snprintf(b, sizeof(b),
+           "{\"name\":\"%s\",\"mac\":\"%s\",\"model\":\"Ball V2\",\"fw\":\"%s\"}",
+           name, WiFi.macAddress().c_str(), FW_VERSION);
+  _server.send(200, "application/json", b);
 }
 
 // Serve the React portal (single file) straight from flash, gzipped.
@@ -181,7 +199,7 @@ void WebPortal::handleShot() {
 
 void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
   if (type == WStype_CONNECTED) {
-    char buf[640];
+    char buf[768];
     stateJson(buf, sizeof(buf));
     _ws.sendTXT(num, buf);  // send the current state on connect
   } else if (type == WStype_TEXT) {
@@ -236,6 +254,19 @@ void WebPortal::applyCommand(const String& msg) {
     if (_led) _led->setBrightness(msg.substring(4).toInt());
     return;
   }
+  if (msg.startsWith("scr:")) {
+    if (_renderer) _renderer->setScreenBrightness(msg.substring(4).toInt());
+    return;
+  }
+  // Media player (HA integration): "media:play:<url>" / "media:stop".
+  if (msg.startsWith("media:play:")) {
+    if (_audio) _audio->playStream(msg.c_str() + 11);
+    return;
+  }
+  if (msg == "media:stop") {
+    if (_audio) _audio->stopStream();
+    return;
+  }
   if (_clock) {
     if (msg == "clock:on")  { _clock->setEnabled(true);  return; }
     if (msg == "clock:off") { _clock->setEnabled(false); return; }
@@ -287,9 +318,21 @@ void WebPortal::broadcastState() {
   if (!_serverUp) return;
   _dirty = false;
   if (_ws.connectedClients() == 0) return;  // nobody listening: skip the work
-  char buf[640];
+  char buf[768];
   stateJson(buf, sizeof(buf));
   _ws.broadcastTXT(buf);
+}
+
+static const char* moodName(Mood m) {
+  switch (m) {
+    case MOOD_HAPPY:   return "happy";
+    case MOOD_NEUTRAL: return "neutral";
+    case MOOD_SAD:     return "sad";
+    case MOOD_HUNGRY:  return "hungry";
+    case MOOD_SLEEPY:  return "sleepy";
+    case MOOD_DIRTY:   return "dirty";
+  }
+  return "neutral";
 }
 
 // Escapes '"' and '\' and drops control chars - the pet name is the only
@@ -313,14 +356,18 @@ void WebPortal::stateJson(char* out, size_t n) const {
   jsonEscape(p.name(), name, sizeof(name));
   snprintf(out, n,
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
-           "\"volume\":%d,\"ledBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
+           "\"mood\":\"%s\",\"media\":\"%s\","
+           "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
            "\"anim\":\"%s\",\"seq\":%u,\"flip\":%s,\"x\":%.3f,"
            "\"hunger\":%.1f,\"energy\":%.1f,\"joy\":%.1f,\"hygiene\":%.1f}",
            _screenName, _gameScore, _battery, name,
            p.sleeping() ? "true" : "false",
+           moodName(p.mood()),
+           _audio && _audio->streaming() ? "play" : "idle",
            _audio ? _audio->volume() : 0,
            _led ? _led->brightness() : 50,
+           _renderer ? _renderer->screenBrightness() : 70,
            _clock && _clock->enabled() ? "true" : "false",
            _clock ? _clock->tz().c_str() : "",
            _clock ? _clock->idleSec() : 30,

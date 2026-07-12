@@ -72,6 +72,8 @@ assets/
   mp3_to_header.py     # converte MP3 → include/*.h (PROGMEM)
   web_to_header.py     # gzipa web/dist/index.html → include/web_index.h
 web/                   # portal React (Vite + antd, single-file) → web_index.h
+custom_components/ferret_ball/  # integração Home Assistant (Python, via HACS)
+hacs.json              # metadados p/ instalar a integração via HACS custom repo
 README.md
 ```
 
@@ -145,6 +147,20 @@ README.md
     (auto-detect pelo header RIFF).
 - **LED RGB** reflete o humor (verde/amarelo/laranja/vermelho/azul/âmbar).
 - Estado salvo na NVS a cada 60s (`Pet::save()`).
+- **Home Assistant** (`custom_components/ferret_ball`, instala via HACS custom
+  repo): integração Python que fala com o **WS do device** (porta 81, mesmo
+  protocolo do portal). Descoberta por zeroconf (`_ferretball._tcp` no mDNS +
+  `GET /info` com name/mac/fw). Entidades: sensores (stats/humor/bateria/tela),
+  botões (alimentar/carinho/banho), switches (dormir, relógio), sliders (LED,
+  tela) e **media_player** (TTS/anúncios; Music Assistant via provider "Home
+  Assistant MediaPlayers", codec MP3).
+- **Media streaming**: `AudioPlayer::playStream(url)` toca stream/arquivo MP3
+  **http://** (sem https) — fonte HTTP → ring buffer 64KB em PSRAM → decoder,
+  tudo no task de áudio (core 0). Comandos WS `media:play:<url>`/`media:stop`;
+  campo `media` no estado. SFX do pet são **suprimidos** enquanto toca música
+  (um decoder só). **Pegadinha**: o IDLE0 é removido do task watchdog no boot —
+  a fonte HTTP da ESP8266Audio espera dados com `yield()` que nunca deixa o
+  idle rodar, e o WDT estourava.
 
 ## Notas de hardware (aprendidas na prática)
 
@@ -256,9 +272,12 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
       com a tensão real da bateria em repouso.
 - [ ] Animação **Death** do sheet ainda não é usada (ex.: stat zerado por
       muito tempo).
-- [ ] Ideias discutidas: **Home Assistant via MQTT** (sensores + controles),
-      **player de música** (stream HTTP pelo stack de áudio / Music Assistant),
-      **voz com IA** (mic do ES8311 + Claude API), OTA, moedas/lojinha.
+- [~] **Home Assistant**: fases 1 (entidades) e 2 (media player) prontas via a
+      integração custom. **Fase 3 pendente: voz/Assist** — habilitar o ADC do
+      ES8311 (mic) + I2S RX 16k, push-to-talk, stream do áudio pelo WS pra
+      integração rodar o pipeline do Assist (STT→IA→TTS; resposta toca pelo
+      media player). Wake word on-device (ESP-SR) é etapa futura.
+- [ ] Outras ideias: OTA, moedas/lojinha, clima real na cena.
 - [ ] Acesso remoto (fora de casa): plano discutido = Tailscale num aparelho
       ajudante + Funnel (exigiria mover o WS pra porta 80 via HTTP Upgrade).
 

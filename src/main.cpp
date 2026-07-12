@@ -491,6 +491,13 @@ void loop() {
     web.setBattery(battery.percent());
   }
 
+  // Media playback state changed (stream started/ended) -> tell HA/portal.
+  static bool lastStreaming = false;
+  if (audio.streaming() != lastStreaming) {
+    lastStreaming = audio.streaming();
+    web.pushState();
+  }
+
   web.handle();
 
   ferret.update(pet, now);

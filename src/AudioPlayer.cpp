@@ -1,9 +1,12 @@
 #include "AudioPlayer.h"
 #include <Wire.h>
 #include <Preferences.h>
+#include <esp_task_wdt.h>
 #include <AudioGeneratorMP3.h>
 #include <AudioGeneratorWAV.h>
 #include <AudioFileSourcePROGMEM.h>
+#include <AudioFileSourceHTTPStream.h>
+#include <AudioFileSourceBuffer.h>
 #include <AudioOutputI2S.h>
 #include "pins.h"
 #include "sounds/sleep_music.h"
@@ -81,8 +84,12 @@ void es8311_init() {
 
 // Convenience casts for the opaque pointers stored in the header.
 #define DEC (static_cast<AudioGenerator*>(_dec))
-#define SRC (static_cast<AudioFileSourcePROGMEM*>(_src))
+#define SRC (static_cast<AudioFileSource*>(_src))
+#define HTTPSRC (static_cast<AudioFileSource*>(_http))
 #define OUT (static_cast<AudioOutputI2S*>(_out))
+
+// Network ring buffer for streaming (PSRAM): absorbs WiFi hiccups.
+static constexpr uint32_t STREAM_BUF_BYTES = 64 * 1024;
 
 void AudioPlayer::begin() {
   // I2C bus "A" dedicated to the codec (the touch uses bus 1).
@@ -105,7 +112,14 @@ void AudioPlayer::begin() {
   p.end();
   applyGain();
 
-  xTaskCreatePinnedToCore(taskTrampoline, "audio", 8192, this, 2, nullptr, 0);
+  // ESP8266Audio's HTTP source waits for data with yield()-spins, which never
+  // let the priority-0 idle task run - streaming bursts on core 0 would trip
+  // the idle task watchdog. Unwatch IDLE0 (core 1 / render stays protected).
+  esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
+
+  // 12KB stack: the HTTP streaming source (WiFiClient + headers) needs more
+  // headroom than PROGMEM playback.
+  xTaskCreatePinnedToCore(taskTrampoline, "audio", 12288, this, 2, nullptr, 0);
 }
 
 void AudioPlayer::applyGain() {
@@ -126,12 +140,34 @@ void AudioPlayer::setVolume(int pct) {
   p.end();
 }
 
-// Request a clip (preempts the current one). Non-blocking.
+// Request a clip (preempts the current one). Non-blocking. Suppressed while a
+// media stream plays - a pet SFX must not kill the music (single decoder).
 void AudioPlayer::play(const unsigned char* data, unsigned int len) {
+  if (_streaming) return;
   portENTER_CRITICAL(&_reqMux);
   _reqData = data;
   _reqLen = len;
   _startReq = true;
+  portEXIT_CRITICAL(&_reqMux);
+}
+
+// Request an http:// MP3 stream (HA media player). Non-blocking.
+void AudioPlayer::playStream(const char* url) {
+  if (!url || strncmp(url, "http://", 7) != 0) {
+    Serial.println("[media] only http:// URLs are supported");
+    return;
+  }
+  portENTER_CRITICAL(&_reqMux);
+  strlcpy(_reqUrl, url, sizeof(_reqUrl));
+  _streamReq = true;
+  _startReq = false;  // a pending SFX loses to the stream
+  portEXIT_CRITICAL(&_reqMux);
+}
+
+void AudioPlayer::stopStream() {
+  portENTER_CRITICAL(&_reqMux);
+  _stopReq = true;
+  _streamReq = false;
   portEXIT_CRITICAL(&_reqMux);
 }
 
@@ -172,9 +208,39 @@ void AudioPlayer::startDecode(const unsigned char* data, unsigned int len) {
   _playing = true;
 }
 
+// Open an HTTP MP3 stream: net source -> PSRAM ring buffer -> MP3 decoder.
+// Runs on the audio task (network reads never touch the render loop).
+void AudioPlayer::startStream(const char* url) {
+  cleanup();
+  _streaming = false;
+  if (!_streamBuf) {
+    _streamBuf = (uint8_t*)ps_malloc(STREAM_BUF_BYTES);
+    if (!_streamBuf) _streamBuf = (uint8_t*)malloc(16 * 1024);
+    if (!_streamBuf) { Serial.println("[media] no buffer memory"); return; }
+  }
+  auto* http = new AudioFileSourceHTTPStream();
+  if (!http->open(url)) {
+    Serial.printf("[media] open failed: %s\n", url);
+    delete http;
+    return;
+  }
+  _http = http;
+  _src = new AudioFileSourceBuffer(http, _streamBuf, STREAM_BUF_BYTES);
+  _dec = new AudioGeneratorMP3();
+  if (!DEC->begin(SRC, OUT)) {
+    Serial.println("[media] decoder begin failed");
+    cleanup();
+    return;
+  }
+  _playing = true;
+  _streaming = true;
+  Serial.printf("[media] streaming %s\n", url);
+}
+
 void AudioPlayer::cleanup() {
   if (_dec) { DEC->stop(); delete DEC; _dec = nullptr; }
   if (_src) { delete SRC; _src = nullptr; }
+  if (_http) { delete HTTPSRC; _http = nullptr; }
 }
 
 void AudioPlayer::taskTrampoline(void* arg) {
@@ -183,22 +249,41 @@ void AudioPlayer::taskTrampoline(void* arg) {
 
 void AudioPlayer::taskLoop() {
   for (;;) {
-    // Snapshot the pending request atomically, then decode outside the lock.
+    // Snapshot the pending requests atomically, then act outside the lock.
     const unsigned char* data = nullptr;
     unsigned int len = 0;
+    bool streamNow = false, stopNow = false;
+    char url[sizeof(_reqUrl)];
     portENTER_CRITICAL(&_reqMux);
-    if (_startReq) {
+    if (_stopReq) { _stopReq = false; stopNow = true; }
+    if (_streamReq) {
+      _streamReq = false;
+      streamNow = true;
+      memcpy(url, _reqUrl, sizeof(url));
+    } else if (_startReq) {
       _startReq = false;
       data = _reqData;
       len = _reqLen;
     }
     portEXIT_CRITICAL(&_reqMux);
-    if (data) startDecode(data, len);
+
+    if (stopNow && _streaming) {
+      cleanup();
+      _playing = false;
+      _streaming = false;
+      Serial.println("[media] stopped");
+    }
+    if (streamNow) startStream(url);
+    else if (data) startDecode(data, len);
 
     if (_playing) {
-      if (!DEC->loop()) {  // clip finished
+      if (!DEC->loop()) {  // clip/stream finished (or the stream dropped)
         cleanup();
         _playing = false;
+        if (_streaming) {
+          _streaming = false;
+          Serial.println("[media] stream ended");
+        }
       }
     }
     vTaskDelay(1);  // yield (1 tick)

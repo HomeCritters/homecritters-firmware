@@ -27,6 +27,7 @@ void DebugConsole::printHelp() {
   Serial.println(F("  vol:N | led:N | scr:N        (0..100)"));
   Serial.println(F("  stats:H,E,J,Hy               (0..100 each)"));
   Serial.println(F("  bat                  - battery voltage + percent"));
+  Serial.println(F("  play:<http-mp3-url> | mstop  - media stream test"));
 }
 
 void DebugConsole::dispatch(const String& c) {
@@ -41,6 +42,8 @@ void DebugConsole::dispatch(const String& c) {
 
   if (_onInteraction) _onInteraction();  // wakes the idle clock, like a touch
 
+  if (c.startsWith("play:")) { _audio->playStream(c.c_str() + 5); return; }  // http mp3 stream
+  if (c == "mstop")          { _audio->stopStream(); return; }
   if (c.startsWith("vol:")) { _audio->setVolume(c.substring(4).toInt()); return; }
   if (c.startsWith("led:")) { _led->setBrightness(c.substring(4).toInt()); return; }
   if (c.startsWith("scr:")) { _renderer->setScreenBrightness(c.substring(4).toInt()); return; }

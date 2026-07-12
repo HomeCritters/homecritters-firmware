@@ -35,6 +35,13 @@ class AudioPlayer {
   void playSimon(int color);  // Genius tone (0=green 1=red 2=yellow 3=blue)
   void playBuzzer();     // Genius wrong answer
 
+  // --- media streaming (HA media player / Music Assistant / TTS) ---
+  // Plays an http:// MP3 stream/file (no https). While a stream is active,
+  // pet SFX are suppressed (single-decoder policy) - stopStream() releases it.
+  void playStream(const char* url);
+  void stopStream();
+  bool streaming() const { return _streaming; }
+
   // Volume 0..100 (persisted to NVS, perceptual curve).
   void setVolume(int pct);
   int volume() const { return _volume; }
@@ -48,6 +55,7 @@ class AudioPlayer {
   static void taskTrampoline(void* arg);
   void taskLoop();
   void startDecode(const unsigned char* data, unsigned int len);
+  void startStream(const char* url);  // audio task only
   void cleanup();
 
   // Request handoff main loop (core 1) -> audio task (core 0). The spinlock
@@ -57,10 +65,16 @@ class AudioPlayer {
   bool _startReq = false;
   const unsigned char* _reqData = nullptr;
   unsigned int _reqLen = 0;
+  bool _streamReq = false;
+  bool _stopReq = false;
+  char _reqUrl[224] = {0};
 
-  bool _playing = false;  // audio-task only
+  bool _playing = false;           // audio-task only
+  volatile bool _streaming = false;  // read by main for state reporting
 
-  void* _dec = nullptr;  // AudioGenerator* (MP3 or WAV, opaque in the header)
-  void* _src = nullptr;  // AudioFileSourcePROGMEM*
-  void* _out = nullptr;  // AudioOutputI2S*
+  void* _dec = nullptr;   // AudioGenerator* (MP3 or WAV, opaque in the header)
+  void* _src = nullptr;   // AudioFileSource* (PROGMEM or net buffer)
+  void* _http = nullptr;  // AudioFileSourceHTTPStream* (streaming only)
+  void* _out = nullptr;   // AudioOutputI2S*
+  uint8_t* _streamBuf = nullptr;  // PSRAM ring for the buffered net source
 };

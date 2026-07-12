@@ -1,0 +1,24 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "description": "IP ou hostname do Ferret Ball (ex.: ferret.local)",
+        "data": {
+          "host": "Host"
+        }
+      },
+      "confirm": {
+        "title": "Ferret Ball encontrado",
+        "description": "Adicionar {name} ao Home Assistant?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Não foi possível conectar ao dispositivo"
+    },
+    "abort": {
+      "already_configured": "Este Ferret Ball já está configurado",
+      "cannot_connect": "Não foi possível conectar ao dispositivo"
+    }
+  }
+}
