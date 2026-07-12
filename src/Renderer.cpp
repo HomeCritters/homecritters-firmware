@@ -447,8 +447,8 @@ void Renderer::drawMenuQr(bool wifiOn, const char* ip) {
     char urlIp[40];
     snprintf(urlIp, sizeof(urlIp), "http://%s", ip);
     _canvas.setTextColor(menu::AP_NAME);
-    _canvas.setCursor(CENTER_X - _canvas.textWidth("http://ferret.local") / 2, 144);
-    _canvas.print("http://ferret.local");
+    _canvas.setCursor(CENTER_X - _canvas.textWidth("http://critter.local") / 2, 144);
+    _canvas.print("http://critter.local");
     _canvas.setCursor(CENTER_X - _canvas.textWidth(urlIp) / 2, 154);
     _canvas.print(urlIp);
   } else {

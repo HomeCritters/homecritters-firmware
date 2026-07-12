@@ -5,7 +5,7 @@
 #include "Renderer.h"
 #include "web_index.h"  // gzipped single-file React portal
 
-static constexpr const char* HOSTNAME = "ferret";  // -> ferret.local
+static constexpr const char* HOSTNAME = "critter";  // -> critter.local
 static constexpr const char* FW_VERSION = "1.0.0";
 
 static void jsonEscape(const String& in, char* out, size_t n);  // defined below
@@ -114,13 +114,13 @@ void WebPortal::startServer() {
   // this, a phone that sleeps or leaves WiFi keeps a half-open socket and
   // every broadcast BLOCKS on the dead TCP write - felt as screen freezes.
   _ws.enableHeartbeat(15000, 3000, 2);
-  // mDNS: friendly access via ferret.local (Bonjour/Avahi). The _ferretball
+  // mDNS: friendly access via critter.local (Bonjour/Avahi). The _critter
   // service is what the Home Assistant integration discovers via zeroconf.
   if (MDNS.begin(HOSTNAME)) {
     MDNS.addService("http", "tcp", 80);
     MDNS.addService("ws", "tcp", 81);
-    MDNS.addService("ferretball", "tcp", 81);
-    MDNS.addServiceTxt("ferretball", "tcp", "mac", WiFi.macAddress());
+    MDNS.addService("critter", "tcp", 81);
+    MDNS.addServiceTxt("critter", "tcp", "mac", WiFi.macAddress());
   }
   _serverUp = true;
   // Serve HTTP on core 0 so a big page load can't stall the render loop.

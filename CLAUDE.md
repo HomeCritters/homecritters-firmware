@@ -72,10 +72,12 @@ assets/
   mp3_to_header.py     # converte MP3 → include/*.h (PROGMEM)
   web_to_header.py     # gzipa web/dist/index.html → include/web_index.h
 web/                   # portal React (Vite + antd, single-file) → web_index.h
-custom_components/ferret_ball/  # integração Home Assistant (Python, via HACS)
-hacs.json              # metadados p/ instalar a integração via HACS custom repo
 README.md
 ```
+
+A integração do Home Assistant vive num **repo separado**
+(`HomeCritters/homecritters-ha-plugin`, público p/ HACS) — só o firmware/
+portal/tools ficam aqui.
 
 ## Como funciona hoje
 
@@ -147,13 +149,14 @@ README.md
     (auto-detect pelo header RIFF).
 - **LED RGB** reflete o humor (verde/amarelo/laranja/vermelho/azul/âmbar).
 - Estado salvo na NVS a cada 60s (`Pet::save()`).
-- **Home Assistant** (`custom_components/ferret_ball`, instala via HACS custom
-  repo): integração Python que fala com o **WS do device** (porta 81, mesmo
-  protocolo do portal). Descoberta por zeroconf (`_ferretball._tcp` no mDNS +
-  `GET /info` com name/mac/fw). Entidades: sensores (stats/humor/bateria/tela),
-  botões (alimentar/carinho/banho), switches (dormir, relógio), sliders (LED,
-  tela) e **media_player** (TTS/anúncios; Music Assistant via provider "Home
-  Assistant MediaPlayers", codec MP3).
+- **Home Assistant** (repo à parte `homecritters-ha-plugin`, domínio
+  `homecritters`, instala via HACS): integração Python que fala com o **WS do
+  device** (porta 81, mesmo protocolo do portal). Descoberta por zeroconf
+  (`_critter._tcp` no mDNS + `GET /info` com name/mac/fw). Entidades: sensores
+  (stats/humor/bateria/tela), botões (alimentar/carinho/banho), switches
+  (dormir, relógio), sliders (LED, tela) e **media_player** (TTS/anúncios;
+  Music Assistant via provider "Home Assistant MediaPlayers", codec MP3).
+  Nomes das entidades em EN + tradução PT.
 - **Media streaming**: `AudioPlayer::playStream(url)` toca stream/arquivo MP3
   **http://** (sem https) — fonte HTTP → ring buffer 64KB em PSRAM → decoder,
   tudo no task de áudio (core 0). Comandos WS `media:play:<url>`/`media:stop`;

@@ -57,7 +57,7 @@ class WebPortal {
   void process();              // pump the portal while configuring
   void cancelConfig();         // abort configuration (Exit button)
   bool configuring() const { return _configuring; }
-  const char* apName() const { return "Furao-Ball"; }
+  const char* apName() const { return "HomeCritters"; }
 
   bool connected() const;
   String ip() const;

@@ -414,7 +414,7 @@ static bool consoleNavigate(const String& c) {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n[tamagotchi] boot - ferret Ball V2");
+  Serial.println("\n[homecritters] boot");
 
   renderer.begin();
   led.begin();
@@ -433,7 +433,7 @@ void setup() {
 
   wasSleeping = pet.sleeping();
   lastTickMs = lastSaveMs = lastInteractionMs = millis();
-  Serial.printf("[tamagotchi] ready. battery ~%d%%\n", battery.percent());
+  Serial.printf("[homecritters] ready. battery ~%d%%\n", battery.percent());
 }
 
 void loop() {
