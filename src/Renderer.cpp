@@ -522,7 +522,12 @@ void Renderer::drawGameTile(int x, int y, const char* label, char icon, uint16_t
   _canvas.fillRoundRect(x, y, GAME_TILE_W, GAME_TILE_H, 12, menu::CELL_BG);
   _canvas.drawRoundRect(x, y, GAME_TILE_W, GAME_TILE_H, 12, BTN_BORDER);
   const int cx = x + GAME_TILE_W / 2, cy = y + 34;
-  if (icon == 'j') {  // Doodle Jump: the doodler bouncing on a platform
+  if (icon == 's') {  // Genius: the 4-color wheel
+    _canvas.fillArc(cx, cy, 16, 6, 182, 268, rgb565(60, 200, 80));   // TL green
+    _canvas.fillArc(cx, cy, 16, 6, 272, 358, rgb565(230, 60, 50));   // TR red
+    _canvas.fillArc(cx, cy, 16, 6, 92, 178, rgb565(235, 210, 50));   // BL yellow
+    _canvas.fillArc(cx, cy, 16, 6, 2, 88, rgb565(70, 120, 235));     // BR blue
+  } else if (icon == 'j') {  // Doodle Jump: the doodler bouncing on a platform
     const uint16_t plat = rgb565(45, 140, 70);  // platform (darker green)
     _canvas.fillRoundRect(cx - 16, cy + 13, 32, 6, 3, plat);
     _canvas.fillTriangle(cx - 4, cy - 15, cx + 4, cy - 15, cx, cy - 20, iconColor);  // jump arrow
@@ -554,11 +559,12 @@ void Renderer::drawGamesMenu() {
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
   const char* title = "Jogos";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 20);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
   _canvas.print(title);
 
-  drawGameTile(GAME_COL_L, GAME_TILE_Y, "Jump!", 'j', menu::IC_DOODLE);
-  drawGameTile(GAME_COL_R, GAME_TILE_Y, "Bolinha", 'b', menu::IC_BALL);
+  drawGameTile(GAME_COL_L, GAME_ROW_1, "Jump!", 'j', menu::IC_DOODLE);
+  drawGameTile(GAME_COL_R, GAME_ROW_1, "Bolinha", 'b', menu::IC_BALL);
+  drawGameTile(GAME_COL_C, GAME_ROW_2, "Genius", 's', 0);
 
   drawLeftHandle();  // pull (or tap) the left tab to go back to the pet
   _canvas.pushSprite(0, 0);
@@ -672,7 +678,7 @@ void Renderer::drawDoodle(DoodleGame& game) {
 
 // The game ferret with a mode-appropriate animation, centered at (cx,cy).
 // zoom>1 nearest-scales the 40px sprite (used at 2x in Bolinha).
-void Renderer::drawGameFerret(int cx, int cy, int mode, bool faceLeft, int zoom) {
+void Renderer::drawGameFerret(int cx, int cy, int mode, bool faceLeft, float zoom) {
   const uint16_t* fr;
   if (mode == 2) {        // jumping (celebration)
     const int idx = (millis() / 80) % FERRET_G_JUMP_FRAMES;
@@ -684,13 +690,13 @@ void Renderer::drawGameFerret(int cx, int cy, int mode, bool faceLeft, int zoom)
     const int idx = (millis() / 180) % FERRET_G_IDLE_FRAMES;
     fr = faceLeft ? &ferret_g_idle_l[idx][0] : &ferret_g_idle[idx][0];
   }
-  if (zoom <= 1) {
+  if (zoom <= 1.01f) {
     _canvas.pushImage(cx - FERRET_G_FRAME_W / 2, cy - FERRET_G_FRAME_H / 2,
                       FERRET_G_FRAME_W, FERRET_G_FRAME_H, fr,
                       (uint16_t)FERRET_G_TRANSPARENT_KEY);
   } else {
     _canvas.pushImageRotateZoom(cx, cy, FERRET_G_FRAME_W / 2.0f, FERRET_G_FRAME_H / 2.0f,
-                                0.0f, (float)zoom, (float)zoom,
+                                0.0f, zoom, zoom,
                                 FERRET_G_FRAME_W, FERRET_G_FRAME_H, fr,
                                 (uint16_t)FERRET_G_TRANSPARENT_KEY);
   }
@@ -742,6 +748,88 @@ void Renderer::drawBall(BallGame& game) {
     _canvas.setTextColor(TFT_WHITE);
     _canvas.setCursor(CENTER_X - hw / 2, 204);
     _canvas.print(hint);
+  }
+
+  _canvas.pushSprite(0, 0);
+}
+
+void Renderer::drawSimon(SimonGame& game) {
+  _canvas.fillScreen(menu::BG);
+
+  // Four diagonal quadrant pads on a ring (classic Genius layout).
+  // Index: 0=TL green, 1=TR red, 2=BL yellow, 3=BR blue.
+  static const uint16_t DIM[4] = {
+    rgb565(22, 92, 38), rgb565(115, 28, 26), rgb565(120, 102, 18), rgb565(24, 48, 115)};
+  static const uint16_t LIT[4] = {
+    rgb565(70, 240, 100), rgb565(255, 70, 55), rgb565(255, 225, 50), rgb565(80, 140, 255)};
+  // LovyanGFX angles: 0 deg at 3 o'clock, clockwise. 4-deg gaps between pads.
+  static const int16_t A0[4] = {182, 272, 92, 2};
+  static const int16_t A1[4] = {268, 358, 178, 88};
+  for (int i = 0; i < 4; i++) {
+    _canvas.fillArc(CENTER_X, CENTER_Y, SIMON_RING_OUTER, SIMON_RING_INNER,
+                    A0[i], A1[i], game.litColor() == i ? LIT[i] : DIM[i]);
+  }
+
+  // Center: big score up top, then Leon hopping, a hint and the exit button.
+  char sc[8];
+  snprintf(sc, sizeof(sc), "%d", game.score());
+  _canvas.setTextSize(3);
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(sc) / 2, 44);
+  _canvas.print(sc);
+
+  // Leon hops in place (jump sprite while airborne). Bigger + centered.
+  const unsigned long t = millis() % 900;
+  int hop = 0, mode = 0;
+  if (t < 520) { hop = (int)(sinf((t / 520.0f) * 3.14159f) * 18.0f); mode = 2; }
+  drawGameFerret(CENTER_X, 104 - hop, mode, false, 1.6f);
+
+  _canvas.setTextSize(2);
+  _canvas.setTextColor(menu::TEXT_DIM);
+  const char* hint = game.state() == SimonGame::SHOWING ? "Observe..."
+                   : game.state() == SimonGame::WAITING ? "Sua vez!" : "";
+  if (*hint) {
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(hint) / 2, 140);
+    _canvas.print(hint);
+  }
+
+  // exit button (x) at the bottom of the inner circle
+  _canvas.fillCircle(CENTER_X, SIMON_EXIT_CY, 15, rgb565(62, 50, 92));
+  _canvas.drawCircle(CENTER_X, SIMON_EXIT_CY, 15, BTN_BORDER);
+  for (int o = -1; o <= 0; o++) {  // 2px-thick "x"
+    _canvas.drawLine(CENTER_X - 6 + o, SIMON_EXIT_CY - 6, CENTER_X + 6 + o, SIMON_EXIT_CY + 6, TFT_WHITE);
+    _canvas.drawLine(CENTER_X + 6 + o, SIMON_EXIT_CY - 6, CENTER_X - 6 + o, SIMON_EXIT_CY + 6, TFT_WHITE);
+  }
+
+  if (game.gameOver()) {
+    _canvas.fillRoundRect(34, 86, 172, 72, 10, menu::CLOCK_BG);
+    _canvas.drawRoundRect(34, 86, 172, 72, 10, menu::CLOCK_EDGE);
+    _canvas.setTextColor(TFT_WHITE);
+    _canvas.setTextSize(2);
+    const char* go = "Errou!";
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(go) / 2, 94);
+    _canvas.print(go);
+    _canvas.setTextSize(1);
+    _canvas.setTextColor(menu::CLOCK_DATE);
+    char l[24];
+    snprintf(l, sizeof(l), "Pontos: %d", game.score());
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(l) / 2, 116);
+    _canvas.print(l);
+    if (game.newRecord()) {
+      _canvas.setTextColor(rgb565(250, 210, 60));
+      const char* nr = "NOVO RECORDE!";
+      _canvas.setCursor(CENTER_X - _canvas.textWidth(nr) / 2, 130);
+      _canvas.print(nr);
+      _canvas.setTextColor(menu::CLOCK_DATE);
+    } else {
+      char r[24];
+      snprintf(r, sizeof(r), "Recorde: %d", game.hiScore());
+      _canvas.setCursor(CENTER_X - _canvas.textWidth(r) / 2, 130);
+      _canvas.print(r);
+    }
+    const char* h = "toque p/ sair";
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(h) / 2, 144);
+    _canvas.print(h);
   }
 
   _canvas.pushSprite(0, 0);

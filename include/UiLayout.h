@@ -141,16 +141,43 @@ inline UiHit menuHit(MenuPage page, int32_t tx, int32_t ty) {
 }
 
 // ------------------- Games menu (full screen) -------------------
-// Two square tiles side by side (a grid row): Doodle Jump and Bolinha.
+// Three square tiles: Jump! + Bolinha on top, Genius centered below.
 // Back to the pet scene via the LEFT-edge pull tab (no Voltar button).
-constexpr int16_t GAME_TILE_W = 88, GAME_TILE_H = 88, GAME_TILE_Y = 76;
+constexpr int16_t GAME_TILE_W = 88, GAME_TILE_H = 88;
+constexpr int16_t GAME_ROW_1 = 38, GAME_ROW_2 = 134;
 constexpr int16_t GAME_COL_L = 24, GAME_COL_R = 128;
+constexpr int16_t GAME_COL_C = (SCREEN_W - GAME_TILE_W) / 2;
 
 inline bool inGameDoodle(int32_t tx, int32_t ty) {
-  return inRect(tx, ty, GAME_COL_L, GAME_TILE_Y, GAME_TILE_W, GAME_TILE_H);
+  return inRect(tx, ty, GAME_COL_L, GAME_ROW_1, GAME_TILE_W, GAME_TILE_H);
 }
 inline bool inGameBall(int32_t tx, int32_t ty) {
-  return inRect(tx, ty, GAME_COL_R, GAME_TILE_Y, GAME_TILE_W, GAME_TILE_H);
+  return inRect(tx, ty, GAME_COL_R, GAME_ROW_1, GAME_TILE_W, GAME_TILE_H);
+}
+inline bool inGameSimon(int32_t tx, int32_t ty) {
+  return inRect(tx, ty, GAME_COL_C, GAME_ROW_2, GAME_TILE_W, GAME_TILE_H);
+}
+
+// ------------------- Genius / Simon (full screen) -------------------
+// Four diagonal quadrant arcs around the edge (a color ring); the center
+// holds the score, the ferret and the exit button.
+constexpr int16_t SIMON_RING_INNER = 80;   // ring inner radius (draw)
+constexpr int16_t SIMON_RING_OUTER = 118;  // ring outer radius (draw)
+constexpr int16_t SIMON_EXIT_CY = 182;     // exit button center y (bottom gap)
+
+// Which color pad is at (tx,ty): 0=TL green, 1=TR red, 2=BL yellow,
+// 3=BR blue, -1 = center area (not a pad). Forgiving on the outer side.
+inline int simonColorAt(int32_t tx, int32_t ty) {
+  const int32_t dx = tx - CENTER_X, dy = ty - CENTER_Y;
+  if (dx * dx + dy * dy < 76 * 76) return -1;  // center: ferret/score/exit
+  if (dx < 0 && dy < 0) return 0;
+  if (dx >= 0 && dy < 0) return 1;
+  if (dx < 0) return 2;
+  return 3;
+}
+inline bool inSimonExit(int32_t tx, int32_t ty) {
+  const int32_t dx = tx - CENTER_X, dy = ty - SIMON_EXIT_CY;
+  return dx * dx + dy * dy <= 20 * 20;
 }
 
 // In a game: small back button in the top-left corner (rest of the screen

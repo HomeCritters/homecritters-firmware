@@ -8,6 +8,7 @@
 #include "Clock.h"
 #include "DoodleGame.h"
 #include "BallGame.h"
+#include "SimonGame.h"
 
 // ============================================================
 // Renderer: owns the display and the canvas (double buffer) and
@@ -36,6 +37,7 @@ class Renderer {
   void drawGamesMenu();
   void drawDoodle(DoodleGame& game);
   void drawBall(BallGame& game);
+  void drawSimon(SimonGame& game);
 
   // Visual feedback: highlight the tapped button for a few ms.
   void flashButton(int idx);
@@ -87,7 +89,7 @@ class Renderer {
   void drawDoodleFerret(int cx, int cy, bool faceLeft);
   // mode: 0 = idle, 1 = walking, 2 = jumping (celebration). zoom scales the
   // 40px game sprite (2 -> 80px, matching the scene ferret in Bolinha).
-  void drawGameFerret(int cx, int cy, int mode, bool faceLeft, int zoom = 1);
+  void drawGameFerret(int cx, int cy, int mode, bool faceLeft, float zoom = 1.0f);
   void drawTennisBall(int cx, int cy, int r);
   void drawMenu(ui::MenuPage page, int volume, int ledBright, int batteryPct,
                 bool wifiOn, const char* ip);

@@ -21,12 +21,18 @@ class StatusLed {
   void startDeath();             // begin the game-over red effect
   void endGame();                // leaving the game -> back to mood
 
+  // Game color override (Genius): show a solid color / go dark at max
+  // brightness until endGame() releases the LED back to the mood.
+  void gameColor(uint8_t r, uint8_t g, uint8_t b);
+  void gameOff();
+
  private:
   Adafruit_NeoPixel _led{1, PIN_RGB_LED, NEO_GRB + NEO_KHZ800};
   Mood _last = MOOD_HAPPY;
   bool _init = false;
   int _brightPct = 50;
   bool _death = false;
+  bool _override = false;    // game color override active (Genius)
   bool _deathOn = false;     // current blink phase (avoid redundant writes)
   bool _deathShown = false;  // has the current phase been rendered yet?
   unsigned long _deathStart = 0;

@@ -21,7 +21,7 @@ void DebugConsole::begin(Pet* pet, Battery* battery, AudioPlayer* audio, StatusL
 void DebugConsole::printHelp() {
   Serial.println(F("[console] commands:"));
   Serial.println(F("  shot                 - screenshot the current screen"));
-  Serial.println(F("  pet | games | doodle | ball"));
+  Serial.println(F("  pet | games | doodle | ball | simon"));
   Serial.println(F("  menu[:main|audio|luz|qr]"));
   Serial.println(F("  feed | pat | clean | sleep"));
   Serial.println(F("  vol:N | led:N | scr:N        (0..100)"));

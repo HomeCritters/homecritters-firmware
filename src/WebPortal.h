@@ -29,7 +29,7 @@ class Renderer;  // for the /shot.bmp screenshot endpoint
 class WebPortal {
  public:
   // Phone game controller: navigation requested over WebSocket.
-  enum GameNav { NAV_NONE, NAV_START, NAV_BALL, NAV_BACK };
+  enum GameNav { NAV_NONE, NAV_START, NAV_BALL, NAV_SIMON, NAV_BACK };
 
   void begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
              Clock* clock, Renderer* renderer, std::function<void(Action)> onAction);
@@ -50,6 +50,8 @@ class WebPortal {
   // Pending Bolinha throw from the phone (normalized swipe). True once; fills
   // nx/ny in roughly [-1..1] (ny negative = upward).
   bool consumeBallThrow(float& nx, float& ny);
+  // Pending Genius color press from the phone (0..3). True once.
+  bool consumeSimonPress(int& color);
 
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
@@ -86,6 +88,7 @@ class WebPortal {
   volatile GameNav _navReq = NAV_NONE;        // pending start/back request
   volatile bool _throwReq = false;            // pending Bolinha throw
   volatile float _throwNx = 0, _throwNy = 0;  // normalized swipe of that throw
+  volatile int _simonPress = -1;              // pending Genius color press
 
   void startServer();
   void endConfig();  // leave config mode + reclaim port 80

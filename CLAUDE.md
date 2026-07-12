@@ -43,9 +43,10 @@ include/
   LGFX_BallV2.h        # config do LovyanGFX (display + touch)
   ferret_anim.h        # frames do furão em RGB565, 80px, cena (gerado)
   ferret_game.h        # sprite do furão 40px p/ o mini-game (gerado)
-  sounds/              # TODOS os áudios (MP3→PROGMEM, gerados): sleep_music.h
+  sounds/              # TODOS os áudios (MP3/WAV→PROGMEM, gerados): sleep_music
                        # + sfx_eat/drink/tap/wake/jump/boost/crumble/record/
-                       #   death/throw/camera/click.h
+                       #   death/throw/camera/click/buzzer.h
+                       # + simon_green/red/yellow/blue.h (tons WAV gerados)
   web_index.h          # portal React (single-file, gzip) em PROGMEM (gerado)
 src/
   main.cpp             # orquestração: junta os módulos e roda o loop
@@ -60,6 +61,7 @@ src/
   Clock.{h,cpp}        # relógio NTP (timezone POSIX, 12/24h, ociosidade)
   DoodleGame.{h,cpp}   # mini-game estilo doodle jump (física; Renderer desenha)
   BallGame.{h,cpp}     # mini-game "Bolinha" (fetch: arremesso + furão busca)
+  SimonGame.{h,cpp}    # mini-game "Genius" (sequência de cores: arcos + LED + tons)
   DebugConsole.{h,cpp} # console serial de debug (comandos de módulo; navegação
                        # vai pro main via callback)
   WebPortal.{h,cpp}    # WiFiManager + WebServer + WebSocket + mDNS (portal)
@@ -134,6 +136,13 @@ README.md
     (física: gravidade, quiques, atrito); o furão passeia, persegue e pega a
     bola **no chão** (nunca no ar), comemora e ela volta. Cena da floresta de
     fundo; furão 2x (80px) com walk/idle.
+  - **Genius** (`SimonGame`): 4 arcos coloridos em quadrantes diagonais na
+    borda da tela redonda; o aparelho toca a sequência (arco aceso + **LED RGB
+    na cor** + **um tom por cor** — WAVs gerados com as frequências do Simon
+    original) e o jogador repete tocando os arcos ou os pads do portal. Centro:
+    score, Leon, dica e botão ✕ de sair. Erro/timeout = buzzer + LED de morte;
+    recorde na NVS (`game/shs`). O `AudioPlayer` decodifica **WAV e MP3**
+    (auto-detect pelo header RIFF).
 - **LED RGB** reflete o humor (verde/amarelo/laranja/vermelho/azul/âmbar).
 - Estado salvo na NVS a cada 60s (`Pet::save()`).
 

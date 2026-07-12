@@ -269,6 +269,45 @@ function BallPad({ send, score, onBack }) {
   );
 }
 
+// Genius controller: 4 color pads mirroring the hardware arcs. Each press
+// sends "simon:<i>"; the device lights the arc + LED and plays the tone.
+const SIMON_PAD_COLORS = ['#3fca5e', '#e6483a', '#efd23e', '#4a7be6'];
+const SIMON_PAD_LABELS = ['Verde', 'Vermelho', 'Amarelo', 'Azul'];
+function SimonPad({ send, score, onBack }) {
+  return (
+    <Card size="small" style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <Text strong style={{ fontSize: 16 }}>🧠 Genius</Text>
+        <Text strong style={{ fontSize: 18 }}>{score ?? 0}</Text>
+      </div>
+      <Row gutter={[10, 10]}>
+        {SIMON_PAD_COLORS.map((c, i) => (
+          <Col span={12} key={i}>
+            <button
+              type="button"
+              aria-label={SIMON_PAD_LABELS[i]}
+              onPointerDown={() => send('simon:' + i)}
+              style={{
+                width: '100%',
+                height: 96,
+                borderRadius: 14,
+                border: '2px solid rgba(0,0,0,0.25)',
+                background: c,
+                cursor: 'pointer',
+                touchAction: 'manipulation',
+                userSelect: 'none',
+              }}
+            />
+          </Col>
+        ))}
+      </Row>
+      <Button block onClick={onBack} style={{ marginTop: 12, height: 46 }}>
+        ← Voltar
+      </Button>
+    </Card>
+  );
+}
+
 // The "stage" where the ferret walks sideways, mirroring the hardware
 // position. The transition only runs while WALKING; standing still it
 // snaps (otherwise it would keep sliding during idle).
@@ -360,6 +399,7 @@ export default function App() {
   const val = (k) => Math.round(state ? state[k] : 0);
   const playing = state?.screen === 'doodle';
   const playingBall = state?.screen === 'ball';
+  const playingSimon = state?.screen === 'simon';
 
   return (
     <ConfigProvider
@@ -412,6 +452,9 @@ export default function App() {
         ) : playingBall ? (
           /* Bolinha controller: swipe up to throw the ball on the hardware */
           <BallPad send={send} score={state?.score} onBack={() => send('game:back')} />
+        ) : playingSimon ? (
+          /* Genius controller: 4 color pads, presses mirror on the hardware */
+          <SimonPad send={send} score={state?.score} onBack={() => send('game:back')} />
         ) : (
           <>
             {/* 2x2 stat bars, hardware style */}
@@ -449,15 +492,20 @@ export default function App() {
 
             {/* Game launchers: open a game on the hardware, play from here */}
             <Card size="small" style={{ marginTop: 12 }}>
-              <Row gutter={[12, 12]}>
-                <Col span={12}>
-                  <Button block disabled={!online} onClick={() => send('game:start')} style={{ height: 48, fontSize: 16 }}>
+              <Row gutter={[10, 10]}>
+                <Col span={8}>
+                  <Button block disabled={!online} onClick={() => send('game:start')} style={{ height: 48, fontSize: 14 }}>
                     🎮 Jump!
                   </Button>
                 </Col>
-                <Col span={12}>
-                  <Button block disabled={!online} onClick={() => send('game:ball')} style={{ height: 48, fontSize: 16 }}>
+                <Col span={8}>
+                  <Button block disabled={!online} onClick={() => send('game:ball')} style={{ height: 48, fontSize: 14 }}>
                     🎾 Bolinha
+                  </Button>
+                </Col>
+                <Col span={8}>
+                  <Button block disabled={!online} onClick={() => send('game:simon')} style={{ height: 48, fontSize: 14 }}>
+                    🧠 Genius
                   </Button>
                 </Col>
               </Row>

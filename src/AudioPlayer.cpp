@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <Preferences.h>
 #include <AudioGeneratorMP3.h>
+#include <AudioGeneratorWAV.h>
 #include <AudioFileSourcePROGMEM.h>
 #include <AudioOutputI2S.h>
 #include "pins.h"
@@ -18,6 +19,11 @@
 #include "sounds/sfx_throw.h"
 #include "sounds/sfx_camera.h"
 #include "sounds/sfx_click.h"
+#include "sounds/simon_green.h"
+#include "sounds/simon_red.h"
+#include "sounds/simon_yellow.h"
+#include "sounds/simon_blue.h"
+#include "sounds/sfx_buzzer.h"
 
 // ============================================================
 // Minimal ES8311 driver (playback/DAC only).
@@ -74,7 +80,7 @@ void es8311_init() {
 }  // namespace
 
 // Convenience casts for the opaque pointers stored in the header.
-#define MP3 (static_cast<AudioGeneratorMP3*>(_mp3))
+#define DEC (static_cast<AudioGenerator*>(_dec))
 #define SRC (static_cast<AudioFileSourcePROGMEM*>(_src))
 #define OUT (static_cast<AudioOutputI2S*>(_out))
 
@@ -142,18 +148,32 @@ void AudioPlayer::playDeath()     { play(sfx_death_mp3,    sfx_death_mp3_len); }
 void AudioPlayer::playThrow()     { play(sfx_throw_mp3,    sfx_throw_mp3_len); }
 void AudioPlayer::playCamera()    { play(sfx_camera_mp3,   sfx_camera_mp3_len); }
 void AudioPlayer::playClick()     { play(sfx_click_mp3,    sfx_click_mp3_len); }
+void AudioPlayer::playBuzzer()    { play(sfx_buzzer_mp3,   sfx_buzzer_mp3_len); }
+
+void AudioPlayer::playSimon(int color) {
+  switch (color) {
+    case 0: play(simon_green_wav,  simon_green_wav_len);  break;
+    case 1: play(simon_red_wav,    simon_red_wav_len);    break;
+    case 2: play(simon_yellow_wav, simon_yellow_wav_len); break;
+    case 3: play(simon_blue_wav,   simon_blue_wav_len);   break;
+  }
+}
 
 void AudioPlayer::startDecode(const unsigned char* data, unsigned int len) {
   cleanup();
   if (!data || len == 0) return;
   _src = new AudioFileSourcePROGMEM(data, len);
-  _mp3 = new AudioGeneratorMP3();
-  MP3->begin(SRC, OUT);
+  // Pick the decoder by the magic bytes: "RIFF" = WAV (the generated Genius
+  // tones), anything else = MP3.
+  const bool wav = len > 4 && data[0] == 'R' && data[1] == 'I' &&
+                   data[2] == 'F' && data[3] == 'F';
+  _dec = wav ? (void*)new AudioGeneratorWAV() : (void*)new AudioGeneratorMP3();
+  DEC->begin(SRC, OUT);
   _playing = true;
 }
 
 void AudioPlayer::cleanup() {
-  if (_mp3) { MP3->stop(); delete MP3; _mp3 = nullptr; }
+  if (_dec) { DEC->stop(); delete DEC; _dec = nullptr; }
   if (_src) { delete SRC; _src = nullptr; }
 }
 
@@ -176,7 +196,7 @@ void AudioPlayer::taskLoop() {
     if (data) startDecode(data, len);
 
     if (_playing) {
-      if (!MP3->loop()) {  // clip finished
+      if (!DEC->loop()) {  // clip finished
         cleanup();
         _playing = false;
       }

@@ -40,6 +40,7 @@ void StatusLed::render(const uint8_t* c, uint8_t rawBright) {
 
 void StatusLed::update(Mood mood) {
   if (_death) { tickDeath(); return; }
+  if (_override) return;  // a game owns the LED right now
   // Only rewrite the LED when the mood changes (avoids I/O every frame).
   if (_init && mood == _last) return;
   _last = mood;
@@ -62,9 +63,21 @@ void StatusLed::startDeath() {
   _deathShown = false;
 }
 
+void StatusLed::gameColor(uint8_t r, uint8_t g, uint8_t b) {
+  _override = true;
+  const uint8_t c[3] = {r, g, b};
+  render(c, 255);  // full brightness: the LED is the game display
+}
+
+void StatusLed::gameOff() {
+  _override = true;
+  render(OFF, 255);
+}
+
 void StatusLed::endGame() {
-  if (!_death) return;
+  if (!_death && !_override) return;
   _death = false;
+  _override = false;
   _init = false;  // force a mood re-render on the next update()
 }
 

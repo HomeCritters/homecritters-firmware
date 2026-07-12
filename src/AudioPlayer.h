@@ -32,6 +32,8 @@ class AudioPlayer {
   void playThrow();      // bolinha throw (whoosh)
   void playCamera();     // screenshot shutter
   void playClick();      // UI button/tab click
+  void playSimon(int color);  // Genius tone (0=green 1=red 2=yellow 3=blue)
+  void playBuzzer();     // Genius wrong answer
 
   // Volume 0..100 (persisted to NVS, perceptual curve).
   void setVolume(int pct);
@@ -58,7 +60,7 @@ class AudioPlayer {
 
   bool _playing = false;  // audio-task only
 
-  void* _mp3 = nullptr;  // AudioGeneratorMP3*      (opaque in the header)
+  void* _dec = nullptr;  // AudioGenerator* (MP3 or WAV, opaque in the header)
   void* _src = nullptr;  // AudioFileSourcePROGMEM*
   void* _out = nullptr;  // AudioOutputI2S*
 };

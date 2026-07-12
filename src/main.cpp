@@ -12,6 +12,7 @@
 #include "Clock.h"
 #include "DoodleGame.h"
 #include "BallGame.h"
+#include "SimonGame.h"
 #include "DebugConsole.h"
 
 // ============================================================
@@ -32,10 +33,11 @@ WebPortal        web;
 Clock            petClock;
 DoodleGame       doodle;
 BallGame         ball;
+SimonGame        simon;
 DebugConsole     console;
 
 // Which screen is showing.
-enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL };
+enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON };
 static Screen screen = SCREEN_PET;
 
 static unsigned long lastTickMs = 0;
@@ -238,6 +240,108 @@ static void loopBall(unsigned long now) {
   renderer.drawBall(ball);
 }
 
+// ---- Genius (Simon) screen ----
+// The RGB LED mirrors the lit color (it "plays" the sequence with the arcs)
+// and each color has its own tone. Presses resolve on touch-DOWN for snap.
+static const uint8_t SIMON_RGB[4][3] = {
+    {0, 255, 40},    // green
+    {255, 0, 0},     // red
+    {255, 170, 0},   // yellow
+    {0, 70, 255},    // blue
+};
+static bool g_simonWasOver = false;
+static unsigned long g_simonDeadAt = 0;
+static int g_simonLastLit = -1;
+
+static void startSimon(unsigned long now) {
+  simon.reset();
+  g_simonWasOver = false;
+  g_simonDeadAt = 0;
+  g_simonLastLit = -1;
+  g_touchDown = false;
+  led.endGame();
+  led.gameOff();  // the LED belongs to the game now (dark between colors)
+  screen = SCREEN_SIMON;
+}
+
+static void leaveSimon(unsigned long now) {
+  led.endGame();  // LED back to the mood
+  lastInteractionMs = now;
+  screen = SCREEN_GAMES;
+}
+
+static void loopSimon(unsigned long now) {
+  int32_t x, y;
+  const bool down = lcd.getTouch(&x, &y);
+  if (down && !g_touchDown) {
+    g_touchDown = true;
+    g_pressStartMs = now;
+    g_touchX = x; g_touchY = y;
+    if (!simon.gameOver()) {
+      const int c = ui::simonColorAt(x, y);
+      if (c >= 0) simon.press(c, now);
+    }
+  } else if (down) {
+    g_touchX = x; g_touchY = y;
+  } else if (g_touchDown) {  // release: exit button / dismiss game over
+    g_touchDown = false;
+    if (simon.gameOver()) {
+      const bool fresh = g_pressStartMs > g_simonDeadAt;
+      if (fresh && now - g_simonDeadAt > DEATH_GRACE_MS) {
+        audio.playClick();
+        leaveSimon(now);
+        return;
+      }
+    } else if (ui::inSimonExit(g_touchX, g_touchY)) {
+      audio.playClick();
+      leaveSimon(now);
+      return;
+    }
+  }
+
+  // Color press coming from the phone (portal Genius pad).
+  int wc;
+  if (web.consumeSimonPress(wc) && !simon.gameOver()) simon.press(wc, now);
+
+  simon.update(now);
+
+  // One observer drives tone + LED off lit transitions - covers both the
+  // device playing the sequence AND the player's press feedback.
+  const int lit = simon.litColor();
+  if (lit != g_simonLastLit) {
+    if (lit >= 0) {
+      audio.playSimon(lit);
+      led.gameColor(SIMON_RGB[lit][0], SIMON_RGB[lit][1], SIMON_RGB[lit][2]);
+    } else {
+      led.gameOff();
+    }
+    g_simonLastLit = lit;
+  }
+
+  if (!g_simonWasOver && simon.gameOver()) {
+    // New record earns the jingle; a plain miss gets the wrong-answer buzzer.
+    simon.newRecord() ? audio.playRecord() : audio.playBuzzer();
+    led.startDeath();
+    g_simonDeadAt = now;
+    web.setGameScore(simon.score());
+    web.pushState();
+  }
+  g_simonWasOver = simon.gameOver();
+
+  // Auto-close the game-over screen after the configured idle timeout.
+  if (simon.gameOver()) {
+    if (down) lastInteractionMs = now;
+    const int timeout = petClock.menuTimeoutSec();
+    const unsigned long from = lastInteractionMs > g_simonDeadAt ? lastInteractionMs : g_simonDeadAt;
+    if (timeout > 0 && idleSince(now, from) > (unsigned long)timeout * 1000) {
+      leaveSimon(now);
+      return;
+    }
+  }
+
+  renderer.drawSimon(simon);
+}
+
 // Games menu screen: tap a tile to start a game; back to the pet scene by
 // pulling (or tapping) the left-edge tab. Auto-closes after the configured
 // idle timeout (0 = never).
@@ -266,6 +370,9 @@ static void loopGamesMenu(unsigned long now) {
     } else if (ui::inGameBall(g_gamesStartX, g_gamesStartY)) {
       audio.playClick();
       ball.reset(); g_touchDown = false; screen = SCREEN_BALL;
+    } else if (ui::inGameSimon(g_gamesStartX, g_gamesStartY)) {
+      audio.playClick();
+      startSimon(now);
     }
   }
   const int timeout = petClock.menuTimeoutSec();
@@ -285,6 +392,7 @@ static bool consoleNavigate(const String& c) {
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
   if (c == "ball")   { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; return true; }
+  if (c == "simon")  { startSimon(now); return true; }
 
   if (c.startsWith("menu")) {
     screen = SCREEN_PET; menuOpen = true;
@@ -316,6 +424,7 @@ void setup() {
   ferret.begin();
   petClock.begin();
   doodle.begin();  // load the Jump! high score
+  simon.begin();   // load the Genius high score
   audio.begin();  // I2C + ES8311 + I2S + audio task
   web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, doAction);  // WiFi + portal
   web.setBattery(battery.percent());  // seed the portal value
@@ -401,6 +510,7 @@ void loop() {
   // back), so Doodle Jump can be launched and steered entirely from the phone.
   web.setScreen(screen == SCREEN_DOODLE ? "doodle" :
                 screen == SCREEN_BALL   ? "ball"   :
+                screen == SCREEN_SIMON  ? "simon"  :
                 screen == SCREEN_GAMES  ? "games"  : "pet");
   switch (web.consumeGameNav()) {
     case WebPortal::NAV_START:
@@ -409,9 +519,13 @@ void loop() {
     case WebPortal::NAV_BALL:
       if (screen != SCREEN_BALL) { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; web.pushState(); }
       break;
+    case WebPortal::NAV_SIMON:
+      if (screen != SCREEN_SIMON) { startSimon(now); web.pushState(); }
+      break;
     case WebPortal::NAV_BACK:
       if (screen == SCREEN_DOODLE) { leaveDoodle(); web.pushState(); }
       else if (screen == SCREEN_BALL) { leaveBall(now); web.pushState(); }
+      else if (screen == SCREEN_SIMON) { leaveSimon(now); web.pushState(); }
       break;
     default: break;
   }
@@ -429,6 +543,13 @@ void loop() {
     loopBall(now);
     serviceShots();
     delay(20);  // the forest backdrop is heavier to redraw; 50fps is plenty
+    return;
+  }
+  if (screen == SCREEN_SIMON) {
+    web.setGameScore(simon.score());
+    loopSimon(now);
+    serviceShots();
+    delay(15);
     return;
   }
   if (screen == SCREEN_GAMES) {

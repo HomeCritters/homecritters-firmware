@@ -82,7 +82,8 @@ void WebPortal::handle() {
   // the pet mirror), so we only need score/heartbeat - NOT the ~10x/s position
   // stream, which would stall the tight game loop with TCP writes.
   const unsigned long now = millis();
-  const bool inGame = !strcmp(_screenName, "doodle") || !strcmp(_screenName, "ball");
+  const bool inGame = !strcmp(_screenName, "doodle") || !strcmp(_screenName, "ball") ||
+                      !strcmp(_screenName, "simon");
   unsigned long interval;
   if (inGame) {
     interval = 200;  // flat ~5/s: enough for the score, light on the game loop
@@ -196,8 +197,9 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
 
 // Commands from React: "feed"/"pat"/"clean"/"sleep", "name:NewName", "vol:N",
 // "led:N", "clock:on|off", "fmt:12|24", "tz:<posix>", "idle:<sec>", "menu:<sec>",
-// plus game control: "game:start" (Jump!), "game:ball" (Bolinha), "game:back",
-// "game:x:<0..1>" (Jump! steering), "ball:t:<nx>:<ny>" (Bolinha throw).
+// plus game control: "game:start" (Jump!), "game:ball" (Bolinha), "game:simon"
+// (Genius), "game:back", "game:x:<0..1>" (Jump! steering), "ball:t:<nx>:<ny>"
+// (Bolinha throw), "simon:<0..3>" (Genius pad press).
 void WebPortal::applyCommand(const String& msg) {
   // Game controller (Doodle Jump from the phone).
   if (msg.startsWith("game:x:")) {
@@ -207,7 +209,12 @@ void WebPortal::applyCommand(const String& msg) {
   }
   if (msg == "game:start") { _navReq = NAV_START; return; }
   if (msg == "game:ball")  { _navReq = NAV_BALL;  return; }
+  if (msg == "game:simon") { _navReq = NAV_SIMON; return; }
   if (msg == "game:back")  { _navReq = NAV_BACK;  return; }
+  if (msg.startsWith("simon:")) {  // "simon:<0..3>" color pad press
+    _simonPress = constrain(msg.substring(6).toInt(), 0, 3);
+    return;
+  }
   if (msg.startsWith("ball:t:")) {  // "ball:t:<nx>:<ny>" normalized swipe
     const int sep = msg.indexOf(':', 7);
     if (sep > 0) {
@@ -258,6 +265,13 @@ bool WebPortal::consumeBallThrow(float& nx, float& ny) {
   _throwReq = false;
   nx = _throwNx;
   ny = _throwNy;
+  return true;
+}
+
+bool WebPortal::consumeSimonPress(int& color) {
+  if (_simonPress < 0) return false;
+  color = _simonPress;
+  _simonPress = -1;
   return true;
 }
 
