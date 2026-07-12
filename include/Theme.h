@@ -128,9 +128,6 @@ namespace menu {
   constexpr uint16_t IC_WIFI     = rgb565(55, 180, 110);   // signal bars (green)
   constexpr uint16_t IC_DOODLE   = rgb565(70, 185, 95);    // doodle jump (green)
   constexpr uint16_t IC_BALL     = rgb565(205, 230, 65);   // tennis ball (yellow-green)
-  constexpr uint16_t WIFI_BTN    = rgb565(70, 150, 230);
-  constexpr uint16_t CLOSE_BTN   = rgb565(120, 90, 170);
-  constexpr uint16_t EXIT_BTN    = rgb565(200, 80, 80);
   constexpr uint16_t AP_NAME     = rgb565(120, 220, 140);
   constexpr uint16_t CLOCK_BG    = rgb565(22, 16, 44);
   constexpr uint16_t CLOCK_EDGE  = rgb565(95, 85, 140);

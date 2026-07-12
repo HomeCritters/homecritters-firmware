@@ -12,6 +12,7 @@
 #include "Clock.h"
 #include "DoodleGame.h"
 #include "BallGame.h"
+#include "DebugConsole.h"
 
 // ============================================================
 // Desk tamagotchi (ferret) - Ball V2
@@ -31,6 +32,7 @@ WebPortal        web;
 Clock            petClock;
 DoodleGame       doodle;
 BallGame         ball;
+DebugConsole     console;
 
 // Which screen is showing.
 enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL };
@@ -43,15 +45,9 @@ static bool wasSleeping = false;
 static bool menuOpen = false;
 static ui::MenuPage menuPage = ui::PAGE_MAIN;  // which config sub-page is showing
 
-// Release-based tap for the game screens: true once when a finger lifts.
+// Shared raw-touch state for the game screens (press tracking, last position).
 static bool g_touchDown = false;
 static int32_t g_touchX = 0, g_touchY = 0;
-static bool tapReleased(int32_t& ox, int32_t& oy) {
-  int32_t x, y;
-  if (lcd.getTouch(&x, &y)) { g_touchDown = true; g_touchX = x; g_touchY = y; return false; }
-  if (g_touchDown) { g_touchDown = false; ox = g_touchX; oy = g_touchY; return true; }
-  return false;
-}
 
 // Idle time since a timestamp, saturating at 0. A web command handled in
 // web.handle() sets lastInteractionMs to a millis() slightly AFTER this loop's
@@ -80,7 +76,10 @@ static void handleUi(ui::UiHit hit) {
       menuOpen = !menuOpen;
       if (menuOpen) menuPage = ui::PAGE_MAIN;  // always open on the main page
       break;
-    case ui::UI_MENU_BACK:   menuPage = ui::PAGE_MAIN;  break;
+    case ui::UI_MENU_BACK:  // left-edge "back": sub-page -> main, main -> close
+      if (menuPage != ui::PAGE_MAIN) menuPage = ui::PAGE_MAIN;
+      else menuOpen = false;
+      break;
     case ui::UI_OPEN_AUDIO:  menuPage = ui::PAGE_AUDIO; break;
     case ui::UI_OPEN_LIGHT:  menuPage = ui::PAGE_LIGHT; break;
     case ui::UI_OPEN_QR:     menuPage = ui::PAGE_QR;    break;
@@ -175,8 +174,9 @@ static void loopDoodle(unsigned long now) {
     g_touchDown = false;
     if (doodle.gameOver()) {
       const bool fresh = g_pressStartMs > g_deadAtMs;  // began after the death
-      if (fresh && now - g_deadAtMs > DEATH_GRACE_MS) leaveDoodle();
+      if (fresh && now - g_deadAtMs > DEATH_GRACE_MS) { audio.playClick(); leaveDoodle(); }
     } else if (ui::inGameBack(g_touchX, g_touchY)) {
+      audio.playClick();
       leaveDoodle();
     }
   }
@@ -213,6 +213,7 @@ static void loopBall(unsigned long now) {
     const int32_t dx = g_touchX - g_ballDragX;
     const int32_t dy = g_touchY - g_ballDragY;
     if (g_ballDragX < 26 && dx > 45 && abs(dx) > abs(dy)) {
+      audio.playClick();
       leaveBall(now);  // pull from the left edge -> quit the game
     } else if (ball.ready() && dy < -25 && abs(dy) > abs(dx)) {
       // upward swipe = throw (direction/force follow the gesture)
@@ -237,17 +238,36 @@ static void loopBall(unsigned long now) {
   renderer.drawBall(ball);
 }
 
-// Games menu screen: tap a game to start, or Back to the pet scene. Auto-closes
-// to the pet scene after the configured idle timeout (0 = never).
+// Games menu screen: tap a tile to start a game; back to the pet scene by
+// pulling (or tapping) the left-edge tab. Auto-closes after the configured
+// idle timeout (0 = never).
+static int32_t g_gamesStartX = 0, g_gamesStartY = 0;  // where the touch began
 static void loopGamesMenu(unsigned long now) {
-  int32_t tx, ty;
-  const bool tapped = tapReleased(tx, ty);
-  if (tapped) {
-    if (ui::inGameDoodle(tx, ty)) startDoodle(now);
-    else if (ui::inGameBall(tx, ty)) { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; }
-    else if (ui::inGamesBack(tx, ty)) screen = SCREEN_PET;
+  int32_t x, y;
+  const bool down = lcd.getTouch(&x, &y);
+  if (down && !g_touchDown) { g_touchDown = true; g_gamesStartX = x; g_gamesStartY = y; }
+  if (down) {
+    g_touchX = x; g_touchY = y;
+    lastInteractionMs = now;  // touching resets the idle auto-close
+  } else if (g_touchDown) {   // release: pull from the left edge = back, else tap
+    g_touchDown = false;
+    lastInteractionMs = now;
+    const int32_t dx = g_touchX - g_gamesStartX;
+    const int32_t dy = g_touchY - g_gamesStartY;
+    if (dx > 45 && abs(dx) > abs(dy) && g_gamesStartX < 65) {
+      audio.playClick();
+      screen = SCREEN_PET;  // pulled the left tab
+    } else if (ui::inLeftHandle(g_gamesStartX, g_gamesStartY)) {
+      audio.playClick();
+      screen = SCREEN_PET;  // tapped the tab
+    } else if (ui::inGameDoodle(g_gamesStartX, g_gamesStartY)) {
+      audio.playClick();
+      startDoodle(now);
+    } else if (ui::inGameBall(g_gamesStartX, g_gamesStartY)) {
+      audio.playClick();
+      ball.reset(); g_touchDown = false; screen = SCREEN_BALL;
+    }
   }
-  if (g_touchDown || tapped) lastInteractionMs = now;  // any touch resets idle
   const int timeout = petClock.menuTimeoutSec();
   if (timeout > 0 && screen == SCREEN_GAMES &&
       idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
@@ -256,35 +276,15 @@ static void loopGamesMenu(unsigned long now) {
   renderer.drawGamesMenu();
 }
 
-// ============================================================
-// Serial debug console: navigate to any screen/state and grab a screenshot,
-// so changes can be validated without eyes on the hardware. Driven by
-// tools/hwshot.py and tools/console.py. One command per line.
-// ============================================================
-static void printSerialHelp() {
-  Serial.println(F("[console] commands:"));
-  Serial.println(F("  shot                 - screenshot the current screen"));
-  Serial.println(F("  pet | games | doodle | ball"));
-  Serial.println(F("  menu[:main|audio|luz|qr]"));
-  Serial.println(F("  feed | pat | clean | sleep"));
-  Serial.println(F("  vol:N | led:N | scr:N        (0..100)"));
-  Serial.println(F("  stats:H,E,J,Hy               (0..100 each)"));
-}
-
-static void dispatchSerialCmd(const String& c) {
+// Navigation/action commands from the DebugConsole (screen state lives here;
+// module-level commands like vol:/led:/stats: are handled inside the console).
+static bool consoleNavigate(const String& c) {
   const unsigned long now = millis();
-
-  // Passive commands don't count as interaction, so a screenshot captures the
-  // screen exactly as-is (idle clock included) instead of waking it.
-  if (c == "shot")        { g_shotPending = true; return; }  // captured post-render
-  if (c == "help" || c == "?") { printSerialHelp(); return; }
-  if (c == "bat")         { Serial.printf("[bat] %.3fV -> %d%%\n", battery.voltage(), battery.percent()); return; }
-
-  lastInteractionMs = now;  // everything below is an interaction (leaves clock mode)
-  if (c == "pet")         { menuOpen = false; screen = SCREEN_PET; return; }
-  if (c == "games")       { menuOpen = false; screen = SCREEN_GAMES; return; }
-  if (c == "doodle")      { startDoodle(now); return; }
-  if (c == "ball")        { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; return; }
+  if (c == "shot")   { g_shotPending = true; return true; }  // captured post-render
+  if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
+  if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
+  if (c == "doodle") { startDoodle(now); return true; }
+  if (c == "ball")   { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; return true; }
 
   if (c.startsWith("menu")) {
     screen = SCREEN_PET; menuOpen = true;
@@ -293,43 +293,14 @@ static void dispatchSerialCmd(const String& c) {
              : pg == ":luz"   ? ui::PAGE_LIGHT
              : pg == ":qr"    ? ui::PAGE_QR
                               : ui::PAGE_MAIN;
-    return;
+    return true;
   }
 
-  if (c == "feed")  { doAction(ACTION_FEED);  return; }
-  if (c == "pat")   { doAction(ACTION_PAT);   return; }
-  if (c == "clean") { doAction(ACTION_CLEAN); return; }
-  if (c == "sleep") { doAction(ACTION_TOGGLE_SLEEP); return; }
-
-  if (c.startsWith("vol:")) { audio.setVolume(c.substring(4).toInt()); return; }
-  if (c.startsWith("led:")) { led.setBrightness(c.substring(4).toInt()); return; }
-  if (c.startsWith("scr:")) { renderer.setScreenBrightness(c.substring(4).toInt()); return; }
-
-  if (c.startsWith("stats:")) {  // "stats:H,E,J,Hy"
-    const String v = c.substring(6);
-    int a = v.indexOf(','), b = v.indexOf(',', a + 1), d = v.indexOf(',', b + 1);
-    if (a > 0 && b > 0 && d > 0) {
-      pet.debugSetStats(v.substring(0, a).toFloat(), v.substring(a + 1, b).toFloat(),
-                        v.substring(b + 1, d).toFloat(), v.substring(d + 1).toFloat());
-    }
-    return;
-  }
-
-  Serial.printf("[console] unknown: %s (try 'help')\n", c.c_str());
-}
-
-static void handleSerial() {
-  static String line;
-  while (Serial.available()) {
-    const char ch = (char)Serial.read();
-    if (ch == '\n' || ch == '\r') {
-      line.trim();
-      if (line.length()) dispatchSerialCmd(line);
-      line = "";
-    } else if (line.length() < 64) {
-      line += ch;
-    }
-  }
+  if (c == "feed")  { doAction(ACTION_FEED);  return true; }
+  if (c == "pat")   { doAction(ACTION_PAT);   return true; }
+  if (c == "clean") { doAction(ACTION_CLEAN); return true; }
+  if (c == "sleep") { doAction(ACTION_TOGGLE_SLEEP); return true; }
+  return false;
 }
 
 void setup() {
@@ -348,6 +319,8 @@ void setup() {
   audio.begin();  // I2C + ES8311 + I2S + audio task
   web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, doAction);  // WiFi + portal
   web.setBattery(battery.percent());  // seed the portal value
+  console.begin(&pet, &battery, &audio, &led, &renderer, consoleNavigate,
+                []() { lastInteractionMs = millis(); });
 
   wasSleeping = pet.sleeping();
   lastTickMs = lastSaveMs = lastInteractionMs = millis();
@@ -357,14 +330,26 @@ void setup() {
 void loop() {
   const unsigned long now = millis();
 
-  handleSerial();  // debug console (screenshots + navigation)
+  console.poll();  // debug console (screenshots + navigation)
 
-  // --- WiFi setup mode (captive portal active): own screen + Exit ---
+  // --- WiFi setup mode (captive portal active): own screen; back tab exits ---
   if (web.configuring()) {
     web.process();
-    int32_t tx, ty;
-    if (lcd.getTouch(&tx, &ty) && ui::inWifiExit(tx, ty)) web.cancelConfig();
+    int32_t x, y;
+    const bool down = lcd.getTouch(&x, &y);
+    static int32_t wcStartX = 0, wcStartY = 0;
+    if (down && !g_touchDown) { g_touchDown = true; wcStartX = x; wcStartY = y; g_touchX = x; g_touchY = y; }
+    else if (down) { g_touchX = x; g_touchY = y; }
+    else if (g_touchDown) {  // release: left-edge pull or tap on the tab = exit
+      g_touchDown = false;
+      const int32_t dx = g_touchX - wcStartX, dy = g_touchY - wcStartY;
+      if ((dx > 45 && abs(dx) > abs(dy) && wcStartX < 65) || ui::inLeftHandle(wcStartX, wcStartY)) {
+        audio.playClick();
+        web.cancelConfig();
+      }
+    }
     renderer.drawWifiConfig(web.apName());
+    serviceShots();  // screenshots must work on this screen too
     delay(50);
     return;
   }
@@ -463,10 +448,13 @@ void loop() {
     if (clockActive) {
       // in clock mode a touch only wakes the screen (doesn't run the action)
     } else if (ev.ui == ui::UI_GAMES_TOGGLE) {
+      audio.playClick();
       if (!menuOpen) screen = SCREEN_GAMES;
     } else if (ev.ui != ui::UI_NONE) {
+      audio.playClick();  // every menu button/handle clicks
       handleUi(ev.ui);
     } else {
+      // pet actions keep their own SFX (eat/pat/drink) - no click on top
       doAction(ev.action);
       if (ev.buttonIdx >= 0) renderer.flashButton(ev.buttonIdx);
     }

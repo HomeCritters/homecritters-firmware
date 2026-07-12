@@ -31,9 +31,7 @@ class AudioPlayer {
   void playDeath();      // game over
   void playThrow();      // bolinha throw (whoosh)
   void playCamera();     // screenshot shutter
-
-  void stop();
-  bool isPlaying() const { return _playing; }
+  void playClick();      // UI button/tab click
 
   // Volume 0..100 (persisted to NVS, perceptual curve).
   void setVolume(int pct);
@@ -47,14 +45,18 @@ class AudioPlayer {
 
   static void taskTrampoline(void* arg);
   void taskLoop();
-  void startDecode();
+  void startDecode(const unsigned char* data, unsigned int len);
   void cleanup();
 
-  volatile bool _startReq = false;
-  volatile bool _stopReq  = false;
-  volatile bool _playing  = false;
-  const unsigned char* volatile _reqData = nullptr;
-  volatile unsigned int _reqLen = 0;
+  // Request handoff main loop (core 1) -> audio task (core 0). The spinlock
+  // keeps {data, len, flag} consistent: without it the task could pick up a
+  // fresh pointer with a stale length mid-update (true cross-core race).
+  portMUX_TYPE _reqMux = portMUX_INITIALIZER_UNLOCKED;
+  bool _startReq = false;
+  const unsigned char* _reqData = nullptr;
+  unsigned int _reqLen = 0;
+
+  bool _playing = false;  // audio-task only
 
   void* _mp3 = nullptr;  // AudioGeneratorMP3*      (opaque in the header)
   void* _src = nullptr;  // AudioFileSourcePROGMEM*

@@ -35,7 +35,6 @@ constexpr float NEUTRAL_AVG       = 40.0f;
 // --- Timing ---
 constexpr unsigned long SAVE_INTERVAL_MS  = 60000;  // NVS save period
 constexpr unsigned long BOOT_LONGPRESS_MS = 1500;   // long BOOT press = sleep
-constexpr unsigned long TOUCH_DEBOUNCE_MS = 150;
 constexpr unsigned long BUTTON_FLASH_MS   = 200;    // visual tap feedback
 
 }  // namespace game

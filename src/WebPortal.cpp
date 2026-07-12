@@ -26,20 +26,35 @@ String WebPortal::ip() const { return WiFi.localIP().toString(); }
 
 // ---- WiFi setup (non-blocking captive portal) ----
 void WebPortal::startConfigPortal() {
+  // Hand port 80 over to WiFiManager's captive portal: flag first so the
+  // core-0 http task stops polling, give it a tick to finish any in-flight
+  // request, then actually close our listener.
+  _configuring = true;
+  if (_serverUp) {
+    delay(10);
+    _server.stop();
+  }
   _wm.setConfigPortalBlocking(false);
   _wm.setConfigPortalTimeout(180);
   _wm.startConfigPortal(apName());
-  _configuring = true;
 }
 
 void WebPortal::process() {
   if (!_configuring) return;
   _wm.process();
-  if (!_wm.getConfigPortalActive()) _configuring = false;  // connected or timed out
+  if (!_wm.getConfigPortalActive()) endConfig();  // connected or timed out
 }
 
 void WebPortal::cancelConfig() {
   _wm.stopConfigPortal();
+  endConfig();
+}
+
+// Leaves config mode and reclaims port 80 (re-binds our listener before the
+// http task resumes polling).
+void WebPortal::endConfig() {
+  if (!_configuring) return;
+  if (_serverUp) _server.begin();
   _configuring = false;
 }
 
@@ -50,7 +65,9 @@ void WebPortal::cancelConfig() {
 void WebPortal::httpTask(void* arg) {
   WebPortal* self = static_cast<WebPortal*>(arg);
   for (;;) {
-    self->_server.handleClient();
+    // While the WiFiManager captive portal is up it owns port 80; polling our
+    // server concurrently from another core would fight over the socket.
+    if (!self->_configuring) self->_server.handleClient();
     vTaskDelay(1);
   }
 }
@@ -163,7 +180,7 @@ void WebPortal::handleShot() {
 
 void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
   if (type == WStype_CONNECTED) {
-    char buf[512];
+    char buf[640];
     stateJson(buf, sizeof(buf));
     _ws.sendTXT(num, buf);  // send the current state on connect
   } else if (type == WStype_TEXT) {
@@ -256,9 +273,21 @@ void WebPortal::broadcastState() {
   if (!_serverUp) return;
   _dirty = false;
   if (_ws.connectedClients() == 0) return;  // nobody listening: skip the work
-  char buf[512];
+  char buf[640];
   stateJson(buf, sizeof(buf));
   _ws.broadcastTXT(buf);
+}
+
+// Escapes '"' and '\' and drops control chars - the pet name is the only
+// free-text field and a quote in it would corrupt the whole state JSON.
+static void jsonEscape(const String& in, char* out, size_t n) {
+  size_t o = 0;
+  for (size_t i = 0; i < in.length() && o + 2 < n; i++) {
+    const char ch = in[i];
+    if (ch == '"' || ch == '\\') { out[o++] = '\\'; out[o++] = ch; }
+    else if ((uint8_t)ch >= 0x20) out[o++] = ch;
+  }
+  out[o] = '\0';
 }
 
 // One snprintf into a stack buffer: no String concatenation churn (the old
@@ -266,13 +295,15 @@ void WebPortal::broadcastState() {
 // and avoidable latency on the render loop).
 void WebPortal::stateJson(char* out, size_t n) const {
   const Pet& p = *_pet;
+  char name[32];
+  jsonEscape(p.name(), name, sizeof(name));
   snprintf(out, n,
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"volume\":%d,\"ledBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
            "\"anim\":\"%s\",\"seq\":%u,\"flip\":%s,\"x\":%.3f,"
            "\"hunger\":%.1f,\"energy\":%.1f,\"joy\":%.1f,\"hygiene\":%.1f}",
-           _screenName, _gameScore, _battery, p.name().c_str(),
+           _screenName, _gameScore, _battery, name,
            p.sleeping() ? "true" : "false",
            _audio ? _audio->volume() : 0,
            _led ? _led->brightness() : 50,

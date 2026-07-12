@@ -262,6 +262,14 @@ void Renderer::drawRightHandle() {
   _canvas.fillTriangle(rx + 9, RHANDLE_CY - 7, rx + 9, RHANDLE_CY + 7, rx + 2, RHANDLE_CY, BTN_BORDER);
 }
 
+void Renderer::drawLeftHandle() {
+  // Tab on the left edge with a ">" chevron: pull right (or tap) = back.
+  const int ry = RHANDLE_CY - RHANDLE_H / 2;
+  _canvas.fillRoundRect(-6, ry, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BG);
+  _canvas.drawRoundRect(-6, ry, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BORDER);
+  _canvas.fillTriangle(4, RHANDLE_CY - 7, 4, RHANDLE_CY + 7, RHANDLE_W - 3, RHANDLE_CY, BTN_BORDER);
+}
+
 // Draws a QR code (version 3, byte mode) centered horizontally at cx.
 void Renderer::drawQr(const char* text, int topY, int cx, int quiet) {
   QRCode qr;
@@ -410,7 +418,7 @@ void Renderer::drawMenuMain(int batteryPct, bool wifiOn, const char* ip) {
     _canvas.print(q);
   }
 
-  drawPillButton(MENU_BACK_X, MENU_BACK_Y, MENU_BACK_W, MENU_BACK_H, "Voltar", menu::CLOSE_BTN);
+  drawLeftHandle();  // pull (or tap) the left tab to close the menu
 }
 
 // QR detail page: the code (large) + what it is + how to use it + the URLs.
@@ -452,7 +460,7 @@ void Renderer::drawMenuQr(bool wifiOn, const char* ip) {
     _canvas.print(m2);
   }
 
-  drawPillButton(MENU_BACK_X, MENU_BACK_Y, MENU_BACK_W, MENU_BACK_H, "Voltar", menu::CLOSE_BTN);
+  drawLeftHandle();  // pull (or tap) the left tab to go back
 }
 
 void Renderer::drawMenuAudio(int volume) {
@@ -463,7 +471,7 @@ void Renderer::drawMenuAudio(int volume) {
   _canvas.print(title);
 
   drawStepper("Volume", volume, MENU_VOL_MINUS, MENU_VOL_PLUS);
-  drawPillButton(MENU_BACK_X, MENU_BACK_Y, MENU_BACK_W, MENU_BACK_H, "Voltar", menu::CLOSE_BTN);
+  drawLeftHandle();  // pull (or tap) the left tab to go back
 }
 
 void Renderer::drawMenuLight(int ledBright) {
@@ -475,7 +483,7 @@ void Renderer::drawMenuLight(int ledBright) {
 
   drawStepper("LED", ledBright, MENU_LED_MINUS, MENU_LED_PLUS);
   drawStepper("Tela", _scrBright, MENU_SCR_MINUS, MENU_SCR_PLUS);
-  drawPillButton(MENU_BACK_X, MENU_BACK_Y, MENU_BACK_W, MENU_BACK_H, "Voltar", menu::CLOSE_BTN);
+  drawLeftHandle();  // pull (or tap) the left tab to go back
 }
 
 void Renderer::drawWifiConfig(const char* apName) {
@@ -503,9 +511,7 @@ void Renderer::drawWifiConfig(const char* apName) {
   _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 132);
   _canvas.print(l2);
 
-  drawPillButton(WIFI_EXIT_X, WIFI_EXIT_Y, WIFI_EXIT_W, WIFI_EXIT_H,
-                 "Sair", menu::EXIT_BTN);
-
+  drawLeftHandle();  // pull (or tap) the left tab to exit config
   _canvas.pushSprite(0, 0);
 }
 
@@ -554,8 +560,7 @@ void Renderer::drawGamesMenu() {
   drawGameTile(GAME_COL_L, GAME_TILE_Y, "Jump!", 'j', menu::IC_DOODLE);
   drawGameTile(GAME_COL_R, GAME_TILE_Y, "Bolinha", 'b', menu::IC_BALL);
 
-  drawPillButton(GAMES_BACK_X, GAMES_BACK_Y, GAMES_BACK_W, GAMES_BACK_H,
-                 "Voltar", menu::CLOSE_BTN);
+  drawLeftHandle();  // pull (or tap) the left tab to go back to the pet
   _canvas.pushSprite(0, 0);
 }
 
@@ -727,11 +732,7 @@ void Renderer::drawBall(BallGame& game) {
   _canvas.setCursor(CENTER_X - scw / 2, 9);
   _canvas.print(sc);
 
-  // left-edge tab: pull right to exit. Chevron ">" points inward, fully
-  // inside the tab (x spans -6..RHANDLE_W, so keep the tip at <= RHANDLE_W-3).
-  _canvas.fillRoundRect(-6, RHANDLE_CY - RHANDLE_H / 2, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BG);
-  _canvas.drawRoundRect(-6, RHANDLE_CY - RHANDLE_H / 2, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BORDER);
-  _canvas.fillTriangle(4, RHANDLE_CY - 7, 4, RHANDLE_CY + 7, RHANDLE_W - 3, RHANDLE_CY, BTN_BORDER);
+  drawLeftHandle();  // pull right (or tap) to exit
 
   if (game.ready()) {
     _canvas.setTextSize(1);

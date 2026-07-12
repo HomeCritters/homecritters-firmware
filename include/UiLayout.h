@@ -73,6 +73,13 @@ inline bool inRightHandle(int32_t tx, int32_t ty) {
          ty > RHANDLE_CY - RHANDLE_H / 2 && ty < RHANDLE_CY + RHANDLE_H / 2;
 }
 
+// Left-edge handle = "back" (config menu, games menu, Bolinha). Pull it toward
+// the center (swipe right) or tap it. Same geometry, mirrored.
+inline bool inLeftHandle(int32_t tx, int32_t ty) {
+  return tx < RHANDLE_W + 2 &&
+         ty > RHANDLE_CY - RHANDLE_H / 2 && ty < RHANDLE_CY + RHANDLE_H / 2;
+}
+
 constexpr int16_t MENU_BTN_R = 17;  // +/- stepper button radius
 
 // Main page: a perfect 2x2 grid of equal squares - Audio, Luz (top row),
@@ -80,7 +87,7 @@ constexpr int16_t MENU_BTN_R = 17;  // +/- stepper button radius
 // and opens the QR detail page.
 constexpr int16_t MENU_CELL_W = 70, MENU_CELL_H = 66;
 constexpr int16_t MENU_COL_L = 43, MENU_COL_R = 127;   // column x
-constexpr int16_t MENU_ROW_1 = 42, MENU_ROW_2 = 112;   // row y (battery pill above)
+constexpr int16_t MENU_ROW_1 = 48, MENU_ROW_2 = 118;   // row y (battery pill above)
 constexpr int16_t MENU_QR_CX  = MENU_COL_R + MENU_CELL_W / 2;  // QR center x
 
 // Audio sub-page: one volume stepper (centered).
@@ -92,13 +99,6 @@ constexpr ButtonSlot MENU_LED_MINUS = {40, 72};
 constexpr ButtonSlot MENU_LED_PLUS  = {200, 72};
 constexpr ButtonSlot MENU_SCR_MINUS = {40, 140};
 constexpr ButtonSlot MENU_SCR_PLUS  = {200, 140};
-
-// Bottom "Voltar" button: closes the menu on the main page, returns to the
-// main page on the sub-pages.
-constexpr int16_t MENU_BACK_X = 70, MENU_BACK_Y = 184, MENU_BACK_W = 100, MENU_BACK_H = 34;
-
-// WiFi setup screen (captive portal active): Exit button.
-constexpr int16_t WIFI_EXIT_X = 70, WIFI_EXIT_Y = 190, WIFI_EXIT_W = 100, WIFI_EXIT_H = 34;
 
 inline bool inHandle(int32_t tx, int32_t ty) {
   return tx > HANDLE_CX - HANDLE_W / 2 && tx < HANDLE_CX + HANDLE_W / 2 &&
@@ -114,17 +114,14 @@ inline bool inRect(int32_t tx, int32_t ty, int x, int y, int w, int h) {
   return tx >= x && tx <= x + w && ty >= y && ty <= y + h;
 }
 
-inline bool inMenuBack(int32_t tx, int32_t ty) {
-  return inRect(tx, ty, MENU_BACK_X, MENU_BACK_Y, MENU_BACK_W, MENU_BACK_H);
-}
-
-// Hit-test while the menu is OPEN (page-aware).
+// Hit-test while the menu is OPEN (page-aware). The left-edge tab is "back"
+// (UI_MENU_BACK) on every page; main resolves it (sub-page -> main -> closed).
 inline UiHit menuHit(MenuPage page, int32_t tx, int32_t ty) {
   if (inHandle(tx, ty)) return UI_MENU_TOGGLE;
+  if (inLeftHandle(tx, ty)) return UI_MENU_BACK;
   if (page == PAGE_AUDIO) {
     if (inCircle(tx, ty, MENU_VOL_MINUS, MENU_BTN_R + 8)) return UI_VOL_DOWN;
     if (inCircle(tx, ty, MENU_VOL_PLUS, MENU_BTN_R + 8)) return UI_VOL_UP;
-    if (inMenuBack(tx, ty)) return UI_MENU_BACK;
     return UI_NONE;
   }
   if (page == PAGE_LIGHT) {
@@ -132,40 +129,28 @@ inline UiHit menuHit(MenuPage page, int32_t tx, int32_t ty) {
     if (inCircle(tx, ty, MENU_LED_PLUS, MENU_BTN_R + 8)) return UI_LED_UP;
     if (inCircle(tx, ty, MENU_SCR_MINUS, MENU_BTN_R + 8)) return UI_SCR_DOWN;
     if (inCircle(tx, ty, MENU_SCR_PLUS, MENU_BTN_R + 8)) return UI_SCR_UP;
-    if (inMenuBack(tx, ty)) return UI_MENU_BACK;
     return UI_NONE;
   }
-  if (page == PAGE_QR) {
-    if (inMenuBack(tx, ty)) return UI_MENU_BACK;
-    return UI_NONE;
-  }
+  if (page == PAGE_QR) return UI_NONE;
   // PAGE_MAIN: 2x2 grid.
   if (inRect(tx, ty, MENU_COL_L, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_AUDIO;
   if (inRect(tx, ty, MENU_COL_R, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_LIGHT;
   if (inRect(tx, ty, MENU_COL_L, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_WIFI;
   if (inRect(tx, ty, MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_QR;
-  if (inMenuBack(tx, ty)) return UI_MENU_TOGGLE;
   return UI_NONE;
-}
-
-inline bool inWifiExit(int32_t tx, int32_t ty) {
-  return inRect(tx, ty, WIFI_EXIT_X, WIFI_EXIT_Y, WIFI_EXIT_W, WIFI_EXIT_H);
 }
 
 // ------------------- Games menu (full screen) -------------------
 // Two square tiles side by side (a grid row): Doodle Jump and Bolinha.
-constexpr int16_t GAME_TILE_W = 88, GAME_TILE_H = 88, GAME_TILE_Y = 62;
+// Back to the pet scene via the LEFT-edge pull tab (no Voltar button).
+constexpr int16_t GAME_TILE_W = 88, GAME_TILE_H = 88, GAME_TILE_Y = 76;
 constexpr int16_t GAME_COL_L = 24, GAME_COL_R = 128;
-constexpr int16_t GAMES_BACK_X = 70, GAMES_BACK_Y = 186, GAMES_BACK_W = 100, GAMES_BACK_H = 34;
 
 inline bool inGameDoodle(int32_t tx, int32_t ty) {
   return inRect(tx, ty, GAME_COL_L, GAME_TILE_Y, GAME_TILE_W, GAME_TILE_H);
 }
 inline bool inGameBall(int32_t tx, int32_t ty) {
   return inRect(tx, ty, GAME_COL_R, GAME_TILE_Y, GAME_TILE_W, GAME_TILE_H);
-}
-inline bool inGamesBack(int32_t tx, int32_t ty) {
-  return inRect(tx, ty, GAMES_BACK_X, GAMES_BACK_Y, GAMES_BACK_W, GAMES_BACK_H);
 }
 
 // In a game: small back button in the top-left corner (rest of the screen

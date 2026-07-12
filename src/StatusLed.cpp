@@ -59,6 +59,7 @@ void StatusLed::setBrightness(int pct) {
 void StatusLed::startDeath() {
   _death = true;
   _deathStart = millis();
+  _deathShown = false;
 }
 
 void StatusLed::endGame() {
@@ -68,10 +69,14 @@ void StatusLed::endGame() {
 }
 
 // 3 fast blinks (on 90ms / off 90ms) at full brightness, then solid red until
-// endGame(). Driven by update() each loop, so it never blocks.
+// endGame(). Driven by update() each loop; only writes the LED when the blink
+// phase actually changes (a WS2812 show() per frame is wasted blocking I/O).
 void StatusLed::tickDeath() {
   static constexpr unsigned long BLINK = 90;
   const unsigned long t = millis() - _deathStart;
   const bool on = (t >= 6 * BLINK) || ((t / BLINK) % 2 == 0);  // 3 on-phases, then solid
+  if (_deathShown && on == _deathOn) return;
+  _deathOn = on;
+  _deathShown = true;
   render(on ? RED : OFF, 255);  // max brightness for the death effect
 }

@@ -82,6 +82,7 @@ class Renderer {
   void drawHeader(const Pet& pet, bool wifiOn);
   void drawMenuHandle();
   void drawRightHandle();
+  void drawLeftHandle();  // "back" tab (config, games menu, Bolinha)
   void drawClock(Clock& clock);
   void drawDoodleFerret(int cx, int cy, bool faceLeft);
   // mode: 0 = idle, 1 = walking, 2 = jumping (celebration). zoom scales the

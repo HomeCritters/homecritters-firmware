@@ -51,7 +51,7 @@ class WebPortal {
   // nx/ny in roughly [-1..1] (ny negative = upward).
   bool consumeBallThrow(float& nx, float& ny);
 
-  void startConfigPortal();    // opens WiFiManager (non-blocking)
+  void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
   void cancelConfig();         // abort configuration (Exit button)
   bool configuring() const { return _configuring; }
@@ -73,7 +73,7 @@ class WebPortal {
   Clock* _clock = nullptr;
   std::function<void(Action)> _onAction;
   bool _serverUp = false;
-  bool _configuring = false;
+  volatile bool _configuring = false;  // written on core 1, read by the core-0 http task
   bool _dirty = false;             // a state change is waiting to be broadcast
   unsigned long _lastBroadcast = 0;
 
@@ -88,6 +88,7 @@ class WebPortal {
   volatile float _throwNx = 0, _throwNy = 0;  // normalized swipe of that throw
 
   void startServer();
+  void endConfig();  // leave config mode + reclaim port 80
   static void httpTask(void* arg);  // runs the HTTP server on core 0
   void handleRoot();
   void handleShot();  // GET /shot.bmp -> current screen as a BMP

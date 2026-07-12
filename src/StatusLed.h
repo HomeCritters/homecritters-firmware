@@ -27,6 +27,8 @@ class StatusLed {
   bool _init = false;
   int _brightPct = 50;
   bool _death = false;
+  bool _deathOn = false;     // current blink phase (avoid redundant writes)
+  bool _deathShown = false;  // has the current phase been rendered yet?
   unsigned long _deathStart = 0;
 
   void render(const uint8_t* c, uint8_t rawBright);

@@ -17,6 +17,7 @@
 #include "sounds/sfx_death.h"
 #include "sounds/sfx_throw.h"
 #include "sounds/sfx_camera.h"
+#include "sounds/sfx_click.h"
 
 // ============================================================
 // Minimal ES8311 driver (playback/DAC only).
@@ -121,9 +122,11 @@ void AudioPlayer::setVolume(int pct) {
 
 // Request a clip (preempts the current one). Non-blocking.
 void AudioPlayer::play(const unsigned char* data, unsigned int len) {
+  portENTER_CRITICAL(&_reqMux);
   _reqData = data;
   _reqLen = len;
   _startReq = true;
+  portEXIT_CRITICAL(&_reqMux);
 }
 
 void AudioPlayer::playSleepTune() { play(sleep_music_mp3, sleep_music_mp3_len); }
@@ -138,12 +141,12 @@ void AudioPlayer::playRecord()    { play(sfx_record_mp3,   sfx_record_mp3_len); 
 void AudioPlayer::playDeath()     { play(sfx_death_mp3,    sfx_death_mp3_len); }
 void AudioPlayer::playThrow()     { play(sfx_throw_mp3,    sfx_throw_mp3_len); }
 void AudioPlayer::playCamera()    { play(sfx_camera_mp3,   sfx_camera_mp3_len); }
-void AudioPlayer::stop()          { _stopReq = true; }
+void AudioPlayer::playClick()     { play(sfx_click_mp3,    sfx_click_mp3_len); }
 
-void AudioPlayer::startDecode() {
+void AudioPlayer::startDecode(const unsigned char* data, unsigned int len) {
   cleanup();
-  if (!_reqData || _reqLen == 0) return;
-  _src = new AudioFileSourcePROGMEM(_reqData, _reqLen);
+  if (!data || len == 0) return;
+  _src = new AudioFileSourcePROGMEM(data, len);
   _mp3 = new AudioGeneratorMP3();
   MP3->begin(SRC, OUT);
   _playing = true;
@@ -160,15 +163,18 @@ void AudioPlayer::taskTrampoline(void* arg) {
 
 void AudioPlayer::taskLoop() {
   for (;;) {
-    if (_stopReq) {
-      cleanup();
-      _playing = false;
-      _stopReq = false;
-    }
+    // Snapshot the pending request atomically, then decode outside the lock.
+    const unsigned char* data = nullptr;
+    unsigned int len = 0;
+    portENTER_CRITICAL(&_reqMux);
     if (_startReq) {
       _startReq = false;
-      startDecode();
+      data = _reqData;
+      len = _reqLen;
     }
+    portEXIT_CRITICAL(&_reqMux);
+    if (data) startDecode(data, len);
+
     if (_playing) {
       if (!MP3->loop()) {  // clip finished
         cleanup();

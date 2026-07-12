@@ -30,8 +30,11 @@ InputEvent InputController::releaseEvent(bool menuOpen, ui::MenuPage page) {
     if (dy > 0 && _startY < 120) { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // down -> open
     if (dy < 0 && menuOpen)      { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // up   -> close
   }
-  if (adx > 45 && adx > ady) {  // horizontal -> games menu
-    if (dx < 0 && _startX > 175) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; } // left from right edge
+  if (adx > 45 && adx > ady) {  // horizontal
+    // Right edge, pull left -> open the games menu (pet screen only).
+    if (dx < 0 && _startX > 175 && !menuOpen) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
+    // Left edge, pull right -> "back" one level (sub-page -> main -> closed).
+    if (dx > 0 && _startX < 65 && menuOpen) { ev.ui = ui::UI_MENU_BACK; return ev; }
   }
 
   // TAP: resolved at the touch start point.

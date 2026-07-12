@@ -45,7 +45,7 @@ include/
   ferret_game.h        # sprite do furão 40px p/ o mini-game (gerado)
   sounds/              # TODOS os áudios (MP3→PROGMEM, gerados): sleep_music.h
                        # + sfx_eat/drink/tap/wake/jump/boost/crumble/record/
-                       #   death/throw/camera.h
+                       #   death/throw/camera/click.h
   web_index.h          # portal React (single-file, gzip) em PROGMEM (gerado)
 src/
   main.cpp             # orquestração: junta os módulos e roda o loop
@@ -60,6 +60,8 @@ src/
   Clock.{h,cpp}        # relógio NTP (timezone POSIX, 12/24h, ociosidade)
   DoodleGame.{h,cpp}   # mini-game estilo doodle jump (física; Renderer desenha)
   BallGame.{h,cpp}     # mini-game "Bolinha" (fetch: arremesso + furão busca)
+  DebugConsole.{h,cpp} # console serial de debug (comandos de módulo; navegação
+                       # vai pro main via callback)
   WebPortal.{h,cpp}    # WiFiManager + WebServer + WebSocket + mDNS (portal)
 tools/                 # debug: hwshot.py (print da tela→PNG) + console.py (serial)
 assets/
@@ -117,15 +119,21 @@ README.md
   desabilitado e sem fuso** — o navegador detecta o fuso (`Intl`) ao abrir o
   portal e habilita. Toque só "acorda" a tela. Persistido em NVS (com migração
   de versão).
-- **Game mode**: um **pull da direita** (⟨, aba na borda / swipe pra esquerda)
-  abre o **menu de jogos**. Hoje: **Doodle Jump** (`DoodleGame`) — o furão (sprite
-  oficial de 40px, `ferret_game.h`) pula entre plataformas; o jogador controla a
-  horizontal **seguindo o dedo** (não é tilt). Algumas plataformas têm **mola**
-  (boost, pulo bem maior). Som de pulo a cada quicada e som de morte no game
-  over. Botão "voltar" no canto sup. esq.; game over → toque volta ao menu. Tela
-  do jogo sempre no hardware. O `main` tem uma máquina de estados de tela
-  (`SCREEN_PET`/`GAMES`/`DOODLE`); durante os jogos o pet continua vivo em
-  background (decaimento, som, portal, animação no WS).
+- **Game mode**: pull da **direita** abre o **menu de jogos** (tiles quadrados);
+  pull da **esquerda** = "voltar" (menu de config, menu de jogos e Bolinha —
+  todas as abas puxam pro centro). Tela dos jogos sempre no hardware; ambos
+  também jogáveis **pelo celular** (portal vira controle via WS). O `main` tem a
+  máquina de telas (`SCREEN_PET`/`GAMES`/`DOODLE`/`BALL`); durante os jogos o
+  pet continua vivo em background (decaimento, som, portal).
+  - **Jump!** (`DoodleGame`): furão (sprite 40px, `ferret_game.h`) pula entre
+    plataformas seguindo o dedo. Tipos: normal, **mola** (boost), **móvel**
+    (azul) e **quebradiça** (bege, some após 1 pulo). Dificuldade sobe com a
+    altura; nuvens em parallax; **recorde na NVS** ("NOVO RECORDE!" + jingle).
+    SFX por tipo de quicada; LED pisca vermelho no game over.
+  - **Bolinha** (`BallGame`): fetch — swipe pra cima arremessa a bola de tênis
+    (física: gravidade, quiques, atrito); o furão passeia, persegue e pega a
+    bola **no chão** (nunca no ar), comemora e ela volta. Cena da floresta de
+    fundo; furão 2x (80px) com walk/idle.
 - **LED RGB** reflete o humor (verde/amarelo/laranja/vermelho/azul/âmbar).
 - Estado salvo na NVS a cada 60s (`Pet::save()`).
 
@@ -152,6 +160,13 @@ Quais animações exportar (e quais espelhar para a esquerda) fica na lista
 não usar essa cor no desenho.
 
 ## Trocar os sons
+
+**REGRA: toda feature nova merece um efeito sonoro.** Procure um SFX que
+combine no **MyInstants** e proponha junto com a feature (o dono adora sons em
+tudo). O site bloqueia fetchers — buscar com `curl -A "<UA de navegador>"` em
+`https://www.myinstants.com/en/search/?name=<termo>`; o caminho do MP3 sai do
+`onclick play('/media/sounds/xxx.mp3')` e baixa direto de
+`https://www.myinstants.com/media/sounds/xxx.mp3`.
 
 MP3s são embutidos como headers PROGMEM (sem passo de upload de filesystem).
 **Todos vão em `include/sounds/`** e são incluídos no `AudioPlayer.cpp` como
@@ -184,6 +199,11 @@ pio device monitor       # log serial, 115200 baud
 ```
 
 ## Debug tools (tirar "print" da tela + navegar por serial)
+
+**REGRA: após QUALQUER mudança visual ou feature nova, SEMPRE valide com a
+ferramenta de screenshot antes de reportar ao dono** — `tools/hwshot.py` para
+telas navegadas (menus/jogos) ou `curl http://ferret.local/shot.bmp` para
+estado vivo (relógio/tema). Nunca assuma que a UI ficou certa sem ver o print.
 
 Para validar UI **sem olhar o hardware**: o firmware tem um **console serial**
 (`dispatchSerialCmd` em `main.cpp`, um comando por linha) e o comando `shot`
@@ -225,10 +245,11 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
       `Clock` já sincroniza NTP — dá pra salvar o timestamp e computar o gap).
 - [ ] Curva de bateria em `Battery::percent()` é aproximada — vale calibrar
       com a tensão real da bateria em repouso.
-- [~] **Game mode** iniciado (Doodle Jump por touch). Próximos: controle pelo
-      **celular** (tilt via WS, tela só no hardware) e o jogo da **bolinha**.
 - [ ] Animação **Death** do sheet ainda não é usada (ex.: stat zerado por
       muito tempo).
+- [ ] Ideias discutidas: **Home Assistant via MQTT** (sensores + controles),
+      **player de música** (stream HTTP pelo stack de áudio / Music Assistant),
+      **voz com IA** (mic do ES8311 + Claude API), OTA, moedas/lojinha.
 - [ ] Acesso remoto (fora de casa): plano discutido = Tailscale num aparelho
       ajudante + Funnel (exigiria mover o WS pra porta 80 via HTTP Upgrade).
 
