@@ -6,7 +6,6 @@
 #include <AudioGeneratorWAV.h>
 #include <AudioFileSourcePROGMEM.h>
 #include <AudioFileSourceHTTPStream.h>
-#include <AudioFileSourceBuffer.h>
 #include <AudioOutputI2S.h>
 #include "pins.h"
 #include "sounds/sleep_music.h"
@@ -85,11 +84,108 @@ void es8311_init() {
 // Convenience casts for the opaque pointers stored in the header.
 #define DEC (static_cast<AudioGenerator*>(_dec))
 #define SRC (static_cast<AudioFileSource*>(_src))
-#define HTTPSRC (static_cast<AudioFileSource*>(_http))
+#define HTTPSRC (static_cast<AudioFileSourceHTTPStream*>(_http))
 #define OUT (static_cast<AudioOutputI2S*>(_out))
 
-// Network ring buffer for streaming (PSRAM): absorbs WiFi hiccups.
-static constexpr uint32_t STREAM_BUF_BYTES = 64 * 1024;
+// Network ring buffer for the streaming fallback (PSRAM): absorbs WiFi
+// hiccups. 128KB is ~8s at 128kbps, so brief packet loss never underruns.
+static constexpr uint32_t STREAM_BUF_BYTES = 128 * 1024;
+
+// ------------------------------------------------------------
+// StreamRingSource: PSRAM ring between the HTTP source and the decoder.
+//
+// Why not AudioFileSourceBuffer: on underflow it falls back to the HTTP
+// source's BLOCKING read, which waits only 500ms for data and then KILLS the
+// connection (http.end()) and reports EOF. Sources that pace their output
+// (Music Assistant transcodes, some radios) routinely gap longer than that,
+// so playback died seconds in. This ring only ever uses readNonBlock() -
+// which never closes the connection - and read() waits patiently for data:
+// an underrun becomes a brief silence instead of end-of-song.
+// ------------------------------------------------------------
+class StreamRingSource : public AudioFileSource {
+ public:
+  // Underrun grace: how long read() waits for new bytes before declaring the
+  // stream dead. Generous on purpose - real disconnects are detected earlier
+  // via isOpen() (TCP closed), so this only limits a silent, stuck server.
+  static constexpr uint32_t READ_GRACE_MS = 15000;
+
+  // abortFlag: checked while read() waits for data, so a pending stop request
+  // interrupts the wait instead of hanging the audio task for the grace time.
+  StreamRingSource(AudioFileSourceHTTPStream* http, uint8_t* buf, uint32_t cap,
+                   volatile bool* abortFlag)
+      : _http(http), _buf(buf), _cap(cap), _abort(abortFlag) {}
+
+  // Pull whatever TCP already has into the ring (never blocks). Called from
+  // read() while waiting and from the audio task between decoder loops.
+  bool loop() override {
+    if (_eof) return true;
+    for (;;) {
+      const uint32_t used = (uint32_t)(_w - _r);
+      uint32_t space = _cap - used;
+      if (space == 0) return true;  // ring full
+      const uint32_t at = (uint32_t)(_w % _cap);
+      uint32_t chunk = min(space, _cap - at);  // contiguous till wrap
+      chunk = min(chunk, (uint32_t)4096);
+      const uint32_t n = _http->readNonBlock(_buf + at, chunk);
+      if (n == 0) {
+        // No data right now. If the connection is really gone AND drained,
+        // that's the true end of the stream.
+        if (!_http->isOpen()) _eof = true;
+        return true;
+      }
+      _w += n;
+    }
+  }
+
+  uint32_t read(void* data, uint32_t len) override {
+    const uint32_t t0 = millis();
+    for (;;) {
+      loop();
+      const uint32_t avail = (uint32_t)(_w - _r);
+      if (avail > 0) {
+        uint32_t n = min(avail, len);
+        const uint32_t at = (uint32_t)(_r % _cap);
+        const uint32_t first = min(n, _cap - at);
+        memcpy(data, _buf + at, first);
+        if (n > first) memcpy((uint8_t*)data + first, _buf, n - first);
+        _r += n;
+        return n;
+      }
+      if (_eof) return 0;
+      if (_abort && *_abort) return 0;  // stop requested: bail out now
+      if (millis() - t0 > READ_GRACE_MS) { _eof = true; return 0; }
+      vTaskDelay(1);  // audio task: wait for the network to catch up
+    }
+  }
+
+  uint32_t fillLevel() const { return (uint32_t)(_w - _r); }
+  bool endOfStream() const { return _eof; }
+
+  bool seek(int32_t, int) override { return false; }
+  bool close() override { return _http->close(); }
+  bool isOpen() override { return true; }
+  uint32_t getSize() override { return 0; }
+  uint32_t getPos() override { return (uint32_t)_r; }
+
+ private:
+  AudioFileSourceHTTPStream* _http;  // owned by AudioPlayer (_http member)
+  uint8_t* _buf;
+  uint32_t _cap;
+  volatile bool* _abort;
+  uint64_t _w = 0, _r = 0;  // absolute counters (index = counter % cap)
+  bool _eof = false;
+};
+
+// Finite media (TTS, announcements, songs) is downloaded whole into PSRAM and
+// played from memory. Cap the download so a huge/endless URL can't exhaust
+// PSRAM; anything bigger (or unknown-length) falls back to live streaming.
+// 4MB is ~4 min at 128kbps - covers TTS and typical Music Assistant tracks.
+static constexpr uint32_t MEDIA_DL_MAX = 4u * 1024 * 1024;
+
+// Streaming: how much to buffer BEFORE starting the decoder. Without this the
+// decoder starts on an empty ring and the first second of TTS gets chopped.
+// 32KB = ~2s @128kbps / ~0.8s @320kbps.
+static constexpr uint32_t STREAM_PREFILL_BYTES = 32u * 1024;
 
 void AudioPlayer::begin() {
   // I2C bus "A" dedicated to the codec (the touch uses bus 1).
@@ -112,13 +208,17 @@ void AudioPlayer::begin() {
   p.end();
   applyGain();
 
-  // ESP8266Audio's HTTP source waits for data with yield()-spins, which never
-  // let the priority-0 idle task run - streaming bursts on core 0 would trip
-  // the idle task watchdog. Unwatch IDLE0 (core 1 / render stays protected).
+  // Pin the audio task to core 0 (PRO, with the WiFi stack) - NOT core 1,
+  // which owns the render loop. Media plays from a fully-downloaded PSRAM
+  // buffer (see downloadToPsram), so playback is pure in-memory decode with no
+  // network I/O: core 1 (render) is never touched -> the screen stays smooth,
+  // and WiFi (core 0) is idle during playback. Only the brief download burst
+  // uses the network, and it yields (vTaskDelay) so WiFi survives it.
+  // The download/streaming reads can busy core 0, so unwatch its idle task.
   esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
 
-  // 12KB stack: the HTTP streaming source (WiFiClient + headers) needs more
-  // headroom than PROGMEM playback.
+  // 12KB stack: the HTTP source (WiFiClient + headers) needs more headroom
+  // than PROGMEM playback.
   xTaskCreatePinnedToCore(taskTrampoline, "audio", 12288, this, 2, nullptr, 0);
 }
 
@@ -162,6 +262,10 @@ void AudioPlayer::playStream(const char* url) {
   _streamReq = true;
   _startReq = false;  // a pending SFX loses to the stream
   portEXIT_CRITICAL(&_reqMux);
+  // Report "playing" right away (open+prefill take 1-2s). Music Assistant
+  // watches the player state after sending play; seeing "idle" that long
+  // makes it give up on the session. startMedia() clears it on failure.
+  _streaming = true;
 }
 
 void AudioPlayer::stopStream() {
@@ -210,37 +314,124 @@ void AudioPlayer::startDecode(const unsigned char* data, unsigned int len) {
 
 // Open an HTTP MP3 stream: net source -> PSRAM ring buffer -> MP3 decoder.
 // Runs on the audio task (network reads never touch the render loop).
-void AudioPlayer::startStream(const char* url) {
+// One URL, ONE connection (TTS/Music Assistant flow URLs are single-use - a
+// probe GET would consume them). Open it once, then decide by Content-Length:
+//  - finite + fits PSRAM -> download fully over this connection, play from
+//    memory (clean start/end, WiFi completely free during playback);
+//  - unknown length / oversized (chunked TTS proxy, radio, MA flows) ->
+//    buffered live streaming over this same connection, with a prefill so the
+//    decoder never starts on an empty ring (that chopped the first second).
+void AudioPlayer::startMedia(const char* url) {
   cleanup();
-  _streaming = false;
-  if (!_streamBuf) {
-    _streamBuf = (uint8_t*)ps_malloc(STREAM_BUF_BYTES);
-    if (!_streamBuf) _streamBuf = (uint8_t*)malloc(16 * 1024);
-    if (!_streamBuf) { Serial.println("[media] no buffer memory"); return; }
+  _live = false;
+  // NOTE: _streaming is already true (set optimistically by playStream() so
+  // the reported state flips to "playing" instantly - Music Assistant gives
+  // up if the player stays "idle" after a play command). Only clear it on
+  // the failure paths below; don't reset it here or the state blips idle.
+  if (strncmp(url, "http://", 7) != 0) {  // ESP32 has no TLS here
+    Serial.printf("[media] unsupported url: %s\n", url);
+    _streaming = false;
+    return;
   }
   auto* http = new AudioFileSourceHTTPStream();
   if (!http->open(url)) {
     Serial.printf("[media] open failed: %s\n", url);
     delete http;
+    _streaming = false;
     return;
   }
   _http = http;
-  _src = new AudioFileSourceBuffer(http, _streamBuf, STREAM_BUF_BYTES);
+
+  const uint32_t size = http->getSize();  // 0 / huge when chunked or unknown
+  if (size > 0 && size <= MEDIA_DL_MAX && downloadToPsram(http, size)) {
+    delete HTTPSRC;  // download complete; drop the connection
+    _http = nullptr;
+    _src = new AudioFileSourcePROGMEM(_dlBuf, _dlLen);
+    bool wav = _dlLen >= 4 && memcmp(_dlBuf, "RIFF", 4) == 0;
+    _dec = wav ? static_cast<void*>(new AudioGeneratorWAV())
+               : static_cast<void*>(new AudioGeneratorMP3());
+    if (!DEC->begin(SRC, OUT)) { cleanup(); _streaming = false; return; }
+    _playing = true;
+    _streaming = true;  // "media active" for state + SFX suppression
+    Serial.printf("[media] playing %u bytes from PSRAM (%s)\n", _dlLen,
+                  wav ? "wav" : "mp3");
+    return;
+  }
+  startStream(url);  // reuses _http (already open)
+}
+
+// Pull a known-length body into PSRAM through the already-open source.
+bool AudioPlayer::downloadToPsram(void* httpv, uint32_t size) {
+  auto* http = static_cast<AudioFileSourceHTTPStream*>(httpv);
+  uint8_t* buf = (uint8_t*)ps_malloc(size);
+  if (!buf) return false;
+  uint32_t got = 0, last = millis();
+  while (got < size) {
+    uint32_t n = http->readNonBlock(buf + got, min((uint32_t)4096, size - got));
+    if (n > 0) {
+      got += n;
+      last = millis();
+    } else if (millis() - last > 8000) {
+      break;  // stalled
+    } else {
+      vTaskDelay(1);  // yield to WiFi while waiting for the next TCP chunk
+    }
+  }
+  if (got != size) { free(buf); return false; }
+  _dlBuf = buf;
+  _dlLen = size;
+  return true;
+}
+
+// Live streaming over the connection startMedia() already opened in _http.
+// The url parameter is only for logging.
+void AudioPlayer::startStream(const char* url) {
+  if (!_http) { _streaming = false; return; }  // startMedia() always sets it
+  if (!_streamBuf) {
+    _streamBuf = (uint8_t*)ps_malloc(STREAM_BUF_BYTES);
+    if (!_streamBuf) _streamBuf = (uint8_t*)malloc(16 * 1024);
+    if (!_streamBuf) {
+      Serial.println("[media] no buffer memory");
+      cleanup();
+      _streaming = false;
+      return;
+    }
+  }
+  auto* buf = new StreamRingSource(HTTPSRC, _streamBuf, STREAM_BUF_BYTES, &_stopReq);
+  _src = buf;
+  // Prefill the ring before starting the decoder: an empty buffer chopped the
+  // first second of TTS. Stop early when the level plateaus (small clip hit
+  // EOF, or the server is slow - start with what we have) or on the deadline.
+  const uint32_t t0 = millis();
+  uint32_t lastLvl = 0, lastRise = t0;
+  for (;;) {
+    buf->loop();  // non-blocking fill from TCP
+    const uint32_t lvl = buf->fillLevel();
+    if (lvl >= STREAM_PREFILL_BYTES || buf->endOfStream()) break;
+    if (lvl != lastLvl) { lastLvl = lvl; lastRise = millis(); }
+    else if (millis() - lastRise > 500) break;
+    if (millis() - t0 > 4000) break;
+    vTaskDelay(1);
+  }
   _dec = new AudioGeneratorMP3();
   if (!DEC->begin(SRC, OUT)) {
     Serial.println("[media] decoder begin failed");
     cleanup();
+    _streaming = false;
     return;
   }
   _playing = true;
   _streaming = true;
-  Serial.printf("[media] streaming %s\n", url);
+  _live = true;  // ring buffer needs on-going refill in taskLoop
+  Serial.printf("[media] streaming %s (prefill %uB)\n", url,
+                (unsigned)buf->fillLevel());
 }
 
 void AudioPlayer::cleanup() {
   if (_dec) { DEC->stop(); delete DEC; _dec = nullptr; }
   if (_src) { delete SRC; _src = nullptr; }
   if (_http) { delete HTTPSRC; _http = nullptr; }
+  if (_dlBuf) { free(_dlBuf); _dlBuf = nullptr; _dlLen = 0; }
 }
 
 void AudioPlayer::taskTrampoline(void* arg) {
@@ -271,19 +462,33 @@ void AudioPlayer::taskLoop() {
       cleanup();
       _playing = false;
       _streaming = false;
+      _live = false;
       Serial.println("[media] stopped");
     }
-    if (streamNow) startStream(url);
+    if (streamNow) startMedia(url);
     else if (data) startDecode(data, len);
 
     if (_playing) {
-      if (!DEC->loop()) {  // clip/stream finished (or the stream dropped)
+      if (!DEC->loop()) {  // clip finished / EOF (or a live stream dropped)
+        if (_live && _src) {
+          // Diagnose why a live stream ended: fill>0 = decoder choked on the
+          // data; fill==0 = the source dried up (server stopped/closed).
+          Serial.printf("[media] live end: fill=%u pos=%u\n",
+                        (unsigned)static_cast<StreamRingSource*>(_src)->fillLevel(),
+                        (unsigned)(_http ? HTTPSRC->getPos() : 0));
+        }
         cleanup();
         _playing = false;
         if (_streaming) {
           _streaming = false;
-          Serial.println("[media] stream ended");
+          _live = false;
+          Serial.println("[media] ended");
         }
+      } else if (_live && _src) {
+        // Live-streaming only: keep the network ring topped up with
+        // NON-blocking reads so the decoder rarely has to wait. (Downloaded
+        // clips play from PSRAM with no network I/O and skip this.)
+        static_cast<StreamRingSource*>(_src)->loop();
       }
     }
     vTaskDelay(1);  // yield (1 tick)

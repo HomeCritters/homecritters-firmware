@@ -55,7 +55,10 @@ class AudioPlayer {
   static void taskTrampoline(void* arg);
   void taskLoop();
   void startDecode(const unsigned char* data, unsigned int len);
-  void startStream(const char* url);  // audio task only
+  void startMedia(const char* url);  // audio task only: open once, then
+                                     // download-to-PSRAM or live-stream
+  bool downloadToPsram(void* http, uint32_t size);  // known-length body -> PSRAM
+  void startStream(const char* url);  // live ring buffer over the open _http
   void cleanup();
 
   // Request handoff main loop (core 1) -> audio task (core 0). The spinlock
@@ -66,15 +69,19 @@ class AudioPlayer {
   const unsigned char* _reqData = nullptr;
   unsigned int _reqLen = 0;
   bool _streamReq = false;
-  bool _stopReq = false;
+  // volatile: the streaming ring source polls this mid-read to abort waits.
+  volatile bool _stopReq = false;
   char _reqUrl[224] = {0};
 
-  bool _playing = false;           // audio-task only
-  volatile bool _streaming = false;  // read by main for state reporting
+  bool _playing = false;             // audio-task only
+  volatile bool _streaming = false;  // media active (read by main for state)
+  bool _live = false;                // audio-task only: live ring-buffer path
 
   void* _dec = nullptr;   // AudioGenerator* (MP3 or WAV, opaque in the header)
   void* _src = nullptr;   // AudioFileSource* (PROGMEM or net buffer)
   void* _http = nullptr;  // AudioFileSourceHTTPStream* (streaming only)
   void* _out = nullptr;   // AudioOutputI2S*
   uint8_t* _streamBuf = nullptr;  // PSRAM ring for the buffered net source
+  uint8_t* _dlBuf = nullptr;      // PSRAM buffer for a fully-downloaded clip
+  uint32_t _dlLen = 0;            // size of the downloaded clip
 };

@@ -21,6 +21,10 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor*
   _onAction = onAction;
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOSTNAME);
+  // Modem power save (the default) makes the radio nap between AP beacons:
+  // multi-second latency spikes and packet loss under load - fatal for media
+  // streaming and the HA WebSocket. Always-on RX costs ~50mA; worth it here.
+  WiFi.setSleep(false);
   WiFi.begin();  // reconnect using previously saved credentials
 }
 
@@ -132,10 +136,11 @@ void WebPortal::startServer() {
 void WebPortal::handleInfo() {
   char name[32];
   jsonEscape(_pet ? _pet->name() : String("Furao"), name, sizeof(name));
-  char b[192];
+  char b[224];
   snprintf(b, sizeof(b),
-           "{\"name\":\"%s\",\"mac\":\"%s\",\"model\":\"Ball V2\",\"fw\":\"%s\"}",
-           name, WiFi.macAddress().c_str(), FW_VERSION);
+           "{\"name\":\"%s\",\"mac\":\"%s\",\"model\":\"Ball V2\",\"fw\":\"%s\","
+           "\"rssi\":%d}",
+           name, WiFi.macAddress().c_str(), FW_VERSION, WiFi.RSSI());
   _server.send(200, "application/json", b);
 }
 
@@ -199,9 +204,13 @@ void WebPortal::handleShot() {
 
 void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
   if (type == WStype_CONNECTED) {
+    Serial.printf("[ws] client %u connected (%s)\n", num,
+                  _ws.remoteIP(num).toString().c_str());
     char buf[768];
     stateJson(buf, sizeof(buf));
     _ws.sendTXT(num, buf);  // send the current state on connect
+  } else if (type == WStype_DISCONNECTED) {
+    Serial.printf("[ws] client %u disconnected\n", num);
   } else if (type == WStype_TEXT) {
     String msg;
     msg.reserve(len);
@@ -260,6 +269,7 @@ void WebPortal::applyCommand(const String& msg) {
   }
   // Media player (HA integration): "media:play:<url>" / "media:stop".
   if (msg.startsWith("media:play:")) {
+    Serial.printf("[media] request: %s\n", msg.c_str() + 11);
     if (_audio) _audio->playStream(msg.c_str() + 11);
     return;
   }

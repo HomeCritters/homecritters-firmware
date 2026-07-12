@@ -508,7 +508,11 @@ void loop() {
   if (ferret.animSeq() != lastSeq || ferret.faceLeft() != lastFlip) {
     lastSeq = ferret.animSeq();
     lastFlip = ferret.faceLeft();
-    if (screen == SCREEN_PET) web.pushState();
+    // Suppress the high-rate animation mirror (~10x/s: JSON build + core-0
+    // send + phone re-render) while media is playing. Those broadcasts steal
+    // CPU/network from a live audio stream; the portal animation can freeze
+    // for the duration. Meaningful pushes (media/stat changes) still go out.
+    if (screen == SCREEN_PET && !audio.streaming()) web.pushState();
   }
 
   led.update(pet.mood());
