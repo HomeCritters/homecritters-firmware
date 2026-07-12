@@ -54,6 +54,8 @@ class AudioPlayer {
 
   static void taskTrampoline(void* arg);
   void taskLoop();
+  static void netTaskTrampoline(void* arg);
+  void netTaskLoop();  // live-stream network producer (fills the ring)
   void startDecode(const unsigned char* data, unsigned int len);
   void startMedia(const char* url);  // audio task only: open once, then
                                      // download-to-PSRAM or live-stream
@@ -84,4 +86,5 @@ class AudioPlayer {
   uint8_t* _streamBuf = nullptr;  // PSRAM ring for the buffered net source
   uint8_t* _dlBuf = nullptr;      // PSRAM buffer for a fully-downloaded clip
   uint32_t _dlLen = 0;            // size of the downloaded clip
+  SemaphoreHandle_t _srcMux = nullptr;  // guards _src/_http: producer vs cleanup
 };

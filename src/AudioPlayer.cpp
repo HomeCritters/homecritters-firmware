@@ -87,9 +87,10 @@ void es8311_init() {
 #define HTTPSRC (static_cast<AudioFileSourceHTTPStream*>(_http))
 #define OUT (static_cast<AudioOutputI2S*>(_out))
 
-// Network ring buffer for the streaming fallback (PSRAM): absorbs WiFi
-// hiccups. 128KB is ~8s at 128kbps, so brief packet loss never underruns.
-static constexpr uint32_t STREAM_BUF_BYTES = 128 * 1024;
+// Network ring buffer for live streaming (PSRAM): absorbs jitter and lets a
+// faster-than-realtime source build a cushion. 256KB is ~16s @128kbps / ~6s
+// @320kbps of runway.
+static constexpr uint32_t STREAM_BUF_BYTES = 256 * 1024;
 
 // ------------------------------------------------------------
 // StreamRingSource: PSRAM ring between the HTTP source and the decoder.
@@ -115,17 +116,18 @@ class StreamRingSource : public AudioFileSource {
                    volatile bool* abortFlag)
       : _http(http), _buf(buf), _cap(cap), _abort(abortFlag) {}
 
-  // Pull whatever TCP already has into the ring (never blocks). Called from
-  // read() while waiting and from the audio task between decoder loops.
+  // Producer side (net task ONLY). Pulls whatever TCP already has into the
+  // ring; never blocks. Draining continuously here keeps TCP ACKs flowing so
+  // the receive window stays open - that's what unlocks 256/320kbps.
   bool loop() override {
     if (_eof) return true;
     for (;;) {
       const uint32_t used = (uint32_t)(_w - _r);
-      uint32_t space = _cap - used;
+      const uint32_t space = _cap - used;
       if (space == 0) return true;  // ring full
-      const uint32_t at = (uint32_t)(_w % _cap);
+      const uint32_t at = _w % _cap;
       uint32_t chunk = min(space, _cap - at);  // contiguous till wrap
-      chunk = min(chunk, (uint32_t)4096);
+      chunk = min(chunk, (uint32_t)8192);
       const uint32_t n = _http->readNonBlock(_buf + at, chunk);
       if (n == 0) {
         // No data right now. If the connection is really gone AND drained,
@@ -134,17 +136,23 @@ class StreamRingSource : public AudioFileSource {
         return true;
       }
       _w += n;
+      _bytesIn += n;
     }
   }
 
+  // Consumer side (decode task). Does NOT fill - the producer task owns loop().
+  // It only waits for the producer to advance _w. Single-producer/single-
+  // consumer: producer writes _w, consumer writes _r, both 32-bit atomic reads.
   uint32_t read(void* data, uint32_t len) override {
     const uint32_t t0 = millis();
+    bool waited = false;
     for (;;) {
-      loop();
       const uint32_t avail = (uint32_t)(_w - _r);
       if (avail > 0) {
+        if (waited) _underruns++;
+        if (avail < _minFill) _minFill = avail;
         uint32_t n = min(avail, len);
-        const uint32_t at = (uint32_t)(_r % _cap);
+        const uint32_t at = _r % _cap;
         const uint32_t first = min(n, _cap - at);
         memcpy(data, _buf + at, first);
         if (n > first) memcpy((uint8_t*)data + first, _buf, n - first);
@@ -154,12 +162,20 @@ class StreamRingSource : public AudioFileSource {
       if (_eof) return 0;
       if (_abort && *_abort) return 0;  // stop requested: bail out now
       if (millis() - t0 > READ_GRACE_MS) { _eof = true; return 0; }
-      vTaskDelay(1);  // audio task: wait for the network to catch up
+      waited = true;
+      vTaskDelay(1);  // wait for the producer to deliver more bytes
     }
   }
 
   uint32_t fillLevel() const { return (uint32_t)(_w - _r); }
+  bool full() const { return (uint32_t)(_w - _r) >= _cap; }
   bool endOfStream() const { return _eof; }
+
+  // Rolling stats for profiling; statsReset() clears the window.
+  uint32_t underruns() const { return _underruns; }
+  uint32_t minFill() const { return _minFill; }
+  uint32_t bytesIn() const { return _bytesIn; }
+  void statsReset() { _underruns = 0; _minFill = _cap; _bytesIn = 0; }
 
   bool seek(int32_t, int) override { return false; }
   bool close() override { return _http->close(); }
@@ -172,8 +188,12 @@ class StreamRingSource : public AudioFileSource {
   uint8_t* _buf;
   uint32_t _cap;
   volatile bool* _abort;
-  uint64_t _w = 0, _r = 0;  // absolute counters (index = counter % cap)
-  bool _eof = false;
+  // Byte counters (index = counter % cap). uint32_t wraps cleanly for the
+  // difference math and is atomically read/written on the ESP32, so the
+  // producer (_w) and consumer (_r) can run on separate tasks lock-free.
+  volatile uint32_t _w = 0, _r = 0;
+  volatile bool _eof = false;
+  uint32_t _underruns = 0, _minFill = 0xFFFFFFFF, _bytesIn = 0;
 };
 
 // Finite media (TTS, announcements, songs) is downloaded whole into PSRAM and
@@ -182,10 +202,12 @@ class StreamRingSource : public AudioFileSource {
 // 4MB is ~4 min at 128kbps - covers TTS and typical Music Assistant tracks.
 static constexpr uint32_t MEDIA_DL_MAX = 4u * 1024 * 1024;
 
-// Streaming: how much to buffer BEFORE starting the decoder. Without this the
-// decoder starts on an empty ring and the first second of TTS gets chopped.
-// 32KB = ~2s @128kbps / ~0.8s @320kbps.
-static constexpr uint32_t STREAM_PREFILL_BYTES = 32u * 1024;
+// Streaming: how much to buffer BEFORE starting the decoder. A deep prefill
+// gives the biggest possible head start against underruns (the decoder starts
+// with seconds of audio banked), at the cost of a longer startup delay.
+// 96KB = ~6s @128kbps / ~2.4s @320kbps. The prefill loop bails early if the
+// source plateaus, so short/slow clips don't wait the whole budget.
+static constexpr uint32_t STREAM_PREFILL_BYTES = 96u * 1024;
 
 void AudioPlayer::begin() {
   // I2C bus "A" dedicated to the codec (the touch uses bus 1).
@@ -220,6 +242,14 @@ void AudioPlayer::begin() {
   // 12KB stack: the HTTP source (WiFiClient + headers) needs more headroom
   // than PROGMEM playback.
   xTaskCreatePinnedToCore(taskTrampoline, "audio", 12288, this, 2, nullptr, 0);
+
+  // Dedicated network producer for live streaming (core 0, same priority as
+  // the decoder). It does nothing but drain TCP into the ring, decoupled from
+  // the I2S-paced decode, so ACKs flow continuously and the TCP window stays
+  // open - that's what sustains 256/320kbps without underruns. _srcMux guards
+  // the shared ring against cleanup() on the decoder task.
+  _srcMux = xSemaphoreCreateMutex();
+  xTaskCreatePinnedToCore(netTaskTrampoline, "audionet", 6144, this, 2, nullptr, 0);
 }
 
 void AudioPlayer::applyGain() {
@@ -409,8 +439,8 @@ void AudioPlayer::startStream(const char* url) {
     const uint32_t lvl = buf->fillLevel();
     if (lvl >= STREAM_PREFILL_BYTES || buf->endOfStream()) break;
     if (lvl != lastLvl) { lastLvl = lvl; lastRise = millis(); }
-    else if (millis() - lastRise > 500) break;
-    if (millis() - t0 > 4000) break;
+    else if (millis() - lastRise > 1500) break;  // truly stalled: go with what we have
+    if (millis() - t0 > 8000) break;  // hard cap on startup delay
     vTaskDelay(1);
   }
   _dec = new AudioGeneratorMP3();
@@ -428,14 +458,45 @@ void AudioPlayer::startStream(const char* url) {
 }
 
 void AudioPlayer::cleanup() {
+  // Exclude the producer task (netTaskLoop) while we tear down the source it
+  // fills. Decoder + download buffer are consumer-only, so they stay outside.
   if (_dec) { DEC->stop(); delete DEC; _dec = nullptr; }
+  if (_srcMux) xSemaphoreTake(_srcMux, portMAX_DELAY);
   if (_src) { delete SRC; _src = nullptr; }
   if (_http) { delete HTTPSRC; _http = nullptr; }
+  if (_srcMux) xSemaphoreGive(_srcMux);
   if (_dlBuf) { free(_dlBuf); _dlBuf = nullptr; _dlLen = 0; }
 }
 
 void AudioPlayer::taskTrampoline(void* arg) {
   static_cast<AudioPlayer*>(arg)->taskLoop();
+}
+
+void AudioPlayer::netTaskTrampoline(void* arg) {
+  static_cast<AudioPlayer*>(arg)->netTaskLoop();
+}
+
+// Producer: while a live stream is playing, keep the ring as full as TCP
+// allows. Naps only when the ring is full or no data is pending; otherwise
+// spins tightly so the receive window never idles.
+void AudioPlayer::netTaskLoop() {
+  for (;;) {
+    if (!(_live && _playing && _src)) { vTaskDelay(5); continue; }
+    // Hold _srcMux across the fill so cleanup() (consumer task) can't delete
+    // _src out from under us - without this, stopping a live stream was a
+    // use-after-free that hung the audio task (playback stuck, stop ignored).
+    bool nap = true;
+    xSemaphoreTake(_srcMux, portMAX_DELAY);
+    if (_live && _playing && _src) {
+      auto* ring = static_cast<StreamRingSource*>(_src);
+      const uint32_t before = ring->fillLevel();
+      ring->loop();  // drain everything currently available
+      nap = ring->full() || ring->endOfStream() || ring->fillLevel() == before;
+    }
+    xSemaphoreGive(_srcMux);
+    if (nap) vTaskDelay(1);  // ring full / done / nothing arrived: nap a tick
+    else taskYIELD();        // made progress, more may be waiting: come back
+  }
 }
 
 void AudioPlayer::taskLoop() {
@@ -485,10 +546,19 @@ void AudioPlayer::taskLoop() {
           Serial.println("[media] ended");
         }
       } else if (_live && _src) {
-        // Live-streaming only: keep the network ring topped up with
-        // NON-blocking reads so the decoder rarely has to wait. (Downloaded
-        // clips play from PSRAM with no network I/O and skip this.)
-        static_cast<StreamRingSource*>(_src)->loop();
+        // The net task fills the ring now (see netTask); here we only profile.
+        auto* ring = static_cast<StreamRingSource*>(_src);
+        static uint32_t lastStat = 0;
+        const uint32_t nowMs = millis();
+        if (nowMs - lastStat > 2000) {
+          lastStat = nowMs;
+          Serial.printf("[media] ring fill=%uKB min=%uKB underruns=%u net=%uKB/s\n",
+                        (unsigned)(ring->fillLevel() / 1024),
+                        (unsigned)(ring->minFill() == 0xFFFFFFFF ? 0 : ring->minFill() / 1024),
+                        (unsigned)ring->underruns(),
+                        (unsigned)(ring->bytesIn() / 1024 / 2));  // /2s window
+          ring->statsReset();
+        }
       }
     }
     vTaskDelay(1);  // yield (1 tick)
