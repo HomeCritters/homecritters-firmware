@@ -498,6 +498,9 @@ void loop() {
     web.pushState();
   }
 
+  // The WebSocket must keep running during playback: Music Assistant tears the
+  // stream down if the device's WS goes silent (heartbeat timeout). Broadcast
+  // volume is already minimized while streaming (animation mirror suppressed).
   web.handle();
 
   ferret.update(pet, now);
@@ -599,13 +602,19 @@ void loop() {
     menuOpen = false;
   }
 
-  // The IP string is only rendered inside the config menu; skip the per-frame
-  // String allocation otherwise.
-  String ip;
-  if (menuOpen && web.connected()) ip = web.ip();
-  renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
-                led.brightness(), web.connected(), ip.c_str(), clockActive, petClock);
+  // DIAGNOSTIC: while audio streams, stop redrawing the scene entirely (the
+  // full-scene redraw hammers PSRAM + the display SPI bus). The menu still
+  // draws so volume stays usable. Screen just holds its last frame.
+  const bool freezeUi = audio.streaming() && !menuOpen;
+  if (!freezeUi) {
+    // The IP string is only rendered inside the config menu; skip the per-frame
+    // String allocation otherwise.
+    String ip;
+    if (menuOpen && web.connected()) ip = web.ip();
+    renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
+                  led.brightness(), web.connected(), ip.c_str(), clockActive, petClock);
+  }
   serviceShots();
 
-  delay(30);
+  delay(freezeUi ? 5 : 30);
 }

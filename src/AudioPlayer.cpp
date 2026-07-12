@@ -4,6 +4,7 @@
 #include <esp_task_wdt.h>
 #include <AudioGeneratorMP3.h>
 #include <AudioGeneratorWAV.h>
+#include <AudioGeneratorFLAC.h>
 #include <AudioFileSourcePROGMEM.h>
 #include <AudioFileSourceHTTPStream.h>
 #include <AudioOutputI2S.h>
@@ -87,6 +88,24 @@ void es8311_init() {
 #define HTTPSRC (static_cast<AudioFileSourceHTTPStream*>(_http))
 #define OUT (static_cast<AudioOutputI2S*>(_out))
 
+// Pick the decoder from the leading header bytes, matching what Music Assistant
+// (and ESPHome speakers) send: FLAC for lossless media - cheap for the server
+// to encode (unlike realtime 320k MP3) and half the bandwidth of WAV; WAV/PCM
+// for announcements; MP3 for TTS proxies and radio. Returns the AudioGenerator*
+// (as void* to match _dec) and sets *name for logging.
+static void* makeDecoder(const uint8_t* h, uint32_t n, const char** name) {
+  if (n >= 4 && memcmp(h, "fLaC", 4) == 0) {
+    *name = "flac";
+    return new AudioGeneratorFLAC();
+  }
+  if (n >= 12 && memcmp(h, "RIFF", 4) == 0 && memcmp(h + 8, "WAVE", 4) == 0) {
+    *name = "wav";
+    return new AudioGeneratorWAV();
+  }
+  *name = "mp3";
+  return new AudioGeneratorMP3();
+}
+
 // Network ring buffer for live streaming (PSRAM): absorbs jitter and lets a
 // faster-than-realtime source build a cushion. 256KB is ~16s @128kbps / ~6s
 // @320kbps of runway.
@@ -143,28 +162,50 @@ class StreamRingSource : public AudioFileSource {
   // Consumer side (decode task). Does NOT fill - the producer task owns loop().
   // It only waits for the producer to advance _w. Single-producer/single-
   // consumer: producer writes _w, consumer writes _r, both 32-bit atomic reads.
+  //
+  // Fills the FULL len before returning (like a file source), waiting for the
+  // producer as needed. Partial reads made AudioGeneratorWAV misparse the RIFF
+  // header (wrong sample rate -> ~1/4-speed "morse" playback); AudioGenerator
+  // MP3 tolerates short reads but full reads are correct for both. Returns
+  // fewer than len only at EOF / abort / underrun-grace.
   uint32_t read(void* data, uint32_t len) override {
-    const uint32_t t0 = millis();
+    uint32_t got = 0;
+    uint32_t t0 = millis();
     bool waited = false;
-    for (;;) {
+    while (got < len) {
       const uint32_t avail = (uint32_t)(_w - _r);
       if (avail > 0) {
-        if (waited) _underruns++;
+        if (waited) { _underruns++; waited = false; }
         if (avail < _minFill) _minFill = avail;
-        uint32_t n = min(avail, len);
+        const uint32_t want = min(avail, len - got);
         const uint32_t at = _r % _cap;
-        const uint32_t first = min(n, _cap - at);
-        memcpy(data, _buf + at, first);
-        if (n > first) memcpy((uint8_t*)data + first, _buf, n - first);
-        _r += n;
-        return n;
+        const uint32_t first = min(want, _cap - at);
+        memcpy((uint8_t*)data + got, _buf + at, first);
+        if (want > first) memcpy((uint8_t*)data + got + first, _buf, want - first);
+        _r += want;
+        got += want;
+        t0 = millis();  // progress: reset the underrun grace window
+        continue;
       }
-      if (_eof) return 0;
-      if (_abort && *_abort) return 0;  // stop requested: bail out now
-      if (millis() - t0 > READ_GRACE_MS) { _eof = true; return 0; }
+      if (_eof) break;
+      if (_abort && *_abort) break;  // stop requested: return what we have
+      if (millis() - t0 > READ_GRACE_MS) { _eof = true; break; }
       waited = true;
       vTaskDelay(1);  // wait for the producer to deliver more bytes
     }
+    return got;
+  }
+
+  // Copy up to n buffered bytes WITHOUT consuming them (to sniff the header
+  // and pick the decoder). Returns how many were copied.
+  uint32_t peek(uint8_t* out, uint32_t n) const {
+    const uint32_t avail = (uint32_t)(_w - _r);
+    n = min(n, avail);
+    const uint32_t at = _r % _cap;
+    const uint32_t first = min(n, _cap - at);
+    memcpy(out, _buf + at, first);
+    if (n > first) memcpy(out + first, _buf, n - first);
+    return n;
   }
 
   uint32_t fillLevel() const { return (uint32_t)(_w - _r); }
@@ -180,7 +221,11 @@ class StreamRingSource : public AudioFileSource {
   bool seek(int32_t, int) override { return false; }
   bool close() override { return _http->close(); }
   bool isOpen() override { return true; }
-  uint32_t getSize() override { return 0; }
+  // Report an "infinite" length. AudioGeneratorFLAC's eof callback is
+  // `getPos() >= getSize()`, so getSize()==0 made it declare EOF on the very
+  // first frame (FLAC aborted instantly). Real end-of-stream is still detected
+  // by read() returning 0. getPos stays well under this for hours of playback.
+  uint32_t getSize() override { return 0x7FFFFFFF; }
   uint32_t getPos() override { return (uint32_t)_r; }
 
  private:
@@ -230,25 +275,21 @@ void AudioPlayer::begin() {
   p.end();
   applyGain();
 
-  // Pin the audio task to core 0 (PRO, with the WiFi stack) - NOT core 1,
-  // which owns the render loop. Media plays from a fully-downloaded PSRAM
-  // buffer (see downloadToPsram), so playback is pure in-memory decode with no
-  // network I/O: core 1 (render) is never touched -> the screen stays smooth,
-  // and WiFi (core 0) is idle during playback. Only the brief download burst
-  // uses the network, and it yields (vTaskDelay) so WiFi survives it.
-  // The download/streaming reads can busy core 0, so unwatch its idle task.
+  // Two-core split, mirroring ESPHome's reader/decoder pipeline:
+  //   - DECODER on core 1 (APP). Heavy codecs (FLAC especially) are CPU-bound;
+  //     on core 0 the decode starved the WiFi stack + the net producer, capping
+  //     the pull rate. Core 1 owns the render loop, but the scene render is
+  //     frozen while audio streams (see main.cpp), so core 1 has the headroom.
+  //   - NET PRODUCER on core 0 (PRO, with WiFi/lwIP). Pure I/O: drains TCP into
+  //     the ring, keeping ACKs flowing so the receive window stays open.
+  // Each core's busy task can starve its idle task, so unwatch both WDTs.
   esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
+  esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(1));
 
   // 12KB stack: the HTTP source (WiFiClient + headers) needs more headroom
   // than PROGMEM playback.
-  xTaskCreatePinnedToCore(taskTrampoline, "audio", 12288, this, 2, nullptr, 0);
-
-  // Dedicated network producer for live streaming (core 0, same priority as
-  // the decoder). It does nothing but drain TCP into the ring, decoupled from
-  // the I2S-paced decode, so ACKs flow continuously and the TCP window stays
-  // open - that's what sustains 256/320kbps without underruns. _srcMux guards
-  // the shared ring against cleanup() on the decoder task.
   _srcMux = xSemaphoreCreateMutex();
+  xTaskCreatePinnedToCore(taskTrampoline, "audio", 12288, this, 2, nullptr, 1);
   xTaskCreatePinnedToCore(netTaskTrampoline, "audionet", 6144, this, 2, nullptr, 0);
 }
 
@@ -377,14 +418,12 @@ void AudioPlayer::startMedia(const char* url) {
     delete HTTPSRC;  // download complete; drop the connection
     _http = nullptr;
     _src = new AudioFileSourcePROGMEM(_dlBuf, _dlLen);
-    bool wav = _dlLen >= 4 && memcmp(_dlBuf, "RIFF", 4) == 0;
-    _dec = wav ? static_cast<void*>(new AudioGeneratorWAV())
-               : static_cast<void*>(new AudioGeneratorMP3());
+    const char* codec = "mp3";
+    _dec = makeDecoder(_dlBuf, _dlLen, &codec);
     if (!DEC->begin(SRC, OUT)) { cleanup(); _streaming = false; return; }
     _playing = true;
     _streaming = true;  // "media active" for state + SFX suppression
-    Serial.printf("[media] playing %u bytes from PSRAM (%s)\n", _dlLen,
-                  wav ? "wav" : "mp3");
+    Serial.printf("[media] playing %u bytes from PSRAM (%s)\n", _dlLen, codec);
     return;
   }
   startStream(url);  // reuses _http (already open)
@@ -443,7 +482,14 @@ void AudioPlayer::startStream(const char* url) {
     if (millis() - t0 > 8000) break;  // hard cap on startup delay
     vTaskDelay(1);
   }
-  _dec = new AudioGeneratorMP3();
+  // Sniff the buffered header to pick the decoder. FLAC ("fLaC") is what Music
+  // Assistant sends for lossless media (the format ESPHome speakers negotiate):
+  // half the bandwidth of WAV and cheap for the server to encode, unlike
+  // realtime 320k MP3. WAV/PCM covers announcements; MP3 covers TTS and radio.
+  uint8_t hdr[12] = {0};
+  buf->peek(hdr, sizeof(hdr));
+  const char* codec = "mp3";
+  _dec = makeDecoder(hdr, sizeof(hdr), &codec);
   if (!DEC->begin(SRC, OUT)) {
     Serial.println("[media] decoder begin failed");
     cleanup();
@@ -453,7 +499,7 @@ void AudioPlayer::startStream(const char* url) {
   _playing = true;
   _streaming = true;
   _live = true;  // ring buffer needs on-going refill in taskLoop
-  Serial.printf("[media] streaming %s (prefill %uB)\n", url,
+  Serial.printf("[media] streaming %s (%s, prefill %uB)\n", url, codec,
                 (unsigned)buf->fillLevel());
 }
 
