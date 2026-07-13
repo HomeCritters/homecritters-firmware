@@ -4,6 +4,7 @@
 #include <WiFiClient.h>
 #include <esp_http_client.h>
 #include <esp_heap_caps.h>
+#include <esp_wifi.h>
 
 namespace netbench {
 
@@ -164,6 +165,35 @@ static void start(const char* url, bool useIdf) {
 
 void runRaw(const char* url) { start(url, false); }
 void runIdf(const char* url) { start(url, true); }
+
+// Poor-man's CPU probe: prio-0 counter tasks on each core for 3s. The counts
+// are proportional to idle CPU on that core - compare idle vs during playback
+// to find who is stealing time.
+static volatile uint32_t s_cnt0 = 0, s_cnt1 = 0;
+static void counterTask(void* arg) {
+  volatile uint32_t* c = (volatile uint32_t*)arg;
+  const uint32_t t0 = millis();
+  while (millis() - t0 < 3000) (*c)++;
+  vTaskDelete(nullptr);
+}
+
+void cpuReport() {
+  s_cnt0 = s_cnt1 = 0;
+  xTaskCreatePinnedToCore(counterTask, "cnt0", 2048, (void*)&s_cnt0, 0, nullptr, 0);
+  xTaskCreatePinnedToCore(counterTask, "cnt1", 2048, (void*)&s_cnt1, 0, nullptr, 1);
+  vTaskDelay(pdMS_TO_TICKS(3200));
+  Serial.printf("[cpu] free-ish core0=%u core1=%u (counts/3s, higher = more idle)\n",
+                (unsigned)s_cnt0, (unsigned)s_cnt1);
+}
+
+// Print the CURRENT WiFi power-save mode and force it to NONE. If playback
+// somehow re-enables modem sleep, this shows it and un-does it live.
+void wifiPsReport() {
+  wifi_ps_type_t ps;
+  esp_wifi_get_ps(&ps);
+  Serial.printf("[wifi] ps was %d (0=NONE 1=MIN 2=MAX) -> forcing NONE\n", (int)ps);
+  esp_wifi_set_ps(WIFI_PS_NONE);
+}
 
 void memReport() {
   Serial.printf("[mem] heap free %u KB (largest %u KB) | psram free %u KB (largest %u KB)\n",

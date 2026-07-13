@@ -1,22 +1,31 @@
 #pragma once
 #include <Arduino.h>
+#include "audio/StreamRing.h"
+#include "audio/AudioReader.h"
 
 // ============================================================
-// AudioPlayer: plays embedded MP3s (sleep tune + sound effects)
-// through the ES8311 codec + I2S. Decoding runs on a dedicated
-// task (core 0) so it never stalls the render/UI loop (core 1).
+// AudioPlayer: embedded SFX + streamed media through the ES8311
+// codec + I2S.
+//
+// Media pipeline (Voice PE architecture):
+//   AudioReader task (core 0, esp_http_client)
+//     -> StreamRing (1MB PSRAM, SPSC)
+//     -> decoder task (core 1, FLAC/WAV/MP3 by header sniff)
+//     -> I2S DMA
+// The big ring is the underrun defense; the reader keeps TCP
+// drained independent of the I2S-paced decode.
 //
 // Only one sound plays at a time: a new play() preempts the
-// current one.
+// current one; pet SFX are suppressed while media streams.
 //
 // ES8311 init is ported from Espressif's official sequence
-// (esp-adf): slave mode, clock derived from SCLK/BCLK. SCLK mode
-// follows the MP3 sample rate (44.1/48kHz) automatically.
+// (esp-adf): slave mode, clock derived from SCLK/BCLK - follows
+// the decoded sample rate (44.1/48kHz) automatically.
 // ============================================================
 
 class AudioPlayer {
  public:
-  void begin();  // I2C + ES8311 + I2S + audio task
+  void begin();  // I2C + ES8311 + I2S + tasks
 
   // Effects / music (non-blocking; preempts whatever is playing).
   void playSleepTune();  // snoring loop for sleep
@@ -36,8 +45,8 @@ class AudioPlayer {
   void playBuzzer();     // Genius wrong answer
 
   // --- media streaming (HA media player / Music Assistant / TTS) ---
-  // Plays an http:// MP3 stream/file (no https). While a stream is active,
-  // pet SFX are suppressed (single-decoder policy) - stopStream() releases it.
+  // Plays an http:// FLAC/WAV/MP3 stream or file (no https). While a stream
+  // is active, pet SFX are suppressed - stopStream() releases them.
   void playStream(const char* url);
   void stopStream();
   bool streaming() const { return _streaming; }
@@ -54,37 +63,31 @@ class AudioPlayer {
 
   static void taskTrampoline(void* arg);
   void taskLoop();
-  static void netTaskTrampoline(void* arg);
-  void netTaskLoop();  // live-stream network producer (fills the ring)
   void startDecode(const unsigned char* data, unsigned int len);
-  void startMedia(const char* url);  // audio task only: open once, then
-                                     // download-to-PSRAM or live-stream
-  bool downloadToPsram(void* http, uint32_t size);  // known-length body -> PSRAM
-  void startStream(const char* url);  // live ring buffer over the open _http
-  void cleanup();
+  void startMedia(const char* url);  // decoder task only
+  void stopMedia();                  // decoder task only: reader+decoder+ring
+  void cleanupDecoder();             // decoder task only: _dec/_src
 
-  // Request handoff main loop (core 1) -> audio task (core 0). The spinlock
-  // keeps {data, len, flag} consistent: without it the task could pick up a
-  // fresh pointer with a stale length mid-update (true cross-core race).
+  // Request handoff main loop (core 1) -> decoder task. The spinlock keeps
+  // {data, len, flag} consistent: without it the task could pick up a fresh
+  // pointer with a stale length mid-update (true cross-core race).
   portMUX_TYPE _reqMux = portMUX_INITIALIZER_UNLOCKED;
   bool _startReq = false;
   const unsigned char* _reqData = nullptr;
   unsigned int _reqLen = 0;
   bool _streamReq = false;
-  // volatile: the streaming ring source polls this mid-read to abort waits.
+  // volatile: RingSource polls this mid-read to abort waits responsively.
   volatile bool _stopReq = false;
   char _reqUrl[224] = {0};
 
-  bool _playing = false;             // audio-task only
+  bool _playing = false;             // decoder-task only
   volatile bool _streaming = false;  // media active (read by main for state)
-  bool _live = false;                // audio-task only: live ring-buffer path
+  bool _live = false;                // decoder-task only: media (vs SFX) playing
 
-  void* _dec = nullptr;   // AudioGenerator* (MP3 or WAV, opaque in the header)
-  void* _src = nullptr;   // AudioFileSource* (PROGMEM or net buffer)
-  void* _http = nullptr;  // AudioFileSourceHTTPStream* (streaming only)
-  void* _out = nullptr;   // AudioOutputI2S*
-  uint8_t* _streamBuf = nullptr;  // PSRAM ring for the buffered net source
-  uint8_t* _dlBuf = nullptr;      // PSRAM buffer for a fully-downloaded clip
-  uint32_t _dlLen = 0;            // size of the downloaded clip
-  SemaphoreHandle_t _srcMux = nullptr;  // guards _src/_http: producer vs cleanup
+  void* _dec = nullptr;  // AudioGenerator* (FLAC/WAV/MP3, opaque in the header)
+  void* _src = nullptr;  // AudioFileSource* (PROGMEM for SFX, RingSource for media)
+  void* _out = nullptr;  // AudioOutputI2S*
+
+  StreamRing _ring;      // permanent 1MB PSRAM ring (media path)
+  AudioReader _reader;   // core-0 network reader task
 };

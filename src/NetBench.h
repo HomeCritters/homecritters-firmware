@@ -25,5 +25,7 @@ void runRaw(const char* url);
 void runIdf(const char* url);
 
 void memReport();
+void cpuReport();  // 3s prio-0 counter per core: relative idle CPU
+void wifiPsReport();  // print + force WiFi power save NONE
 
 }  // namespace netbench

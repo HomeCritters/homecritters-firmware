@@ -43,6 +43,8 @@ void DebugConsole::dispatch(const String& c) {
   }
   if (c == "shot") { _navigate(c); return; }
   if (c == "mem") { netbench::memReport(); return; }
+  if (c == "cpu") { netbench::cpuReport(); return; }
+  if (c == "slp") { netbench::wifiPsReport(); return; }
   if (c.startsWith("nb2:")) { netbench::runIdf(c.c_str() + 4); return; }
   if (c.startsWith("nb:")) { netbench::runRaw(c.c_str() + 3); return; }
 
