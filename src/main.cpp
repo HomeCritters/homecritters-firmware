@@ -602,19 +602,17 @@ void loop() {
     menuOpen = false;
   }
 
-  // DIAGNOSTIC: while audio streams, stop redrawing the scene entirely (the
-  // full-scene redraw hammers PSRAM + the display SPI bus). The menu still
-  // draws so volume stays usable. Screen just holds its last frame.
-  const bool freezeUi = audio.streaming() && !menuOpen;
-  if (!freezeUi) {
-    // The IP string is only rendered inside the config menu; skip the per-frame
-    // String allocation otherwise.
-    String ip;
-    if (menuOpen && web.connected()) ip = web.ip();
-    renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
-                  led.brightness(), web.connected(), ip.c_str(), clockActive, petClock);
-  }
+  // The scene renders normally during media playback. (A render freeze lived
+  // here while hunting the streaming stutter - the real culprit turned out to
+  // be MCLK EMI on GPIO0, not the render. Measured after that fix: full render
+  // + streaming = ring full, 0 underruns, WiFi 300+ KB/s.)
+  // The IP string is only rendered inside the config menu; skip the per-frame
+  // String allocation otherwise.
+  String ip;
+  if (menuOpen && web.connected()) ip = web.ip();
+  renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
+                led.brightness(), web.connected(), ip.c_str(), clockActive, petClock);
   serviceShots();
 
-  delay(freezeUi ? 5 : 30);
+  delay(30);
 }
