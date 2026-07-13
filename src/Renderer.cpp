@@ -976,41 +976,68 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   _canvas.pushSprite(0, 0);
 }
 
-// Overlay drawn while media plays. kind 1 = music: pixel notes float up the
-// scene in party colors. kind 2 = speech: an Alexa-style cyan ring sweeps
-// around the round display edge while the assistant talks.
+// Overlay drawn while media plays. kind 1 = music: disco ball + sweeping
+// laser show over the scene. kind 2 = speech: an Alexa-style cyan ring
+// sweeps around the round display edge while the assistant talks.
 void Renderer::drawMediaFx(uint8_t kind) {
   const uint32_t t = millis();
   if (kind == 1) {
-    // --- party notes ---
-    static constexpr uint16_t COLORS[] = {0xF81F /*magenta*/, 0x07FF /*cyan*/,
-                                          0xFFE0 /*yellow*/, 0x07E0 /*green*/};
+    // --- disco ball + lasers ---
+    const int bx = 120, by = 52, br = 13;
+    static constexpr uint16_t LASER[] = {0xF81F /*magenta*/, 0x07E0 /*green*/,
+                                         0x07FF /*cyan*/, 0xFC00 /*orange*/};
+    // Laser fan first (beams come from behind the ball). Each beam sweeps
+    // side to side on its own phase; length clipped above the stat bars.
     for (int i = 0; i < 4; i++) {
-      // Each note loops on its own phase: rises from the grass to the sky
-      // with a sine sway. Deterministic from time - no state to keep.
-      const uint32_t phase = (t / 14 + i * 45) % 180;   // 0..179 (rise cycle)
-      const int y = 180 - (int)phase;                   // 180 -> 0
-      const int x = 34 + i * 48 + (int)(10.0f * sinf((t / 400.0f) + i * 1.7f));
-      if (y < 26) continue;  // fade out near the header
-      const uint16_t c = COLORS[(i + t / 900) % 4];
-      // Eighth note: head + stem + flag.
-      _canvas.fillCircle(x, y, 3, c);
-      _canvas.drawFastVLine(x + 3, y - 9, 9, c);
-      _canvas.drawLine(x + 3, y - 9, x + 7, y - 6, c);
+      const float th = (i - 1.5f) * 0.55f + 0.45f * sinf(t / 550.0f + i * 1.3f);
+      const float c = cosf(th);
+      float len = 95.0f;
+      if (by + c * len > 130.0f) len = (130.0f - by) / c;  // stop above the HUD
+      const int ex = bx + (int)(sinf(th) * len);
+      const int ey = by + (int)(c * len);
+      const uint16_t col = LASER[(i + t / 1200) % 4];
+      _canvas.drawLine(bx, by, ex, ey, col);
+      _canvas.drawLine(bx + 1, by, ex + 1, ey, col);  // 2px beam
+      _canvas.fillCircle(ex, ey, 2, col);             // floor hit glow
+    }
+    // Cord + ball.
+    _canvas.drawFastVLine(bx, 0, by - br, _canvas.color565(90, 90, 100));
+    _canvas.fillCircle(bx, by, br, _canvas.color565(148, 150, 162));
+    // Mirror facets: dark grid dots sliding sideways = spinning illusion.
+    const int slide = (t / 90) % 4;
+    for (int fy = -br + 2; fy <= br - 2; fy += 4) {
+      const int half = (int)sqrtf((float)(br * br - fy * fy)) - 1;
+      for (int fx = -half + slide; fx <= half; fx += 4) {
+        _canvas.drawPixel(bx + fx, by + fy, _canvas.color565(96, 98, 110));
+      }
+    }
+    // Glint + twinkles (sparkle positions hop with time).
+    _canvas.fillCircle(bx - 4, by - 5, 2, 0xFFFF);
+    for (int k = 0; k < 3; k++) {
+      const uint32_t s = t / 160 + k * 7919;  // cheap hash per twinkle
+      const int tx = bx - br + 2 + (int)(s * 31 % (2 * br - 4));
+      const int ty = by - br + 2 + (int)(s * 17 % (2 * br - 4));
+      const int dx = tx - bx, dy = ty - by;
+      if (dx * dx + dy * dy <= (br - 2) * (br - 2)) {
+        _canvas.drawPixel(tx, ty, 0xFFFF);
+        _canvas.drawPixel(tx + 1, ty, LASER[k % 4]);
+      }
     }
   } else if (kind == 2) {
     // --- voice ring (Alexa style) ---
+    // Pulled 2px in from the panel edge: the glass is centered on 119.5, so a
+    // ring hugging r=119 from integer (120,120) reads visibly off-center.
     const int cx = 120, cy = 120;
-    // Dim navy base ring at the very edge of the round panel.
-    _canvas.fillArc(cx, cy, 112, 119, 0, 360, _canvas.color565(0, 24, 56));
-    // Bright cyan sweep + a soft trailing tail, rotating steadily.
+    // Dim navy base ring.
+    _canvas.fillArc(cx, cy, 108, 117, 0, 360, _canvas.color565(0, 24, 56));
+    // Bright cyan sweep + a hot leading edge, rotating steadily.
     const int a = (int)((t / 4) % 360);
-    _canvas.fillArc(cx, cy, 112, 119, a, (a + 70) % 360, _canvas.color565(0, 150, 220));
-    _canvas.fillArc(cx, cy, 113, 118, (a + 40) % 360, (a + 70) % 360,
-                    _canvas.color565(120, 230, 255));  // hot leading edge
+    _canvas.fillArc(cx, cy, 108, 117, a, (a + 70) % 360, _canvas.color565(0, 150, 220));
+    _canvas.fillArc(cx, cy, 109, 116, (a + 40) % 360, (a + 70) % 360,
+                    _canvas.color565(120, 230, 255));
     // Gentle breathing pulse on the opposite side for the "listening" feel.
     const uint8_t pulse = (uint8_t)(90 + 70 * sinf(t / 300.0f));
-    _canvas.fillArc(cx, cy, 114, 117, (a + 180) % 360, (a + 220) % 360,
+    _canvas.fillArc(cx, cy, 110, 115, (a + 180) % 360, (a + 220) % 360,
                     _canvas.color565(0, pulse / 2, pulse));
   }
 }
