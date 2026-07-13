@@ -977,7 +977,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   }
 
   // Media overlay on top of everything (skip while the config menu covers
-  // the screen): party notes for music, voice ring for TTS.
+  // the screen): party show for music, voice ring for TTS.
   if (mediaFx && !menuOpen) drawMediaFx(mediaFx);
 
   _canvas.pushSprite(0, 0);
