@@ -300,10 +300,19 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
 - [ ] Animação **Death** do sheet ainda não é usada (ex.: stat zerado por
       muito tempo).
 - [~] **Home Assistant**: fases 1 (entidades) e 2 (media player) prontas via a
-      integração custom. **Fase 3 pendente: voz/Assist** — habilitar o ADC do
-      ES8311 (mic) + I2S RX 16k, push-to-talk, stream do áudio pelo WS pra
-      integração rodar o pipeline do Assist (STT→IA→TTS; resposta toca pelo
-      media player). Wake word on-device (ESP-SR) é etapa futura.
+      integração custom. **Fase 3 EM ANDAMENTO: voz/Assist** (branch
+      `voice-assistant`) — mic do ES8311 (ADC) + I2S RX 16k full-duplex,
+      device vira `assist_satellite`, streama PCM pelo WS (binário), wake word
+      **"Alexa" REMOTO** (openWakeWord local no HA). Plano completo:
+      `.claude/plans/snug-plotting-kazoo.md`.
+- [ ] **Sendspin (futuro, mídia 2.0)**: protocolo aberto de áudio multi-room
+      sincronizado da OHF (ex-"Resonate"), servidor = Music Assistant, push via
+      TCP 8928 + mDNS. ESPHome tem componente `sendspin` (experimental). O nosso
+      pipeline (pull http) é mais simples e estável, mas o sendspin traria o que
+      não temos: **capa do álbum na tela + LED/pista no ritmo REAL** ("Art on
+      every screen, lights on the beat") + sync multi-room. Não migrar agora
+      (experimental + é componente esp-idf, porte pesado pro Arduino); revisitar
+      quando o protocolo estabilizar. Não conflita com o voice assistant.
 - [ ] Outras ideias: OTA, moedas/lojinha, clima real na cena.
 - [ ] Acesso remoto (fora de casa): plano discutido = Tailscale num aparelho
       ajudante + Funnel (exigiria mover o WS pra porta 80 via HTTP Upgrade).
