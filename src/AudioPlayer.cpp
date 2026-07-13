@@ -125,15 +125,16 @@ void AudioPlayer::begin() {
   pinMode(PIN_SPEAKER_EN, OUTPUT);
   digitalWrite(PIN_SPEAKER_EN, HIGH);
 
-  // I2S output to the codec (ESP32 is the I2S bus master).
-  // CRITICAL: mclk = -1 (I2S_PIN_NO_CHANGE). ESP8266Audio's default mclkPin
-  // is GPIO0, so it silently routed the ~11MHz MCLK onto the BOOT pin - the
-  // EMI desensed the WiFi radio whenever ANY audio played: RTT exploded
-  // 21ms -> 224ms (0% loss, pure retransmissions), collapsing TCP throughput
-  // 273 -> ~20 KB/s (window/RTT). The ES8311 runs in SCLK mode and needs no
-  // MCLK at all.
-  auto* out = new AudioOutputI2S(1, AudioOutputI2S::EXTERNAL_I2S, 16);
-  out->SetPinout(PIN_I2S_BCLK, PIN_I2S_LRCLK, PIN_I2S_DOUT, -1);
+  // I2S output to the codec (ESP32 is the I2S bus master), port 0.
+  // CRITICAL: route MCLK to its REAL pin (GPIO16, see pins.h). ESP8266Audio's
+  // default mclkPin is GPIO0, and the 3-arg SetPinout kept that: the ~11MHz
+  // MCLK square wave went out on the BOOT pad instead of the codec line. That
+  // EMI desensed the WiFi radio whenever ANY audio played - RTT exploded
+  // 21ms -> 224ms (0% loss, pure retransmissions) and TCP throughput
+  // collapsed 273 -> ~20 KB/s (window/RTT). On the proper trace the clock is
+  // harmless, and the ES8311 gets a genuine MCLK.
+  auto* out = new AudioOutputI2S(0, AudioOutputI2S::EXTERNAL_I2S, 16);
+  out->SetPinout(PIN_I2S_BCLK, PIN_I2S_LRCLK, PIN_I2S_DOUT, PIN_I2S_MCLK);
   _out = out;
 
   // Saved volume (default 80%).
