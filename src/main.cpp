@@ -520,6 +520,29 @@ void loop() {
 
   led.update(pet.mood());
 
+  // Media LED show: slow rainbow while music plays ("balada"), cyan pulse
+  // while the assistant speaks (matches the on-screen voice ring). Uses the
+  // same override channel as the Genius game; released when media ends.
+  {
+    static uint8_t lastKind = 0;
+    const uint8_t mk = (uint8_t)audio.mediaKind();
+    if (mk == AudioPlayer::MEDIA_MUSIC) {
+      const uint8_t h = (now / 24) & 0xFF;  // hue 0..255 rainbow wheel
+      const uint8_t x = (h % 85) * 3;
+      uint8_t r, g, b;
+      if (h < 85)       { r = 255 - x; g = x;       b = 0; }
+      else if (h < 170) { r = 0;       g = 255 - x; b = x; }
+      else              { r = x;       g = 0;       b = 255 - x; }
+      led.gameColor(r, g, b);
+    } else if (mk == AudioPlayer::MEDIA_TTS) {
+      const uint8_t p = (uint8_t)(120 + 100 * sinf(now / 300.0f));
+      led.gameColor(0, p / 2, p);
+    } else if (lastKind) {
+      led.endGame();  // media over: LED back to the mood
+    }
+    lastKind = mk;
+  }
+
   // Report the current screen to the portal and honor phone game nav (start/
   // back), so Doodle Jump can be launched and steered entirely from the phone.
   web.setScreen(screen == SCREEN_DOODLE ? "doodle" :
@@ -602,6 +625,14 @@ void loop() {
     menuOpen = false;
   }
 
+  // Party mode: while music streams, Leon dances - random little jumps in
+  // loose rhythm (reuses the pat-jump animation).
+  static unsigned long nextHopMs = 0;
+  if (audio.mediaKind() == AudioPlayer::MEDIA_MUSIC && !menuOpen && now >= nextHopMs) {
+    ferret.onPat();
+    nextHopMs = now + 900 + (esp_random() % 1000);
+  }
+
   // The scene renders normally during media playback. (A render freeze lived
   // here while hunting the streaming stutter - the real culprit turned out to
   // be MCLK EMI on GPIO0, not the render. Measured after that fix: full render
@@ -611,7 +642,8 @@ void loop() {
   String ip;
   if (menuOpen && web.connected()) ip = web.ip();
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
-                led.brightness(), web.connected(), ip.c_str(), clockActive, petClock);
+                led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
+                (uint8_t)audio.mediaKind());
   serviceShots();
 
   delay(30);

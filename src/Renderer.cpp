@@ -918,7 +918,8 @@ void Renderer::drawBatteryPill(int topY, int pct, uint16_t outline, uint16_t txt
 
 void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
                     bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
-                    bool wifiOn, const char* ip, bool clockActive, Clock& clock) {
+                    bool wifiOn, const char* ip, bool clockActive, Clock& clock,
+                    uint8_t mediaFx) {
   // Theme follows the real time of day (06-16 day, 16-18 afternoon, else
   // night). Without a synced clock, fall back to the pet's sleep state.
   enum { TOD_DAY, TOD_AFTERNOON, TOD_NIGHT } tod;
@@ -968,5 +969,48 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     }
   }
 
+  // Media overlay on top of everything (skip while the config menu covers
+  // the screen): party notes for music, voice ring for TTS.
+  if (mediaFx && !menuOpen) drawMediaFx(mediaFx);
+
   _canvas.pushSprite(0, 0);
+}
+
+// Overlay drawn while media plays. kind 1 = music: pixel notes float up the
+// scene in party colors. kind 2 = speech: an Alexa-style cyan ring sweeps
+// around the round display edge while the assistant talks.
+void Renderer::drawMediaFx(uint8_t kind) {
+  const uint32_t t = millis();
+  if (kind == 1) {
+    // --- party notes ---
+    static constexpr uint16_t COLORS[] = {0xF81F /*magenta*/, 0x07FF /*cyan*/,
+                                          0xFFE0 /*yellow*/, 0x07E0 /*green*/};
+    for (int i = 0; i < 4; i++) {
+      // Each note loops on its own phase: rises from the grass to the sky
+      // with a sine sway. Deterministic from time - no state to keep.
+      const uint32_t phase = (t / 14 + i * 45) % 180;   // 0..179 (rise cycle)
+      const int y = 180 - (int)phase;                   // 180 -> 0
+      const int x = 34 + i * 48 + (int)(10.0f * sinf((t / 400.0f) + i * 1.7f));
+      if (y < 26) continue;  // fade out near the header
+      const uint16_t c = COLORS[(i + t / 900) % 4];
+      // Eighth note: head + stem + flag.
+      _canvas.fillCircle(x, y, 3, c);
+      _canvas.drawFastVLine(x + 3, y - 9, 9, c);
+      _canvas.drawLine(x + 3, y - 9, x + 7, y - 6, c);
+    }
+  } else if (kind == 2) {
+    // --- voice ring (Alexa style) ---
+    const int cx = 120, cy = 120;
+    // Dim navy base ring at the very edge of the round panel.
+    _canvas.fillArc(cx, cy, 112, 119, 0, 360, _canvas.color565(0, 24, 56));
+    // Bright cyan sweep + a soft trailing tail, rotating steadily.
+    const int a = (int)((t / 4) % 360);
+    _canvas.fillArc(cx, cy, 112, 119, a, (a + 70) % 360, _canvas.color565(0, 150, 220));
+    _canvas.fillArc(cx, cy, 113, 118, (a + 40) % 360, (a + 70) % 360,
+                    _canvas.color565(120, 230, 255));  // hot leading edge
+    // Gentle breathing pulse on the opposite side for the "listening" feel.
+    const uint8_t pulse = (uint8_t)(90 + 70 * sinf(t / 300.0f));
+    _canvas.fillArc(cx, cy, 114, 117, (a + 180) % 360, (a + 220) % 360,
+                    _canvas.color565(0, pulse / 2, pulse));
+  }
 }

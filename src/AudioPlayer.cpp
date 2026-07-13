@@ -203,6 +203,8 @@ void AudioPlayer::playStream(const char* url) {
   _streamReq = true;
   _startReq = false;  // a pending SFX loses to the stream
   portEXIT_CRITICAL(&_reqMux);
+  // Speech vs music: HA's TTS always serves via /api/tts_proxy/.
+  _kind = strstr(url, "tts_proxy") ? MEDIA_TTS : MEDIA_MUSIC;
   // Report "playing" right away (open+prefill take 1-2s). Music Assistant
   // watches the player state after sending play; seeing "idle" that long
   // makes it give up on the session. startMedia() clears it on failure.

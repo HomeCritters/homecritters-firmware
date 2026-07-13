@@ -45,11 +45,17 @@ class AudioPlayer {
   void playBuzzer();     // Genius wrong answer
 
   // --- media streaming (HA media player / Music Assistant / TTS) ---
-  // Plays an http:// FLAC/WAV/MP3 stream or file (no https). While a stream
+  // Plays an http:// FLAC/MP3/WAV stream or file (no https). While a stream
   // is active, pet SFX are suppressed - stopStream() releases them.
   void playStream(const char* url);
   void stopStream();
   bool streaming() const { return _streaming; }
+
+  // What is playing: HA TTS URLs go through /api/tts_proxy/, so speech is
+  // distinguishable from music - the UI shows an Alexa-style ring for speech
+  // and a party mode for music.
+  enum MediaKind : uint8_t { MEDIA_NONE = 0, MEDIA_MUSIC, MEDIA_TTS };
+  MediaKind mediaKind() const { return _streaming ? _kind : MEDIA_NONE; }
 
   // Volume 0..100 (persisted to NVS, perceptual curve).
   void setVolume(int pct);
@@ -82,6 +88,7 @@ class AudioPlayer {
 
   bool _playing = false;             // decoder-task only
   volatile bool _streaming = false;  // media active (read by main for state)
+  volatile MediaKind _kind = MEDIA_NONE;  // set with _streaming in playStream()
   bool _live = false;                // decoder-task only: media (vs SFX) playing
 
   void* _dec = nullptr;  // AudioGenerator* (FLAC/WAV/MP3, opaque in the header)

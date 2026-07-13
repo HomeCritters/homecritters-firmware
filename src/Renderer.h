@@ -21,9 +21,12 @@ class Renderer {
   explicit Renderer(LGFX_BallV2& lcd) : _lcd(lcd), _canvas(&lcd) {}
 
   void begin();
+  // mediaFx: 0 none, 1 music (party notes), 2 TTS (Alexa-style voice ring) -
+  // mirrors AudioPlayer::MediaKind.
   void draw(const Pet& pet, Battery& battery, FerretActor& ferret,
             bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
-            bool wifiOn, const char* ip, bool clockActive, Clock& clock);
+            bool wifiOn, const char* ip, bool clockActive, Clock& clock,
+            uint8_t mediaFx = 0);
 
   // Screen (backlight) brightness 0..100, persisted to NVS. The Renderer owns
   // the display, so it owns this too. Floored so the screen never goes dark.
@@ -86,6 +89,7 @@ class Renderer {
   void drawRightHandle();
   void drawLeftHandle();  // "back" tab (config, games menu, Bolinha)
   void drawClock(Clock& clock);
+  void drawMediaFx(uint8_t kind);  // 1 = party notes, 2 = Alexa voice ring
   void drawDoodleFerret(int cx, int cy, bool faceLeft);
   // mode: 0 = idle, 1 = walking, 2 = jumping (celebration). zoom scales the
   // 40px game sprite (2 -> 80px, matching the scene ferret in Bolinha).
