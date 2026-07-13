@@ -4,6 +4,7 @@
 #include "AudioPlayer.h"
 #include "StatusLed.h"
 #include "Renderer.h"
+#include "NetBench.h"
 
 void DebugConsole::begin(Pet* pet, Battery* battery, AudioPlayer* audio, StatusLed* led,
                          Renderer* renderer,
@@ -28,6 +29,8 @@ void DebugConsole::printHelp() {
   Serial.println(F("  stats:H,E,J,Hy               (0..100 each)"));
   Serial.println(F("  bat                  - battery voltage + percent"));
   Serial.println(F("  play:<http-mp3-url> | mstop  - media stream test"));
+  Serial.println(F("  nb:<http-url> | nb2:<http-url> - net throughput (raw | esp_http_client)"));
+  Serial.println(F("  mem                  - heap/psram report"));
 }
 
 void DebugConsole::dispatch(const String& c) {
@@ -39,6 +42,9 @@ void DebugConsole::dispatch(const String& c) {
     return;
   }
   if (c == "shot") { _navigate(c); return; }
+  if (c == "mem") { netbench::memReport(); return; }
+  if (c.startsWith("nb2:")) { netbench::runIdf(c.c_str() + 4); return; }
+  if (c.startsWith("nb:")) { netbench::runRaw(c.c_str() + 3); return; }
 
   if (_onInteraction) _onInteraction();  // wakes the idle clock, like a touch
 
@@ -69,7 +75,7 @@ void DebugConsole::poll() {
       _line.trim();
       if (_line.length()) dispatch(_line);
       _line = "";
-    } else if (_line.length() < 64) {
+    } else if (_line.length() < 160) {  // media/bench URLs can be long
       _line += ch;
     }
   }
