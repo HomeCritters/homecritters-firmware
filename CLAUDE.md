@@ -21,7 +21,8 @@ Fonte original do pinout: https://github.com/RealDeco/xiaozhi-esphome (Ball_v2.y
 - PlatformIO + Arduino framework (`env:ball_v2` em `platformio.ini`)
 - LovyanGFX para display + touch (config em `include/LGFX_BallV2.h`)
 - Adafruit NeoPixel para o LED
-- ESP8266Audio (decoder MP3) + ES8311 (codec I2S) para o áudio
+- ESP8266Audio (decoders FLAC/MP3/WAV) + ES8311 (codec I2S) para o áudio;
+  streaming de mídia via `esp_http_client` (IDF, já no core Arduino)
 - WiFiManager (portal cativo) + WebServer + links2004/WebSockets + mDNS
 - React (Vite + Ant Design) para o portal web, embutido gzipado no flash
 - ricmoo/QRCode para o QR do portal na tela
@@ -57,7 +58,12 @@ src/
   InputController.{h,cpp}  # toque (tap/swipe) + BOOT → Ações/eventos de UI
   StatusLed.{h,cpp}    # LED RGB de humor
   Battery.{h,cpp}      # ADC + curva de bateria
-  AudioPlayer.{h,cpp}  # ES8311 + I2S + task de áudio (efeitos + ronco) + volume
+  AudioPlayer.{h,cpp}  # ES8311 + I2S + SFX PROGMEM + orquestra o streaming
+  audio/               # pipeline de mídia (estilo Voice PE):
+    AudioReader.{h,cpp}  #   task core 0: esp_http_client → ring (zero-copy)
+    StreamRing.{h,cpp}   #   anel SPSC 1MB em PSRAM (produtor/consumidor)
+    RingSource.h         #   adaptador AudioFileSource sobre o ring
+  NetBench.{h,cpp}     # nb/nb2/cpu/mem/slp: medição de rede/CPU (console)
   Clock.{h,cpp}        # relógio NTP (timezone POSIX, 12/24h, ociosidade)
   DoodleGame.{h,cpp}   # mini-game estilo doodle jump (física; Renderer desenha)
   BallGame.{h,cpp}     # mini-game "Bolinha" (fetch: arremesso + furão busca)
@@ -100,11 +106,12 @@ portal/tools ficam aqui.
 - **Interação**: toque nos botões da base (hit-test por distância); toque no
   bichinho/cena = carinho; BOOT curto = alimentar; BOOT longo (1.5s+) =
   dormir/acordar. Gestos resolvidos no SOLTAR do toque (swipe vs tap).
-- **Áudio** (`AudioPlayer`, ES8311 + I2S, task no core 0): efeitos por ação —
-  comer, banho/água, carinho (tap), acordar — e ronco ao dormir. Um som por
-  vez (um novo `play()` interrompe o anterior). MP3s em PROGMEM. Volume 0-100
-  com curva perceptual `pow(v, 2.5)`, persistido em NVS. **Áudio validado no
-  hardware** (funciona de verdade).
+- **Áudio** (`AudioPlayer`, ES8311 + I2S porta 0): efeitos por ação — comer,
+  banho/água, carinho (tap), acordar — e ronco ao dormir. Um som por vez (um
+  novo `play()` interrompe o anterior); SFX suprimidos enquanto mídia toca.
+  MP3s em PROGMEM. Volume 0-100 com curva perceptual `pow(v, 2.5)`, NVS.
+  Decoder task no **core 1** (prio 5); rede de mídia no core 0. **Áudio
+  validado no hardware.**
 - **Menu de config (tela cheia)**: abre por **swipe pra baixo** (ou tap na aba
   ⌄); fecha por swipe pra cima ou botão **Fechar**. Volume −/+, botão **WiFi**
   e, quando conectado, **QR code** do portal (URL do IP) + `ferret.local`.
@@ -155,15 +162,24 @@ portal/tools ficam aqui.
   (`_critter._tcp` no mDNS + `GET /info` com name/mac/fw). Entidades: sensores
   (stats/humor/bateria/tela), botões (alimentar/carinho/banho), switches
   (dormir, relógio), sliders (LED, tela) e **media_player** (TTS/anúncios;
-  Music Assistant via provider "Home Assistant MediaPlayers", codec MP3).
-  Nomes das entidades em EN + tradução PT.
-- **Media streaming**: `AudioPlayer::playStream(url)` toca stream/arquivo MP3
-  **http://** (sem https) — fonte HTTP → ring buffer 64KB em PSRAM → decoder,
-  tudo no task de áudio (core 0). Comandos WS `media:play:<url>`/`media:stop`;
-  campo `media` no estado. SFX do pet são **suprimidos** enquanto toca música
-  (um decoder só). **Pegadinha**: o IDLE0 é removido do task watchdog no boot —
-  a fonte HTTP da ESP8266Audio espera dados com `yield()` que nunca deixa o
-  idle rodar, e o WDT estourava.
+  Music Assistant via provider "Home Assistant MediaPlayers" — codec MP3 ou
+  FLAC; **não ALAC**, o firmware não decodifica). Nomes em EN + tradução PT.
+- **Media streaming** (arquitetura Voice PE, `src/audio/`): `playStream(url)`
+  toca **FLAC/MP3/WAV http://** (sem https), decoder auto-detectado pelo
+  header (`fLaC`/`RIFF`/senão MP3). Pipeline: `AudioReader` (task core 0,
+  `esp_http_client` — de-chunking, redirects, EOF limpo) → `StreamRing` (anel
+  SPSC de **1MB em PSRAM**, permanente, `reset()` entre faixas) → decoder
+  (task core 1, prio 5) → I2S. Prefill 64KB antes de decodificar (início
+  limpo de TTS). Comandos WS `media:play:<url>`/`media:stop`; campo `media`
+  no estado. `mediaKind()` distingue **TTS** (URL contém `tts_proxy`) de
+  **música** — TTS mostra o **anel de voz** estilo Alexa; música liga o
+  **modo balada** (tema noite forçado, globo de discoteca, pulsos de laser,
+  pista de dança randômica, 2 máquinas de fumaça, caixas pulsando, Leon
+  dançando, LED arco-íris). Ambos os idle WDTs são desregistrados no boot.
+- **Debug de rede/áudio** (console serial): `nb:<url>` (WiFiClient cru) e
+  `nb2:<url>` (esp_http_client) medem throughput; `cpu` (contadores de idle
+  por core), `mem` (heap/PSRAM), `slp` (power-save do WiFi). Stats do ring
+  no serial a cada 2s durante streaming (fill/min/underruns/net).
 
 ## Notas de hardware (aprendidas na prática)
 
@@ -172,6 +188,14 @@ portal/tools ficam aqui.
   verde) — o RGB565 dos `pushImage` é big-endian.
 - ES8311 em modo SCLK (clock preso ao BCLK): segue a taxa do MP3 (44.1/48kHz)
   automaticamente, sem reconfigurar o codec.
+- **MCLK SEMPRE no GPIO16** (`PIN_I2S_MCLK`), via `SetPinout(BCLK, LRCLK,
+  DOUT, PIN_I2S_MCLK)`. O default silencioso do ESP8266Audio é `mclkPin = 0`:
+  o clock de ~11MHz saía no pad do BOOT e o EMI **ensurdecia o rádio WiFi**
+  sempre que qualquer áudio tocava (RTT 21→224ms, TCP colapsava pra ~20KB/s).
+  Foi a causa raiz de meses de stutter em streaming. Sintoma pra reconhecer:
+  latência alta + 0% de perda + CPU livre durante playback = EMI, não software.
+- I2S **porta 0** (a porta 1 falhou o roteamento de pinos silenciosamente:
+  decoder rodava, speaker mudo).
 - `pio` fica fora do PATH: usar `~/.platformio/penv/bin/pio`.
 
 ## Regenerar as animações do furão
