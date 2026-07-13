@@ -89,7 +89,8 @@ class Renderer {
   void drawRightHandle();
   void drawLeftHandle();  // "back" tab (config, games menu, Bolinha)
   void drawClock(Clock& clock);
-  void drawMediaFx(uint8_t kind);  // 1 = party notes, 2 = Alexa voice ring
+  void drawMediaFx(uint8_t kind);  // 1 = disco ball + lasers, 2 = voice ring
+  void drawDiscoFloor();           // checkered dance floor (under the pet)
   void drawDoodleFerret(int cx, int cy, bool faceLeft);
   // mode: 0 = idle, 1 = walking, 2 = jumping (celebration). zoom scales the
   // 40px game sprite (2 -> 80px, matching the scene ferret in Bolinha).

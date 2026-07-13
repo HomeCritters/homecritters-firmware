@@ -948,6 +948,9 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   }
   drawForest(night);
   drawSparkles(night);
+  // Disco floor goes UNDER the pet (Leon dances on it); the ball + lasers
+  // overlay goes on top of everything at the end.
+  if (mediaFx == 1 && !menuOpen) drawDiscoFloor();
   drawHeader(pet, wifiOn);
   drawFerret(ferret);
   // battery is shown in the config menu (not the home scene)
@@ -976,29 +979,62 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   _canvas.pushSprite(0, 0);
 }
 
-// Overlay drawn while media plays. kind 1 = music: disco ball + sweeping
-// laser show over the scene. kind 2 = speech: an Alexa-style cyan ring
+// Checkered dance floor over the grass strip, drawn UNDER the pet so Leon
+// dances on it. Tiles cycle through party colors in a rolling diagonal
+// pattern, with a dark seam grid so it reads as tiles.
+void Renderer::drawDiscoFloor() {
+  const uint32_t t = millis();
+  static constexpr uint16_t TILES[] = {
+      0xC118 /*deep magenta*/, 0x02F9 /*deep cyan*/,
+      0xC460 /*amber*/, 0x4938 /*violet*/};
+  const int y0 = 112, tileH = 11, tileW = 20;
+  const uint32_t roll = t / 260;  // color advance ~4x/s
+  for (int row = 0; row < 2; row++) {
+    for (int col = 0; col < 12; col++) {
+      const uint16_t c = TILES[(col + row * 2 + roll) % 4];
+      _canvas.fillRect(col * tileW, y0 + row * tileH, tileW, tileH, c);
+    }
+    _canvas.drawFastHLine(0, y0 + row * tileH, 240, 0x2104);  // seam
+  }
+  for (int col = 0; col <= 12; col++) {
+    _canvas.drawFastVLine(col * tileW, y0, tileH * 2, 0x2104);
+  }
+}
+
+// Overlay drawn while media plays. kind 1 = music: disco ball + corner
+// lasers over the scene. kind 2 = speech: an Alexa-style cyan ring
 // sweeps around the round display edge while the assistant talks.
 void Renderer::drawMediaFx(uint8_t kind) {
   const uint32_t t = millis();
   if (kind == 1) {
-    // --- disco ball + lasers ---
+    // --- disco ball + corner lasers ---
     const int bx = 120, by = 52, br = 13;
     static constexpr uint16_t LASER[] = {0xF81F /*magenta*/, 0x07E0 /*green*/,
                                          0x07FF /*cyan*/, 0xFC00 /*orange*/};
-    // Laser fan first (beams come from behind the ball). Each beam sweeps
-    // side to side on its own phase; length clipped above the stat bars.
-    for (int i = 0; i < 4; i++) {
-      const float th = (i - 1.5f) * 0.55f + 0.45f * sinf(t / 550.0f + i * 1.3f);
-      const float c = cosf(th);
-      float len = 95.0f;
-      if (by + c * len > 130.0f) len = (130.0f - by) / c;  // stop above the HUD
-      const int ex = bx + (int)(sinf(th) * len);
-      const int ey = by + (int)(c * len);
-      const uint16_t col = LASER[(i + t / 1200) % 4];
-      _canvas.drawLine(bx, by, ex, ey, col);
-      _canvas.drawLine(bx + 1, by, ex + 1, ey, col);  // 2px beam
-      _canvas.fillCircle(ex, ey, 2, col);             // floor hit glow
+    // Two emitters up on the left and right edges, 2 sweeping beams each.
+    // Beams strobe (blink on their own phase) like a real club laser.
+    struct { int x, y; float dir; } emit[2] = {{26, 44, 1.0f}, {214, 44, -1.0f}};
+    for (int e = 0; e < 2; e++) {
+      for (int i = 0; i < 2; i++) {
+        const int bi = e * 2 + i;                      // beam index 0..3
+        if ((t / 110 + bi * 3) % 7 == 0) continue;     // strobe: off-beat blink
+        // Angle from the emitter, pointing inward+down, sweeping on its own
+        // phase. 0 = straight down; positive tilts toward the screen center.
+        const float th = (0.35f + 0.5f * i) * emit[e].dir +
+                         0.38f * sinf(t / 480.0f + bi * 1.55f) * emit[e].dir;
+        const float c = cosf(th);
+        float len = 110.0f;
+        if (emit[e].y + c * len > 132.0f) len = (132.0f - emit[e].y) / c;
+        const int ex = emit[e].x + (int)(sinf(th) * len);
+        const int ey = emit[e].y + (int)(c * len);
+        const uint16_t col = LASER[(bi + t / 1200) % 4];
+        _canvas.drawLine(emit[e].x, emit[e].y, ex, ey, col);
+        _canvas.drawLine(emit[e].x + 1, emit[e].y, ex + 1, ey, col);  // 2px beam
+        _canvas.fillCircle(ex, ey, 2, col);  // floor hit glow
+      }
+      // The emitter box itself.
+      _canvas.fillRect(emit[e].x - 3, emit[e].y - 3, 7, 6, _canvas.color565(60, 60, 70));
+      _canvas.drawPixel(emit[e].x, emit[e].y, 0xFFFF);
     }
     // Cord + ball.
     _canvas.drawFastVLine(bx, 0, by - br, _canvas.color565(90, 90, 100));
