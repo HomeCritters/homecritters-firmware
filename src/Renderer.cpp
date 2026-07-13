@@ -989,18 +989,39 @@ void Renderer::drawDiscoFloor() {
       0xF81F /*magenta*/, 0x07FF /*cyan*/,  0xFC40 /*orange*/,
       0xC81F /*violet*/,  0x07E0 /*green*/, 0xF800 /*red*/,
       0x3A9F /*blue*/,    0xFFE0 /*yellow*/};
-  const int y0 = 112, tileH = 11, tileW = 20;
   const uint32_t roll = t / 260;  // color advance ~4x/s
-  for (int row = 0; row < 2; row++) {
-    for (int col = 0; col < 12; col++) {
-      const uint16_t c = TILES[(col + row * 3 + roll) % 8];
-      _canvas.fillRect(col * tileW, y0 + row * tileH, tileW, tileH, c);
-    }
-    _canvas.drawFastHLine(0, y0 + row * tileH, 240, 0x2104);  // seam
-  }
-  for (int col = 0; col <= 12; col++) {
-    _canvas.drawFastVLine(col * tileW, y0, tileH * 2, 0x2104);
-  }
+
+  // Beveled tile with an occasional white strobe-flash (pseudo-random per
+  // tile per roll step) - reads as a lit-from-inside dance floor.
+  auto tile = [&](int x, int y, int w, int h, int col, int row) {
+    uint32_t hsh = (uint32_t)(col * 7 + row * 13 + roll) * 2654435761u;
+    hsh ^= hsh >> 13;
+    const bool flash = (hsh % 11) == 0;
+    const uint16_t c = flash ? 0xFFFF : TILES[(col + row * 3 + roll) % 8];
+    _canvas.fillRect(x, y, w, h, c);
+    // Gloss bevel: light top/left, dark bottom/right.
+    _canvas.drawFastHLine(x, y, w, flash ? 0xFFFF : 0xC618);
+    _canvas.drawFastVLine(x, y, h, flash ? 0xFFFF : 0xC618);
+    _canvas.drawFastHLine(x, y + h - 1, w, 0x2104);
+    _canvas.drawFastVLine(x + w - 1, y, h, 0x2104);
+  };
+
+  // The whole grass area becomes the club floor, in three bands that leave
+  // the HUD legible (bars/labels/clock/buttons draw ON TOP of these):
+  // 1) upper strip (horizon to the stat bars): 2 rows of tiles;
+  const int y0 = 108, tileH = 13, tileW = 20;
+  for (int row = 0; row < 2; row++)
+    for (int col = 0; col < 12; col++)
+      tile(col * tileW, y0 + row * tileH, tileW, tileH, col, row);
+  // 2) dark walkway band under the stat bars / clock box, so text stays
+  //    readable on a calm background;
+  _canvas.fillRect(0, 134, 240, 29, _canvas.color565(14, 10, 26));
+  // 3) lower apron (behind/between the action buttons): bigger tiles for a
+  //    hint of perspective (closer = larger).
+  const int y1 = 163, tileH2 = 19, tileW2 = 30;
+  for (int row = 0; row < 4; row++)
+    for (int col = 0; col < 8; col++)
+      tile(col * tileW2, y1 + row * tileH2, tileW2, tileH2, col + 3, row + 5);
 
   // Two speaker cabinets flanking the stage (drawn under the pet: Leon can
   // strut in front of them). The woofer ring thumps to a beat envelope.
@@ -1035,29 +1056,40 @@ void Renderer::drawMediaFx(uint8_t kind) {
     const int bx = 120, by = 52, br = 13;
     static constexpr uint16_t LASER[] = {0xF81F /*magenta*/, 0x07E0 /*green*/,
                                          0x07FF /*cyan*/, 0xFC00 /*orange*/};
-    // Two emitters up on the left and right edges, 2 sweeping beams each.
-    // Beams strobe (blink on their own phase) like a real club laser.
+    // Two emitters up on the left and right edges firing SHORT PULSES: each
+    // stream picks a random inward-down direction per shot and a bright dash
+    // travels from the emitter to the floor, then vanishes. Some slots skip,
+    // so the timing feels random - club tracer shots, not solid bars.
     struct { int x, y; float dir; } emit[2] = {{26, 44, 1.0f}, {214, 44, -1.0f}};
     for (int e = 0; e < 2; e++) {
-      for (int i = 0; i < 2; i++) {
-        const int bi = e * 2 + i;                      // beam index 0..3
-        if ((t / 110 + bi * 3) % 7 == 0) continue;     // strobe: off-beat blink
-        // Angle from the emitter, pointing inward+down, sweeping on its own
-        // phase. 0 = straight down; positive tilts toward the screen center.
-        const float th = (0.35f + 0.5f * i) * emit[e].dir +
-                         0.38f * sinf(t / 480.0f + bi * 1.55f) * emit[e].dir;
-        const float c = cosf(th);
-        float len = 110.0f;
-        if (emit[e].y + c * len > 132.0f) len = (132.0f - emit[e].y) / c;
-        const int ex = emit[e].x + (int)(sinf(th) * len);
-        const int ey = emit[e].y + (int)(c * len);
-        const uint16_t col = LASER[(bi + t / 1200) % 4];
-        // Neon look: colored halo either side + white-hot core.
-        _canvas.drawLine(emit[e].x - 1, emit[e].y, ex - 1, ey, col);
-        _canvas.drawLine(emit[e].x + 1, emit[e].y, ex + 1, ey, col);
-        _canvas.drawLine(emit[e].x, emit[e].y, ex, ey, 0xFFFF);
-        _canvas.fillCircle(ex, ey, 2, col);  // floor hit glow
-        _canvas.drawPixel(ex, ey, 0xFFFF);   // hot spot
+      for (int i = 0; i < 3; i++) {          // 3 shot streams per emitter
+        const int bi = e * 3 + i;
+        const uint32_t period = 260 + bi * 37;  // desynced stream cadences
+        const uint32_t slot = t / period;
+        uint32_t h = slot * 2654435761u + (uint32_t)bi * 40503u;  // slot hash
+        h ^= h >> 13;
+        h *= 0x5bd1e995u;
+        h ^= h >> 15;
+        if (h % 3 == 0) continue;            // this slot doesn't fire
+        // Random direction for this shot (inward + down from the emitter).
+        const float th = (0.25f + 1.05f * ((h >> 8) % 100) / 100.0f) * emit[e].dir;
+        const float sx = sinf(th), cy = cosf(th);
+        float len = 115.0f;
+        if (emit[e].y + cy * len > 130.0f) len = (130.0f - emit[e].y) / cy;
+        // Pulse head travels 0..len over the slot; 14px tail behind it.
+        const float prog = (float)(t % period) / (float)period;
+        const float headD = prog * len;
+        const float tailD = headD - 14.0f > 0 ? headD - 14.0f : 0;
+        const int hx = emit[e].x + (int)(sx * headD), hy = emit[e].y + (int)(cy * headD);
+        const int tx = emit[e].x + (int)(sx * tailD), ty = emit[e].y + (int)(cy * tailD);
+        const uint16_t col = LASER[h % 4];
+        _canvas.drawLine(tx - 1, ty, hx - 1, hy, col);   // neon halo
+        _canvas.drawLine(tx + 1, ty, hx + 1, hy, col);
+        _canvas.drawLine(tx, ty, hx, hy, 0xFFFF);        // white-hot core
+        if (prog > 0.86f) {                              // impact flash
+          _canvas.fillCircle(hx, hy, 2, col);
+          _canvas.drawPixel(hx, hy, 0xFFFF);
+        }
       }
       // The emitter box itself.
       _canvas.fillRect(emit[e].x - 3, emit[e].y - 3, 7, 6, _canvas.color565(60, 60, 70));
