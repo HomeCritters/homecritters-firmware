@@ -985,13 +985,14 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
 void Renderer::drawDiscoFloor() {
   const uint32_t t = millis();
   static constexpr uint16_t TILES[] = {
-      0xC118 /*deep magenta*/, 0x02F9 /*deep cyan*/,
-      0xC460 /*amber*/, 0x4938 /*violet*/};
+      0xC118 /*deep magenta*/, 0x02F9 /*deep cyan*/, 0xC460 /*amber*/,
+      0x4938 /*violet*/,       0x0560 /*green*/,     0xB800 /*red*/,
+      0x2A5F /*royal blue*/,   0x0511 /*teal*/};
   const int y0 = 112, tileH = 11, tileW = 20;
   const uint32_t roll = t / 260;  // color advance ~4x/s
   for (int row = 0; row < 2; row++) {
     for (int col = 0; col < 12; col++) {
-      const uint16_t c = TILES[(col + row * 2 + roll) % 4];
+      const uint16_t c = TILES[(col + row * 3 + roll) % 8];
       _canvas.fillRect(col * tileW, y0 + row * tileH, tileW, tileH, c);
     }
     _canvas.drawFastHLine(0, y0 + row * tileH, 240, 0x2104);  // seam
@@ -1036,6 +1037,31 @@ void Renderer::drawMediaFx(uint8_t kind) {
       _canvas.fillRect(emit[e].x - 3, emit[e].y - 3, 7, 6, _canvas.color565(60, 60, 70));
       _canvas.drawPixel(emit[e].x, emit[e].y, 0xFFFF);
     }
+    // --- smoke machine (bottom-left, on the dance floor) ---
+    // Puffs rise and drift toward the center, growing and thinning out.
+    // "Translucency" is dithering: only a checkerboard of pixels is drawn,
+    // sparser as the puff ages, so the scene shows through.
+    const int mx = 16, my = 124;
+    for (int p = 0; p < 4; p++) {
+      const uint32_t age = (t / 18 + p * 55) % 220;  // staggered lifecycle
+      const float a = age / 220.0f;                  // 0 fresh .. 1 dissolved
+      const int px = mx + 8 + (int)(a * 72);
+      const int py = my - 10 - (int)(a * 48) + (int)(4 * sinf(t / 300.0f + p * 2.1f));
+      const int pr = 3 + (int)(a * 8);
+      const int step = a < 0.5f ? 2 : 3;             // fresh = denser
+      const uint16_t pc = a < 0.4f ? 0xE71C : 0xC618;
+      for (int dy = -pr; dy <= pr; dy++) {
+        for (int dx = -pr; dx <= pr; dx++) {
+          if (dx * dx + dy * dy > pr * pr) continue;
+          if ((dx + dy + (int)(t / 130)) % step) continue;  // dither + shimmer
+          _canvas.drawPixel(px + dx, py + dy, pc);
+        }
+      }
+    }
+    // Machine box + tilted nozzle, sitting on the floor tiles.
+    _canvas.fillRect(mx - 9, my - 4, 18, 9, _canvas.color565(48, 48, 56));
+    _canvas.fillRect(mx + 5, my - 7, 5, 4, _canvas.color565(72, 72, 84));
+    _canvas.drawPixel(mx + 9, my - 6, 0xFFFF);  // status LED wink
     // Cord + ball.
     _canvas.drawFastVLine(bx, 0, by - br, _canvas.color565(90, 90, 100));
     _canvas.fillCircle(bx, by, br, _canvas.color565(148, 150, 162));

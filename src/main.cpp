@@ -625,12 +625,13 @@ void loop() {
     menuOpen = false;
   }
 
-  // Party mode: while music streams, Leon dances - random little jumps in
-  // loose rhythm (reuses the pat-jump animation).
+  // Party mode: while music streams, Leon keeps wandering the floor as usual
+  // but jumps more often than normal (reuses the pat-jump animation). The
+  // interval leaves room for full walk cycles between hops.
   static unsigned long nextHopMs = 0;
   if (audio.mediaKind() == AudioPlayer::MEDIA_MUSIC && !menuOpen && now >= nextHopMs) {
     ferret.onPat();
-    nextHopMs = now + 900 + (esp_random() % 1000);
+    nextHopMs = now + 2500 + (esp_random() % 2500);
   }
 
   // The scene renders normally during media playback. (A render freeze lived
