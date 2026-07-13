@@ -1042,6 +1042,36 @@ void Renderer::drawDiscoFloor() {
                        _canvas.color565(80, 80, 92));
     _canvas.drawPixel(cxs, sy + 20, 0xE71C);  // dust cap glint
   }
+
+  // Smoke machines on each side of the floor. Part of the stage set (drawn
+  // under the HUD so the edge pull-handles/bars/buttons stay on top, and
+  // under the pet so Leon dances in front of the fog).
+  // Puff "translucency" is dithering: only a checkerboard of pixels is
+  // drawn, sparser as the puff ages, so the scene shows through.
+  for (int m = 0; m < 2; m++) {
+    const int dir = m ? -1 : 1;             // left blows right, right blows left
+    const int mx = m ? 224 : 16, my = 124;
+    for (int p = 0; p < 4; p++) {
+      const uint32_t age = (t / 18 + p * 55 + m * 27) % 220;  // staggered
+      const float a = age / 220.0f;         // 0 fresh .. 1 dissolved
+      const int px = mx + dir * (8 + (int)(a * 72));
+      const int py = my - 10 - (int)(a * 48) + (int)(4 * sinf(t / 300.0f + p * 2.1f + m));
+      const int pr = 3 + (int)(a * 8);
+      const int step = a < 0.5f ? 2 : 3;    // fresh = denser
+      const uint16_t pc = a < 0.4f ? 0xE71C : 0xC618;
+      for (int dy = -pr; dy <= pr; dy++) {
+        for (int dx = -pr; dx <= pr; dx++) {
+          if (dx * dx + dy * dy > pr * pr) continue;
+          if ((dx + dy + (int)(t / 130)) % step) continue;  // dither + shimmer
+          _canvas.drawPixel(px + dx, py + dy, pc);
+        }
+      }
+    }
+    // Machine box + nozzle tilted toward the center, sitting on the floor.
+    _canvas.fillRect(mx - 9, my - 4, 18, 9, _canvas.color565(48, 48, 56));
+    _canvas.fillRect(m ? mx - 10 : mx + 5, my - 7, 5, 4, _canvas.color565(72, 72, 84));
+    _canvas.drawPixel(m ? mx - 9 : mx + 9, my - 6, 0xFFFF);  // status LED
+  }
 }
 
 // Overlay drawn while media plays. kind 1 = music: disco ball + corner
@@ -1092,34 +1122,6 @@ void Renderer::drawMediaFx(uint8_t kind) {
       // The emitter box itself.
       _canvas.fillRect(emit[e].x - 3, emit[e].y - 3, 7, 6, _canvas.color565(60, 60, 70));
       _canvas.drawPixel(emit[e].x, emit[e].y, 0xFFFF);
-    }
-    // --- smoke machines (one on each side of the dance floor) ---
-    // Puffs rise and drift toward the center, growing and thinning out.
-    // "Translucency" is dithering: only a checkerboard of pixels is drawn,
-    // sparser as the puff ages, so the scene shows through.
-    for (int m = 0; m < 2; m++) {
-      const int dir = m ? -1 : 1;             // left blows right, right blows left
-      const int mx = m ? 224 : 16, my = 124;
-      for (int p = 0; p < 4; p++) {
-        const uint32_t age = (t / 18 + p * 55 + m * 27) % 220;  // staggered
-        const float a = age / 220.0f;         // 0 fresh .. 1 dissolved
-        const int px = mx + dir * (8 + (int)(a * 72));
-        const int py = my - 10 - (int)(a * 48) + (int)(4 * sinf(t / 300.0f + p * 2.1f + m));
-        const int pr = 3 + (int)(a * 8);
-        const int step = a < 0.5f ? 2 : 3;    // fresh = denser
-        const uint16_t pc = a < 0.4f ? 0xE71C : 0xC618;
-        for (int dy = -pr; dy <= pr; dy++) {
-          for (int dx = -pr; dx <= pr; dx++) {
-            if (dx * dx + dy * dy > pr * pr) continue;
-            if ((dx + dy + (int)(t / 130)) % step) continue;  // dither + shimmer
-            _canvas.drawPixel(px + dx, py + dy, pc);
-          }
-        }
-      }
-      // Machine box + nozzle tilted toward the center, sitting on the floor.
-      _canvas.fillRect(mx - 9, my - 4, 18, 9, _canvas.color565(48, 48, 56));
-      _canvas.fillRect(m ? mx - 10 : mx + 5, my - 7, 5, 4, _canvas.color565(72, 72, 84));
-      _canvas.drawPixel(m ? mx - 9 : mx + 9, my - 6, 0xFFFF);  // status LED
     }
     // Cord + ball.
     _canvas.drawFastVLine(bx, 0, by - br, _canvas.color565(90, 90, 100));
