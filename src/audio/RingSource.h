@@ -27,7 +27,25 @@ class RingSource : public AudioFileSource {
     return n;
   }
 
-  bool seek(int32_t, int) override { return false; }
+  // Forward-only "seek": read-and-discard from the ring. The WAV parser skips
+  // header chunks (LIST/fact) with seek(n, SEEK_CUR) - without this, Music
+  // Assistant's live WAV streams ("Native" output protocol, used by its
+  // AirPlay receiver session) failed at ReadWAVInfo. Backward is impossible.
+  bool seek(int32_t pos, int dir) override {
+    uint32_t skip;
+    if (dir == SEEK_CUR && pos >= 0) skip = (uint32_t)pos;
+    else if (dir == SEEK_SET && (uint32_t)pos >= _pos) skip = (uint32_t)pos - _pos;
+    else return false;
+    uint8_t buf[64];
+    while (skip > 0) {
+      const uint32_t n =
+          _ring->read(buf, min(skip, (uint32_t)sizeof(buf)), READ_GRACE_MS, _abort);
+      if (n == 0) return false;  // EOF/abort while skipping
+      _pos += n;
+      skip -= n;
+    }
+    return true;
+  }
   bool close() override { return true; }  // connection is the reader's problem
   bool isOpen() override { return true; }
   // "Infinite" length: AudioGeneratorFLAC's eof callback is
