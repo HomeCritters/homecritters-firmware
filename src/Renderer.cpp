@@ -993,15 +993,19 @@ void Renderer::drawDiscoFloor() {
       0xF81F /*magenta*/, 0x07FF /*cyan*/,  0xFC40 /*orange*/,
       0xC81F /*violet*/,  0x07E0 /*green*/, 0xF800 /*red*/,
       0x3A9F /*blue*/,    0xFFE0 /*yellow*/};
-  const uint32_t roll = t / 260;  // color advance ~4x/s
-
-  // Beveled tile with an occasional white strobe-flash (pseudo-random per
-  // tile per roll step) - reads as a lit-from-inside dance floor.
+  // Beveled tile with an occasional white strobe-flash. Colors are truly
+  // random per tile: each tile runs its OWN change clock (phase-offset by a
+  // per-tile hash) and each change picks a hashed random palette color - no
+  // sliding diagonal pattern, tiles pop independently like a real club floor.
   auto tile = [&](int x, int y, int w, int h, int col, int row) {
-    uint32_t hsh = (uint32_t)(col * 7 + row * 13 + roll) * 2654435761u;
+    const uint32_t seed = (uint32_t)(col * 977 + row * 541);
+    const uint32_t roll = (t + seed * 97u) % 0xFFFFFFFFu / 300u;  // own clock
+    uint32_t hsh = (roll * 2654435761u) ^ (seed * 0x9E3779B9u);
     hsh ^= hsh >> 13;
-    const bool flash = (hsh % 11) == 0;
-    const uint16_t c = flash ? 0xFFFF : TILES[(col + row * 3 + roll) % 8];
+    hsh *= 0x5bd1e995u;
+    hsh ^= hsh >> 15;
+    const bool flash = (hsh % 13) == 0;
+    const uint16_t c = flash ? 0xFFFF : TILES[(hsh >> 4) % 8];
     _canvas.fillRect(x, y, w, h, c);
     // Gloss bevel: light top/left, dark bottom/right.
     _canvas.drawFastHLine(x, y, w, flash ? 0xFFFF : 0xC618);
