@@ -934,6 +934,10 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     tod = TOD_NIGHT;
   }
 
+  // Party mode is a NIGHT club: music forces the night theme (purple sky,
+  // stars, moon, fireflies) regardless of the real hour.
+  if (mediaFx == 1 && !menuOpen) tod = TOD_NIGHT;
+
   const bool night = (tod == TOD_NIGHT);
   _p = (tod == TOD_NIGHT) ? NIGHT : (tod == TOD_AFTERNOON ? AFTERNOON : DAY);
 
@@ -1006,22 +1010,12 @@ void Renderer::drawDiscoFloor() {
     _canvas.drawFastVLine(x + w - 1, y, h, 0x2104);
   };
 
-  // The whole grass area becomes the club floor, in three bands that leave
-  // the HUD legible (bars/labels/clock/buttons draw ON TOP of these):
-  // 1) upper strip (horizon to the stat bars): 2 rows of tiles;
-  const int y0 = 108, tileH = 13, tileW = 20;
+  // A dance-floor STRIP over the grass under the pet (full-grass coverage
+  // was tried and looked too busy) - the rest of the grass stays grass.
+  const int y0 = 112, tileH = 11, tileW = 20;
   for (int row = 0; row < 2; row++)
     for (int col = 0; col < 12; col++)
       tile(col * tileW, y0 + row * tileH, tileW, tileH, col, row);
-  // 2) dark walkway band under the stat bars / clock box, so text stays
-  //    readable on a calm background;
-  _canvas.fillRect(0, 134, 240, 29, _canvas.color565(14, 10, 26));
-  // 3) lower apron (behind/between the action buttons): bigger tiles for a
-  //    hint of perspective (closer = larger).
-  const int y1 = 163, tileH2 = 19, tileW2 = 30;
-  for (int row = 0; row < 4; row++)
-    for (int col = 0; col < 8; col++)
-      tile(col * tileW2, y1 + row * tileH2, tileW2, tileH2, col + 3, row + 5);
 
   // Two speaker cabinets flanking the stage (drawn under the pet: Leon can
   // strut in front of them). The woofer ring thumps to a beat envelope.
@@ -1095,31 +1089,34 @@ void Renderer::drawMediaFx(uint8_t kind) {
       _canvas.fillRect(emit[e].x - 3, emit[e].y - 3, 7, 6, _canvas.color565(60, 60, 70));
       _canvas.drawPixel(emit[e].x, emit[e].y, 0xFFFF);
     }
-    // --- smoke machine (bottom-left, on the dance floor) ---
+    // --- smoke machines (one on each side of the dance floor) ---
     // Puffs rise and drift toward the center, growing and thinning out.
     // "Translucency" is dithering: only a checkerboard of pixels is drawn,
     // sparser as the puff ages, so the scene shows through.
-    const int mx = 16, my = 124;
-    for (int p = 0; p < 4; p++) {
-      const uint32_t age = (t / 18 + p * 55) % 220;  // staggered lifecycle
-      const float a = age / 220.0f;                  // 0 fresh .. 1 dissolved
-      const int px = mx + 8 + (int)(a * 72);
-      const int py = my - 10 - (int)(a * 48) + (int)(4 * sinf(t / 300.0f + p * 2.1f));
-      const int pr = 3 + (int)(a * 8);
-      const int step = a < 0.5f ? 2 : 3;             // fresh = denser
-      const uint16_t pc = a < 0.4f ? 0xE71C : 0xC618;
-      for (int dy = -pr; dy <= pr; dy++) {
-        for (int dx = -pr; dx <= pr; dx++) {
-          if (dx * dx + dy * dy > pr * pr) continue;
-          if ((dx + dy + (int)(t / 130)) % step) continue;  // dither + shimmer
-          _canvas.drawPixel(px + dx, py + dy, pc);
+    for (int m = 0; m < 2; m++) {
+      const int dir = m ? -1 : 1;             // left blows right, right blows left
+      const int mx = m ? 224 : 16, my = 124;
+      for (int p = 0; p < 4; p++) {
+        const uint32_t age = (t / 18 + p * 55 + m * 27) % 220;  // staggered
+        const float a = age / 220.0f;         // 0 fresh .. 1 dissolved
+        const int px = mx + dir * (8 + (int)(a * 72));
+        const int py = my - 10 - (int)(a * 48) + (int)(4 * sinf(t / 300.0f + p * 2.1f + m));
+        const int pr = 3 + (int)(a * 8);
+        const int step = a < 0.5f ? 2 : 3;    // fresh = denser
+        const uint16_t pc = a < 0.4f ? 0xE71C : 0xC618;
+        for (int dy = -pr; dy <= pr; dy++) {
+          for (int dx = -pr; dx <= pr; dx++) {
+            if (dx * dx + dy * dy > pr * pr) continue;
+            if ((dx + dy + (int)(t / 130)) % step) continue;  // dither + shimmer
+            _canvas.drawPixel(px + dx, py + dy, pc);
+          }
         }
       }
+      // Machine box + nozzle tilted toward the center, sitting on the floor.
+      _canvas.fillRect(mx - 9, my - 4, 18, 9, _canvas.color565(48, 48, 56));
+      _canvas.fillRect(m ? mx - 10 : mx + 5, my - 7, 5, 4, _canvas.color565(72, 72, 84));
+      _canvas.drawPixel(m ? mx - 9 : mx + 9, my - 6, 0xFFFF);  // status LED
     }
-    // Machine box + tilted nozzle, sitting on the floor tiles.
-    _canvas.fillRect(mx - 9, my - 4, 18, 9, _canvas.color565(48, 48, 56));
-    _canvas.fillRect(mx + 5, my - 7, 5, 4, _canvas.color565(72, 72, 84));
-    _canvas.drawPixel(mx + 9, my - 6, 0xFFFF);  // status LED wink
     // Cord + ball.
     _canvas.drawFastVLine(bx, 0, by - br, _canvas.color565(90, 90, 100));
     _canvas.fillCircle(bx, by, br, _canvas.color565(148, 150, 162));
