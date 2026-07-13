@@ -984,10 +984,11 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
 // pattern, with a dark seam grid so it reads as tiles.
 void Renderer::drawDiscoFloor() {
   const uint32_t t = millis();
+  // Full-saturation neon palette.
   static constexpr uint16_t TILES[] = {
-      0xC118 /*deep magenta*/, 0x02F9 /*deep cyan*/, 0xC460 /*amber*/,
-      0x4938 /*violet*/,       0x0560 /*green*/,     0xB800 /*red*/,
-      0x2A5F /*royal blue*/,   0x0511 /*teal*/};
+      0xF81F /*magenta*/, 0x07FF /*cyan*/,  0xFC40 /*orange*/,
+      0xC81F /*violet*/,  0x07E0 /*green*/, 0xF800 /*red*/,
+      0x3A9F /*blue*/,    0xFFE0 /*yellow*/};
   const int y0 = 112, tileH = 11, tileW = 20;
   const uint32_t roll = t / 260;  // color advance ~4x/s
   for (int row = 0; row < 2; row++) {
@@ -999,6 +1000,28 @@ void Renderer::drawDiscoFloor() {
   }
   for (int col = 0; col <= 12; col++) {
     _canvas.drawFastVLine(col * tileW, y0, tileH * 2, 0x2104);
+  }
+
+  // Two speaker cabinets flanking the stage (drawn under the pet: Leon can
+  // strut in front of them). The woofer ring thumps to a beat envelope.
+  for (int side = 0; side < 2; side++) {
+    const int sx = side ? 212 : 2;  // cabinet left edge
+    const int sy = 82;              // cabinet top; bottom lands on the floor
+    _canvas.fillRect(sx, sy, 26, 30, _canvas.color565(22, 22, 28));
+    _canvas.drawRect(sx, sy, 26, 30, _canvas.color565(70, 70, 82));
+    const int cxs = sx + 13;
+    // Tweeter.
+    _canvas.fillCircle(cxs, sy + 7, 3, _canvas.color565(10, 10, 14));
+    _canvas.drawCircle(cxs, sy + 7, 3, _canvas.color565(120, 120, 132));
+    // Woofer: radius pumps on the positive half of the beat (offset phases
+    // so the two boxes alternate).
+    const float beat = sinf(t / 140.0f + side * 1.6f);
+    const int wr = 7 + (int)(2.5f * (beat > 0 ? beat : 0.0f));
+    _canvas.fillCircle(cxs, sy + 20, wr, _canvas.color565(10, 10, 14));
+    _canvas.drawCircle(cxs, sy + 20, wr, _canvas.color565(155, 155, 170));
+    _canvas.drawCircle(cxs, sy + 20, wr - 3 > 2 ? wr - 3 : 2,
+                       _canvas.color565(80, 80, 92));
+    _canvas.drawPixel(cxs, sy + 20, 0xE71C);  // dust cap glint
   }
 }
 
@@ -1029,9 +1052,12 @@ void Renderer::drawMediaFx(uint8_t kind) {
         const int ex = emit[e].x + (int)(sinf(th) * len);
         const int ey = emit[e].y + (int)(c * len);
         const uint16_t col = LASER[(bi + t / 1200) % 4];
-        _canvas.drawLine(emit[e].x, emit[e].y, ex, ey, col);
-        _canvas.drawLine(emit[e].x + 1, emit[e].y, ex + 1, ey, col);  // 2px beam
+        // Neon look: colored halo either side + white-hot core.
+        _canvas.drawLine(emit[e].x - 1, emit[e].y, ex - 1, ey, col);
+        _canvas.drawLine(emit[e].x + 1, emit[e].y, ex + 1, ey, col);
+        _canvas.drawLine(emit[e].x, emit[e].y, ex, ey, 0xFFFF);
         _canvas.fillCircle(ex, ey, 2, col);  // floor hit glow
+        _canvas.drawPixel(ex, ey, 0xFFFF);   // hot spot
       }
       // The emitter box itself.
       _canvas.fillRect(emit[e].x - 3, emit[e].y - 3, 7, 6, _canvas.color565(60, 60, 70));
