@@ -272,6 +272,7 @@ void AudioPlayer::startMedia(const char* url) {
   const uint32_t t0 = millis();
   uint32_t lastLvl = 0, lastRise = t0;
   for (;;) {
+    if (_stopReq || _streamReq) return;  // superseded: taskLoop handles it next
     const uint32_t lvl = _ring.fill();
     if (lvl >= PREFILL_BYTES || _ring.eof()) break;
     if (lvl != lastLvl) {
