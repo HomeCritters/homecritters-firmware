@@ -1154,42 +1154,72 @@ void Renderer::drawMediaFx(uint8_t kind) {
   }
 }
 
-// Assistant voice feedback ring around the round display edge. Three distinct
-// looks so each phase reads at a glance: 1 listening (calm cyan breath),
-// 2 thinking (amber comet spinner), 3 speaking (cyan waveform pulsing). The
-// ring hugs r=108..117 (pulled in from the 119.5 glass center so it reads
-// centered from integer (120,120)).
+// Assistant voice feedback ring, flush with the round glass edge (outer radius
+// 120). Three distinct looks so each phase reads at a glance:
+//   1 listening - breathing cyan ring + a comet with a long gradient tail
+//   2 thinking  - two amber comets chasing each other with fading tails
+//   3 speaking  - organic equalizer: bars with per-bar rhythm + hot tips
 void Renderer::drawVoiceRing(uint8_t state) {
   const uint32_t t = millis();
-  const int cx = 120, cy = 120, r0 = 108, r1 = 117;
+  const int cx = 120, cy = 120;
+  const int r1 = 120;       // flush with the glass edge
+  const int r0 = r1 - 12;   // band thickness
   if (state == 1) {
-    // LISTENING: whole ring breathes cyan + a slow bright sweep. "I'm hearing."
-    const float br = 0.5f + 0.5f * sinf(t / 550.0f);
-    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(0, 28, 52));
-    const uint8_t g = (uint8_t)(55 + 95 * br), b = (uint8_t)(90 + 150 * br);
-    _canvas.fillArc(cx, cy, r0 + 1, r1 - 1, 0, 360, _canvas.color565(0, g, b));
-    const int a = (int)((t / 8) % 360);
-    _canvas.fillArc(cx, cy, r0, r1, a, (a + 55) % 360, _canvas.color565(120, 235, 255));
+    // LISTENING: the whole ring breathes softly (I'm open), while a bright
+    // comet sweeps around with an 8-step gradient tail melting into the base.
+    const float br = 0.5f + 0.5f * sinf(t / 480.0f);
+    const uint8_t bg = (uint8_t)(30 + 45 * br), bb = (uint8_t)(55 + 70 * br);
+    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(0, bg, bb));
+    const int a = (int)((t / 6) % 360);  // comet head angle
+    for (int i = 7; i >= 0; i--) {       // tail: oldest (dim) -> head (hot)
+      const float f = 1.0f - i / 8.0f;
+      const int s0 = (a - (i + 1) * 13 + 720) % 360;
+      _canvas.fillArc(cx, cy, r0, r1, s0, (s0 + 14) % 360,
+                      _canvas.color565((uint8_t)(20 * f),
+                                       (uint8_t)(bg + (200 - bg) * f),
+                                       (uint8_t)(bb + (255 - bb) * f)));
+    }
+    _canvas.fillArc(cx, cy, r0 + 2, r1 - 2, a, (a + 8) % 360, 0xFFFF);  // hot core
   } else if (state == 2) {
-    // THINKING: amber comet racing around a dim ring. "Working on it."
-    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(34, 20, 0));
+    // THINKING: two amber comets 180 degrees apart orbiting fast, each with a
+    // fading 6-step tail - a restless "processing" spinner.
+    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(26, 14, 0));
     const int a = (int)((t / 3) % 360);
-    _canvas.fillArc(cx, cy, r0, r1, a, (a + 60) % 360, _canvas.color565(230, 140, 0));
-    _canvas.fillArc(cx, cy, r0 + 1, r1 - 1, (a + 35) % 360, (a + 60) % 360,
-                    _canvas.color565(255, 215, 130));
-    const int a2 = (a + 180) % 360;  // faint trailing comet for balance
-    _canvas.fillArc(cx, cy, r0 + 2, r1 - 2, a2, (a2 + 38) % 360, _canvas.color565(120, 70, 0));
+    for (int c = 0; c < 2; c++) {
+      const int head = (a + c * 180) % 360;
+      for (int i = 5; i >= 0; i--) {
+        const float f = 1.0f - i / 6.0f;
+        const int s0 = (head - (i + 1) * 11 + 720) % 360;
+        _canvas.fillArc(cx, cy, r0, r1, s0, (s0 + 12) % 360,
+                        _canvas.color565((uint8_t)(26 + 229 * f),
+                                         (uint8_t)(14 + 160 * f),
+                                         (uint8_t)(90 * f * f)));
+      }
+      _canvas.fillArc(cx, cy, r0 + 2, r1 - 2, head, (head + 7) % 360,
+                      _canvas.color565(255, 244, 200));  // hot core
+    }
   } else {
-    // SPEAKING: symmetric segments pulse in/out like a voice waveform.
-    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(0, 24, 48));
-    const int N = 12;
+    // SPEAKING: equalizer around the rim. Each bar has its own hashed phase
+    // and tempo (organic, not a sliding sine), grows inward from the edge and
+    // carries a hot white-cyan tip - like audio meters dancing to the voice.
+    _canvas.fillArc(cx, cy, r1 - 3, r1, 0, 360, _canvas.color565(0, 26, 46));
+    const int N = 16, span = 360 / N;
     for (int k = 0; k < N; k++) {
-      const float amp = 0.5f + 0.5f * sinf(t / 130.0f + k * 1.3f);
-      const int seg0 = k * (360 / N);
-      const int seg1 = seg0 + (360 / N) - 3;  // small gap between bars
-      const int ri = r1 - (int)(2 + amp * (r1 - r0));
-      const uint8_t g = (uint8_t)(80 + 150 * amp), b = (uint8_t)(120 + 135 * amp);
-      _canvas.fillArc(cx, cy, ri, r1, seg0, seg1, _canvas.color565(0, g, b));
+      uint32_t h = (uint32_t)k * 2654435761u;  // per-bar hash
+      h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+      const float ph = (h % 628) / 100.0f;
+      const float sp = 90.0f + (h % 70);       // per-bar tempo
+      // Two harmonics -> lively, speech-like bounce.
+      float amp = 0.55f + 0.33f * sinf(t / sp + ph) + 0.12f * sinf(t / 47.0f + ph * 2.1f);
+      if (amp < 0.08f) amp = 0.08f;
+      if (amp > 1.0f) amp = 1.0f;
+      const int seg0 = k * span + 2, seg1 = seg0 + span - 4;  // gap between bars
+      const int ri = r1 - 3 - (int)(amp * (r1 - 3 - r0));     // grows inward
+      const uint8_t g = (uint8_t)(70 + 165 * amp), b = (uint8_t)(110 + 145 * amp);
+      _canvas.fillArc(cx, cy, ri, r1 - 1, seg0, seg1, _canvas.color565(0, g, b));
+      if (amp > 0.30f)  // hot tip at the bar's inner end
+        _canvas.fillArc(cx, cy, ri, ri + 2, seg0, seg1,
+                        _canvas.color565(170, 255, 255));
     }
   }
 }
