@@ -46,7 +46,7 @@ include/
   ferret_game.h        # sprite do furão 40px p/ o mini-game (gerado)
   sounds/              # TODOS os áudios (MP3/WAV→PROGMEM, gerados): sleep_music
                        # + sfx_eat/drink/tap/wake/jump/boost/crumble/record/
-                       #   death/throw/camera/click/buzzer.h
+                       #   death/throw/camera/click/buzzer/listen/confirm.h
                        # + simon_green/red/yellow/blue.h (tons WAV gerados)
   web_index.h          # portal React (single-file, gzip) em PROGMEM (gerado)
 src/

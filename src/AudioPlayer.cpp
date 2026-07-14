@@ -28,6 +28,8 @@
 #include "sounds/simon_yellow.h"
 #include "sounds/simon_blue.h"
 #include "sounds/sfx_buzzer.h"
+#include "sounds/sfx_listen.h"
+#include "sounds/sfx_confirm.h"
 
 // ============================================================
 // Minimal ES8311 driver (playback/DAC only).
@@ -267,6 +269,8 @@ void AudioPlayer::playThrow()     { play(sfx_throw_mp3,    sfx_throw_mp3_len); }
 void AudioPlayer::playCamera()    { play(sfx_camera_mp3,   sfx_camera_mp3_len); }
 void AudioPlayer::playClick()     { play(sfx_click_mp3,    sfx_click_mp3_len); }
 void AudioPlayer::playBuzzer()    { play(sfx_buzzer_mp3,   sfx_buzzer_mp3_len); }
+void AudioPlayer::playListen()    { play(sfx_listen_mp3,   sfx_listen_mp3_len); }
+void AudioPlayer::playConfirm()   { play(sfx_confirm_wav,  sfx_confirm_wav_len); }
 
 void AudioPlayer::playSimon(int color) {
   switch (color) {
