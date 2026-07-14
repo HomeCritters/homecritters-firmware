@@ -1184,9 +1184,11 @@ void Renderer::drawVoiceRing(uint8_t state) {
     }
     _canvas.fillArc(cx, cy, r0 + 2, r1 - 2, a, (a + 8) % 360, 0xFFFF);  // hot core
   } else if (state == 2) {
-    // THINKING: two amber comets 180 degrees apart orbiting fast, each with a
-    // fading 6-step tail - a restless "processing" spinner.
-    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(26, 14, 0));
+    // THINKING: two amber comets 180 degrees apart orbiting fast over a warm
+    // breathing amber base (bright base like listening - no dark background).
+    const float br = 0.5f + 0.5f * sinf(t / 420.0f);
+    const uint8_t bgr = (uint8_t)(85 + 55 * br), bgg = (uint8_t)(46 + 32 * br);
+    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(bgr, bgg, 0));
     const int a = (int)((t / 3) % 360);
     for (int c = 0; c < 2; c++) {
       const int head = (a + c * 180) % 360;
@@ -1194,12 +1196,12 @@ void Renderer::drawVoiceRing(uint8_t state) {
         const float f = 1.0f - i / 6.0f;
         const int s0 = (head - (i + 1) * 11 + 720) % 360;
         _canvas.fillArc(cx, cy, r0, r1, s0, (s0 + 12) % 360,
-                        _canvas.color565((uint8_t)(26 + 229 * f),
-                                         (uint8_t)(14 + 160 * f),
-                                         (uint8_t)(90 * f * f)));
+                        _canvas.color565((uint8_t)(bgr + (255 - bgr) * f),
+                                         (uint8_t)(bgg + (205 - bgg) * f),
+                                         (uint8_t)(110 * f * f)));
       }
-      _canvas.fillArc(cx, cy, r0 + 2, r1 - 2, head, (head + 7) % 360,
-                      _canvas.color565(255, 244, 200));  // hot core
+      _canvas.fillArc(cx, cy, r0 + 2, r1, head, (head + 7) % 360,
+                      _canvas.color565(255, 248, 210));  // hot core
     }
   } else {
     // SPEAKING: smooth waves of light flowing around the ring - two wave
@@ -1209,16 +1211,17 @@ void Renderer::drawVoiceRing(uint8_t state) {
     const int SEG = 8;  // degrees per slice (45 slices, smooth gradient)
     for (int s = 0; s < 360; s += SEG) {
       const float rad = (s + SEG * 0.5f) * 0.017453f;
-      float w = 0.52f
-              + 0.30f * sinf(rad * 3.0f - t / 150.0f)   // 3 crests, clockwise
-              + 0.26f * sinf(rad * 5.0f + t / 95.0f);   // 5 crests, counter
-      if (w < 0.10f) w = 0.10f;
+      float w = 0.62f
+              + 0.26f * sinf(rad * 3.0f - t / 150.0f)   // 3 crests, clockwise
+              + 0.22f * sinf(rad * 5.0f + t / 95.0f);   // 5 crests, counter
+      // High floor: troughs stay clearly cyan (bright base, no dark patches).
+      if (w < 0.34f) w = 0.34f;
       if (w > 1.0f) w = 1.0f;
-      // Cyan body; crests (w>0.75) blend toward white-hot.
-      const float hot = w > 0.75f ? (w - 0.75f) * 4.0f : 0.0f;
+      // Cyan body; crests (w>0.78) blend toward white-hot.
+      const float hot = w > 0.78f ? (w - 0.78f) * 4.5f : 0.0f;
       const uint8_t rr = (uint8_t)(190 * hot);
-      const uint8_t g  = (uint8_t)(35 + 205 * w);
-      const uint8_t b  = (uint8_t)(60 + 195 * w);
+      const uint8_t g  = (uint8_t)(60 + 195 * w);
+      const uint8_t b  = (uint8_t)(90 + 165 * w);
       _canvas.fillArc(cx, cy, r0, r1, s, s + SEG, _canvas.color565(rr, g, b));
     }
   }
