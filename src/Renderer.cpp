@@ -1162,8 +1162,11 @@ void Renderer::drawMediaFx(uint8_t kind) {
 void Renderer::drawVoiceRing(uint8_t state) {
   const uint32_t t = millis();
   const int cx = 120, cy = 120;
-  const int r1 = 120;       // flush with the glass edge
-  const int r0 = r1 - 12;   // band thickness
+  // The glass is centered on 119.5, so a band ending exactly at r=120 from
+  // integer (120,120) leaves a half-pixel sliver of scene visible on one side.
+  // Overdraw well past the edge (clipped by the canvas): guaranteed flush.
+  const int r1 = 126;       // past the glass edge (clipped)
+  const int r0 = 106;       // band thickness ~14px visible
   if (state == 1) {
     // LISTENING: the whole ring breathes softly (I'm open), while a bright
     // comet sweeps around with an 8-step gradient tail melting into the base.
@@ -1199,27 +1202,24 @@ void Renderer::drawVoiceRing(uint8_t state) {
                       _canvas.color565(255, 244, 200));  // hot core
     }
   } else {
-    // SPEAKING: equalizer around the rim. Each bar has its own hashed phase
-    // and tempo (organic, not a sliding sine), grows inward from the edge and
-    // carries a hot white-cyan tip - like audio meters dancing to the voice.
-    _canvas.fillArc(cx, cy, r1 - 3, r1, 0, 360, _canvas.color565(0, 26, 46));
-    const int N = 16, span = 360 / N;
-    for (int k = 0; k < N; k++) {
-      uint32_t h = (uint32_t)k * 2654435761u;  // per-bar hash
-      h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
-      const float ph = (h % 628) / 100.0f;
-      const float sp = 90.0f + (h % 70);       // per-bar tempo
-      // Two harmonics -> lively, speech-like bounce.
-      float amp = 0.55f + 0.33f * sinf(t / sp + ph) + 0.12f * sinf(t / 47.0f + ph * 2.1f);
-      if (amp < 0.08f) amp = 0.08f;
-      if (amp > 1.0f) amp = 1.0f;
-      const int seg0 = k * span + 2, seg1 = seg0 + span - 4;  // gap between bars
-      const int ri = r1 - 3 - (int)(amp * (r1 - 3 - r0));     // grows inward
-      const uint8_t g = (uint8_t)(70 + 165 * amp), b = (uint8_t)(110 + 145 * amp);
-      _canvas.fillArc(cx, cy, ri, r1 - 1, seg0, seg1, _canvas.color565(0, g, b));
-      if (amp > 0.30f)  // hot tip at the bar's inner end
-        _canvas.fillArc(cx, cy, ri, ri + 2, seg0, seg1,
-                        _canvas.color565(170, 255, 255));
+    // SPEAKING: smooth waves of light flowing around the ring - two wave
+    // trains traveling in opposite directions (3 crests one way, 5 the other)
+    // whose interference makes the ring shimmer organically, like sound
+    // rippling along the rim. Crests go white-hot. No bars, no hard edges.
+    const int SEG = 8;  // degrees per slice (45 slices, smooth gradient)
+    for (int s = 0; s < 360; s += SEG) {
+      const float rad = (s + SEG * 0.5f) * 0.017453f;
+      float w = 0.52f
+              + 0.30f * sinf(rad * 3.0f - t / 150.0f)   // 3 crests, clockwise
+              + 0.26f * sinf(rad * 5.0f + t / 95.0f);   // 5 crests, counter
+      if (w < 0.10f) w = 0.10f;
+      if (w > 1.0f) w = 1.0f;
+      // Cyan body; crests (w>0.75) blend toward white-hot.
+      const float hot = w > 0.75f ? (w - 0.75f) * 4.0f : 0.0f;
+      const uint8_t rr = (uint8_t)(190 * hot);
+      const uint8_t g  = (uint8_t)(35 + 205 * w);
+      const uint8_t b  = (uint8_t)(60 + 195 * w);
+      _canvas.fillArc(cx, cy, r0, r1, s, s + SEG, _canvas.color565(rr, g, b));
     }
   }
 }
