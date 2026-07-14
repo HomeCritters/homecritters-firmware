@@ -29,6 +29,34 @@ void StreamRing::commit(uint32_t n) {
 
 void StreamRing::setEof() { _eof = true; }
 
+uint32_t StreamRing::write(const void* src, uint32_t len) {
+  uint32_t done = 0;
+  while (done < len) {
+    uint32_t contig;
+    uint8_t* dst = writeRegion(contig);
+    if (!dst || contig == 0) break;  // full: drop the rest (newest)
+    const uint32_t n = min(contig, len - done);
+    memcpy(dst, (const uint8_t*)src + done, n);
+    commit(n);
+    done += n;
+  }
+  return done;
+}
+
+uint32_t StreamRing::readAvail(void* dst, uint32_t maxLen) {
+  const uint32_t avail = (uint32_t)(_w - _r);
+  uint32_t n = min(avail, maxLen);
+  uint32_t done = 0;
+  while (done < n) {
+    const uint32_t at = _r % _cap;
+    const uint32_t chunk = min(n - done, _cap - at);
+    memcpy((uint8_t*)dst + done, _buf + at, chunk);
+    _r += chunk;
+    done += chunk;
+  }
+  return done;
+}
+
 uint32_t StreamRing::read(void* dst, uint32_t len, uint32_t graceMs,
                           volatile bool* abort) {
   uint32_t got = 0;

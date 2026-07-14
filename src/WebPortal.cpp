@@ -108,26 +108,40 @@ void WebPortal::handle() {
   pumpMic();
 }
 
-// Drain the mic DMA into binary WS frames (16kHz mono 16-bit PCM), same thread
-// as _ws.loop() so no locking is needed. Only runs while enabled and idle
-// (half-duplex): playback retunes the shared I2S clock, so we skip capture
-// then and restore 16kHz on resume.
+// --- Mic PRODUCER: dedicated capture task (core 0) ---------------------------
+// Continuously reads 20ms frames from the ES8311 ADC into the PSRAM ring, so
+// I2S capture never waits on the network. Half-duplex: while audio plays the
+// codec runs at 44.1/48k for the DAC, so we pause capture and restore the 16kHz
+// mono clock (+ discard the partial-rate tail) when playback ends.
+void WebPortal::micCaptureTask(void* arg) { static_cast<WebPortal*>(arg)->micCaptureLoop(); }
+
+void WebPortal::micCaptureLoop() {
+  bool wasBusy = true;  // force a 16kHz clock restore on the first real capture
+  int16_t frame[320];   // 20ms @ 16kHz mono
+  for (;;) {
+    if (!_micOn) { wasBusy = true; _micRing.reset(); vTaskDelay(pdMS_TO_TICKS(20)); continue; }
+    if (_audio && _audio->busy()) { wasBusy = true; vTaskDelay(pdMS_TO_TICKS(10)); continue; }
+    if (wasBusy) {
+      AudioCodec::setCaptureRate();            // playback left it at 44.1/48k
+      AudioCodec::readMicMono(frame, 320, 0);  // discard the partial-rate tail
+      wasBusy = false;
+    }
+    // Block up to ~20ms for a full frame; the ring absorbs any consumer stall.
+    const size_t got = AudioCodec::readMicMono(frame, 320, 25);
+    if (got > 0) _micRing.write(frame, got * sizeof(int16_t));  // drops newest if full
+  }
+}
+
+// --- Mic CONSUMER: drain the ring -> WS (render loop, same thread as _ws.loop
+// so no locking). Sends only what's buffered; a slow/dead client can back up
+// the ring (producer drops on overflow) but never blocks rendering here.
 void WebPortal::pumpMic() {
   if (!_micOn || _micClient < 0) return;
-  if (_audio && _audio->busy()) { _micWasBusy = true; return; }
-  if (_micWasBusy) {
-    AudioCodec::setCaptureRate();  // playback left it at 44.1/48k
-    int16_t drop[320];
-    AudioCodec::readMicMono(drop, 320, 0);  // discard the partial-rate tail
-    _micWasBusy = false;
-  }
-  // Send whatever the DMA already has (non-blocking-ish), a few 20ms frames per
-  // loop iteration so we keep up with 16kHz without stalling the render loop.
-  int16_t pcm[320];
-  for (int i = 0; i < 6; i++) {
-    const size_t got = AudioCodec::readMicMono(pcm, 320, 0);  // 0 = only buffered
-    if (got == 0) break;
-    if (!_ws.sendBIN((uint8_t)_micClient, (uint8_t*)pcm, got * sizeof(int16_t))) {
+  uint8_t buf[640];  // one 20ms frame per send (320 samples * 2 bytes)
+  for (int i = 0; i < 8; i++) {   // cap the work per loop iteration
+    if (_micRing.fill() < sizeof(buf)) break;
+    _micRing.readAvail(buf, sizeof(buf));
+    if (!_ws.sendBIN((uint8_t)_micClient, buf, sizeof(buf))) {
       _micOn = false; _micClient = -1;  // write failed/timed out: client is gone
       break;
     }
@@ -157,6 +171,10 @@ void WebPortal::startServer() {
   _serverUp = true;
   // Serve HTTP on core 0 so a big page load can't stall the render loop.
   xTaskCreatePinnedToCore(httpTask, "http", 8192, this, 1, nullptr, 0);
+  // Mic capture ring + producer task (core 0): fills the ring off the render
+  // loop; handle() drains it to the WS. 48KB = ~1.5s of 16kHz mono cushion.
+  if (!_micRing.capacity()) _micRing.alloc(48 * 1024);
+  xTaskCreatePinnedToCore(micCaptureTask, "miccap", 4096, this, 3, nullptr, 0);
   Serial.printf("[web] portal at http://%s.local/  (ip %s, ws :81)\n", HOSTNAME, ip().c_str());
 }
 

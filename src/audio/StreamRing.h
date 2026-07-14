@@ -25,6 +25,9 @@ class StreamRing {
   uint8_t* writeRegion(uint32_t& contig);
   void commit(uint32_t n);  // after writing n bytes into writeRegion()
   void setEof();            // clean end OR fatal reader error: consumer drains + stops
+  // Copy up to len bytes in (wrap-aware); returns bytes written (< len if full
+  // - the newest bytes are dropped, keeping the ring live for audio capture).
+  uint32_t write(const void* src, uint32_t len);
 
   // ---- consumer side (decoder task ONLY) ----
   // Blocks until the FULL len is copied (like a file source - partial reads
@@ -35,6 +38,9 @@ class StreamRing {
   // Copy up to n buffered bytes WITHOUT consuming (header sniff for decoder
   // selection). Consumer-side only.
   uint32_t peek(uint8_t* out, uint32_t n) const;
+  // Non-blocking drain: copy up to maxLen of whatever is buffered, consume it,
+  // return the byte count (0 if empty). Consumer-side only.
+  uint32_t readAvail(void* dst, uint32_t maxLen);
 
   uint32_t fill() const { return (uint32_t)(_w - _r); }
   uint32_t capacity() const { return _cap; }
