@@ -300,11 +300,19 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
 - [ ] Animação **Death** do sheet ainda não é usada (ex.: stat zerado por
       muito tempo).
 - [~] **Home Assistant**: fases 1 (entidades) e 2 (media player) prontas via a
-      integração custom. **Fase 3 EM ANDAMENTO: voz/Assist** (branch
-      `voice-assistant`) — mic do ES8311 (ADC) + I2S RX 16k full-duplex,
-      device vira `assist_satellite`, streama PCM pelo WS (binário), wake word
-      **"Alexa" REMOTO** (openWakeWord local no HA). Plano completo:
-      `.claude/plans/snug-plotting-kazoo.md`.
+      integração custom. **Voz/Assist EM ANDAMENTO** (branch `voice-assistant`
+      nos dois repos). Plano: `.claude/plans/snug-plotting-kazoo.md`.
+      - **F1 mic ✅**: ES8311 ADC + I2S full-duplex 16k mono (`AudioCodec`),
+        captura num ring PSRAM (task própria) → WS binário; half-duplex (pausa
+        na reprodução). Validado (99% contínuo, cliente morto não trava).
+      - **F2 push-to-talk ✅**: segurar BOOT streama o mic + `evt:ptt:start/end`;
+        HA (`assist_satellite.py`, plataforma nova) roda STT→TTS e toca a
+        resposta via `media:play`. Protocolo WS: `voice:sub` (HA vira sink),
+        `ptt:start/end` (PTT por software), campo `voice` no estado. Validado
+        ponta-a-ponta: fala → STT "Que horas são?" → Ollama responde → TTS.
+        BOOT deixou de fazer sleep/wake (só tela+portal); tap=alimentar.
+      - **F3 pendente**: wake word **"Alexa" REMOTO** (openWakeWord local no HA),
+        estados de voz na tela/LED, switch de mute.
 - [ ] **Sendspin (futuro, mídia 2.0)**: protocolo aberto de áudio multi-room
       sincronizado da OHF (ex-"Resonate"), servidor = Music Assistant, push via
       TCP 8928 + mDNS. ESPHome tem componente `sendspin` (experimental). O nosso
