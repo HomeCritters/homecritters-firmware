@@ -601,6 +601,15 @@ void loop() {
                            (idleSince(now, lastInteractionMs) > (unsigned long)petClock.idleSec() * 1000);
 
   InputEvent ev = input.poll(lcd, menuOpen, menuPage);
+  // Push-to-talk (BOOT hold) works in any mode and also wakes the screen.
+  if (ev.voice == InputEvent::V_PTT_START) {
+    lastInteractionMs = now;
+    web.voicePttStart();
+    led.gameColor(0, 200, 255);  // cyan "listening" while the mic streams
+  } else if (ev.voice == InputEvent::V_PTT_END) {
+    web.voicePttEnd();
+    led.endGame();  // release the LED override back to mood
+  }
   if (ev.ui != ui::UI_NONE || ev.action != ACTION_NONE) {
     lastInteractionMs = now;
     if (clockActive) {

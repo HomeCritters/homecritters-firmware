@@ -148,6 +148,21 @@ void WebPortal::pumpMic() {
   }
 }
 
+// --- Voice push-to-talk (called from the render loop, same thread as _ws) ---
+void WebPortal::voicePttStart() {
+  _voiceState = "listening";
+  _micOn = true;  // capture task streams to _micClient (HA, via voice:sub)
+  if (_serverUp) _ws.broadcastTXT("evt:ptt:start");
+  _dirty = true;
+}
+
+void WebPortal::voicePttEnd() {
+  _micOn = false;
+  _voiceState = "idle";
+  if (_serverUp) _ws.broadcastTXT("evt:ptt:end");
+  _dirty = true;
+}
+
 void WebPortal::startServer() {
   _server.on("/", [this]() { handleRoot(); });
   _server.on("/shot.bmp", [this]() { handleShot(); });  // screenshot for the portal
@@ -265,6 +280,14 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     // Mic control needs the client num (audio is streamed back to it).
     if (msg == "mic:on")  { _micClient = num; _micOn = true;  _dirty = true; return; }
     if (msg == "mic:off") { _micOn = false; _micClient = -1;  _dirty = true; return; }
+    // HA registers as the voice audio sink WITHOUT starting the stream; the
+    // device gates streaming by the BOOT button (push-to-talk, Phase 2).
+    if (msg == "voice:sub") { _micClient = num; return; }
+    // Software push-to-talk (portal/phone button, and test harness): same path
+    // as holding BOOT. If nobody subscribed, target the sender so it can also
+    // consume the audio directly.
+    if (msg == "ptt:start") { if (_micClient < 0) _micClient = num; voicePttStart(); return; }
+    if (msg == "ptt:end")   { voicePttEnd(); return; }
     if (msg.startsWith("micgain:")) {  // bring-up: tune ADC gain live
       if (_audio) _audio->setMicGain(msg.substring(8).toInt());
       return;
@@ -420,7 +443,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
   jsonEscape(p.name(), name, sizeof(name));
   snprintf(out, n,
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
-           "\"mood\":\"%s\",\"media\":\"%s\","
+           "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
            "\"anim\":\"%s\",\"seq\":%u,\"flip\":%s,\"x\":%.3f,"
@@ -429,6 +452,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            p.sleeping() ? "true" : "false",
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
+           _voiceState,
            _audio ? _audio->volume() : 0,
            _led ? _led->brightness() : 50,
            _renderer ? _renderer->screenBrightness() : 70,

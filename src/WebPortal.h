@@ -54,6 +54,15 @@ class WebPortal {
   // Pending Genius color press from the phone (0..3). True once.
   bool consumeSimonPress(int& color);
 
+  // --- voice assistant (push-to-talk) ---
+  // The device drives a voice turn: on BOOT hold it streams mic audio to the
+  // subscribed voice client (HA sent "voice:sub") and pushes "evt:ptt:start";
+  // on release it stops and pushes "evt:ptt:end". HA runs STT->TTS and plays
+  // the reply back via "media:play:" (the existing TTS voice-ring path).
+  void voicePttStart();
+  void voicePttEnd();
+  const char* voiceState() const { return _voiceState; }
+
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
   void cancelConfig();         // abort configuration (Exit button)
@@ -99,7 +108,8 @@ class WebPortal {
   // stalled client can never freeze rendering. Half-duplex: capture pauses
   // while audio plays (playback owns the shared I2S clock).
   volatile bool _micOn = false;  // written on render loop, read by capture task
-  int _micClient = -1;      // WS client num to stream audio to
+  int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
+  const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
   StreamRing _micRing;      // producer = capture task, consumer = handle()
   static void micCaptureTask(void* arg);
   void micCaptureLoop();
