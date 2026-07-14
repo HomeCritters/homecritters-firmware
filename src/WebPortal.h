@@ -90,6 +90,17 @@ class WebPortal {
   volatile float _throwNx = 0, _throwNy = 0;  // normalized swipe of that throw
   volatile int _simonPress = -1;              // pending Genius color press
 
+  // Mic capture -> HA (voice assistant). Raw 16kHz mono 16-bit PCM streamed as
+  // binary WS frames to the client that sent "mic:on". Done inline in handle()
+  // (same thread as _ws.loop) so ALL WebSocket access stays single-threaded
+  // (links2004 is not task-safe). Half-duplex: only captures when no audio
+  // plays (playback owns the shared I2S clock). Only reachable when idle, so
+  // the brief i2s_read on the render loop is harmless.
+  bool _micOn = false;
+  int _micClient = -1;     // WS client num to stream audio to
+  bool _micWasBusy = true; // force a 16kHz clock restore when capture resumes
+  void pumpMic();          // drain the mic DMA -> WS (called from handle())
+
   void startServer();
   void endConfig();  // leave config mode + reclaim port 80
   static void httpTask(void* arg);  // runs the HTTP server on core 0

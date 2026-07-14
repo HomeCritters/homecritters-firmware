@@ -3,6 +3,7 @@
 #include <ESPmDNS.h>
 #include <cstring>
 #include "Renderer.h"
+#include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
 #include "web_index.h"  // gzipped single-file React portal
 
 static constexpr const char* HOSTNAME = "critter";  // -> critter.local
@@ -103,6 +104,33 @@ void WebPortal::handle() {
   if (now - _lastBroadcast >= interval) {
     broadcastState();
     _lastBroadcast = now;
+  }
+  pumpMic();
+}
+
+// Drain the mic DMA into binary WS frames (16kHz mono 16-bit PCM), same thread
+// as _ws.loop() so no locking is needed. Only runs while enabled and idle
+// (half-duplex): playback retunes the shared I2S clock, so we skip capture
+// then and restore 16kHz on resume.
+void WebPortal::pumpMic() {
+  if (!_micOn || _micClient < 0) return;
+  if (_audio && _audio->busy()) { _micWasBusy = true; return; }
+  if (_micWasBusy) {
+    AudioCodec::setCaptureRate();  // playback left it at 44.1/48k
+    int16_t drop[320];
+    AudioCodec::readMicMono(drop, 320, 0);  // discard the partial-rate tail
+    _micWasBusy = false;
+  }
+  // Send whatever the DMA already has (non-blocking-ish), a few 20ms frames per
+  // loop iteration so we keep up with 16kHz without stalling the render loop.
+  int16_t pcm[320];
+  for (int i = 0; i < 6; i++) {
+    const size_t got = AudioCodec::readMicMono(pcm, 320, 0);  // 0 = only buffered
+    if (got == 0) break;
+    if (!_ws.sendBIN((uint8_t)_micClient, (uint8_t*)pcm, got * sizeof(int16_t))) {
+      _micOn = false; _micClient = -1;  // write failed/timed out: client is gone
+      break;
+    }
   }
 }
 
@@ -211,10 +239,18 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     _ws.sendTXT(num, buf);  // send the current state on connect
   } else if (type == WStype_DISCONNECTED) {
     Serial.printf("[ws] client %u disconnected\n", num);
+    if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
   } else if (type == WStype_TEXT) {
     String msg;
     msg.reserve(len);
     for (size_t i = 0; i < len; i++) msg += (char)payload[i];
+    // Mic control needs the client num (audio is streamed back to it).
+    if (msg == "mic:on")  { _micClient = num; _micOn = true;  _dirty = true; return; }
+    if (msg == "mic:off") { _micOn = false; _micClient = -1;  _dirty = true; return; }
+    if (msg.startsWith("micgain:")) {  // bring-up: tune ADC gain live
+      if (_audio) _audio->setMicGain(msg.substring(8).toInt());
+      return;
+    }
     applyCommand(msg);
     // Don't broadcast from here: just mark dirty and let handle() send one
     // coalesced frame. Joystick input ("game:x:...") never marks dirty.

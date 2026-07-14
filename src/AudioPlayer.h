@@ -51,6 +51,11 @@ class AudioPlayer {
   void stopStream();
   bool streaming() const { return _streaming; }
 
+  // True while any audio plays (media stream OR a PROGMEM SFX). The mic
+  // capture path is half-duplex with playback (shared I2S clock), so it must
+  // suspend capture while this is true.
+  bool busy() const { return _playing || _streaming; }
+
   // What is playing: HA TTS URLs go through /api/tts_proxy/, so speech is
   // distinguishable from music - the UI shows an Alexa-style ring for speech
   // and a party mode for music.
@@ -60,6 +65,11 @@ class AudioPlayer {
   // Volume 0..100 (persisted to NVS, perceptual curve).
   void setVolume(int pct);
   int volume() const { return _volume; }
+
+  // Mic ADC gain step 0..7 (0/6/.../42 dB) - live tuning during bring-up.
+  void setMicGain(int step);
+  // Bring-up: read the mic for `ms` and print RMS/peak/DC (bypasses WS).
+  void micSelfTest(int ms);
 
  private:
   void play(const unsigned char* data, unsigned int len);

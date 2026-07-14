@@ -6,7 +6,7 @@
 #include <AudioGeneratorWAV.h>
 #include <AudioGeneratorFLAC.h>
 #include <AudioFileSourcePROGMEM.h>
-#include <AudioOutputI2S.h>
+#include "audio/AudioCodec.h"
 #include "audio/StreamRing.h"
 #include "audio/RingSource.h"
 #include "pins.h"
@@ -77,16 +77,27 @@ void es8311_init() {
     {0x37, 0x08}, {0x45, 0x00}, {0x44, 0x58},
     {0x31, 0x00},  // DAC unmuted
     {0x32, 0xE0},  // DAC volume (~loud; 0xBF=0dB, 0xFF=+32dB)
+    // Enable the ADC (mic) path for full-duplex. Mirrors esp-adf
+    // es8311_start(BOTH): the key is SDPOUT reg 0x0A bit6 CLEAR (the DAC-only
+    // config left it 0x4C = ADC serial output muted); 0x0C = 16-bit I2S with
+    // the ADC output enabled. 0x0E/0x14/0x0D/0x15/0x17 (power/PGA/ADC) are
+    // already written above. No DAC->ADC loopback (0x44 bit7 = 0).
+    {0x0A, 0x0C},  // SDPOUT: ADC serial output on, 16-bit I2S
+    {0x16, 0x04},  // ADC/mic gain: 0..7 = 0/6/12/18/24/30/36/42 dB (24dB start)
   };
   for (auto& s : seq) esWrite(s[0], s[1]);
 }
+
+// Live mic PGA gain tuning (reg 0x16), 0..7 = 0..42dB. Called from the debug
+// console to calibrate the capture level without reflashing.
+void es8311_set_mic_gain(uint8_t step) { esWrite(0x16, step & 0x07); }
 
 }  // namespace
 
 // Convenience casts for the opaque pointers stored in the header.
 #define DEC (static_cast<AudioGenerator*>(_dec))
 #define SRC (static_cast<AudioFileSource*>(_src))
-#define OUT (static_cast<AudioOutputI2S*>(_out))
+#define OUT (static_cast<CodecOutput*>(_out))
 
 // Pick the decoder from the leading header bytes, matching what Music Assistant
 // (and ESPHome speakers) send: FLAC for lossless media - cheap for the server
@@ -125,17 +136,13 @@ void AudioPlayer::begin() {
   pinMode(PIN_SPEAKER_EN, OUTPUT);
   digitalWrite(PIN_SPEAKER_EN, HIGH);
 
-  // I2S output to the codec (ESP32 is the I2S bus master), port 0.
-  // CRITICAL: route MCLK to its REAL pin (GPIO16, see pins.h). ESP8266Audio's
-  // default mclkPin is GPIO0, and the 3-arg SetPinout kept that: the ~11MHz
-  // MCLK square wave went out on the BOOT pad instead of the codec line. That
-  // EMI desensed the WiFi radio whenever ANY audio played - RTT exploded
-  // 21ms -> 224ms (0% loss, pure retransmissions) and TCP throughput
-  // collapsed 273 -> ~20 KB/s (window/RTT). On the proper trace the clock is
-  // harmless, and the ES8311 gets a genuine MCLK.
-  auto* out = new AudioOutputI2S(0, AudioOutputI2S::EXTERNAL_I2S, 16);
-  out->SetPinout(PIN_I2S_BCLK, PIN_I2S_LRCLK, PIN_I2S_DOUT, PIN_I2S_MCLK);
-  _out = out;
+  // Full-duplex I2S (port 0): AudioCodec owns the driver (playback TX + mic RX
+  // on the shared clock), replacing ESP8266Audio's TX-only AudioOutputI2S.
+  // MCLK stays on GPIO16 - the ~11MHz clock on GPIO0 (BOOT pad) desensed WiFi
+  // whenever audio played (RTT 21->224ms, throughput 273->20 KB/s). CodecOutput
+  // is the sink the decoders write into.
+  if (!AudioCodec::begin()) Serial.println("[audio] I2S install failed");
+  _out = new CodecOutput();
 
   // Saved volume (default 80%).
   Preferences p;
@@ -179,6 +186,34 @@ void AudioPlayer::setVolume(int pct) {
   p.begin("audio", false);
   p.putInt("vol", _volume);
   p.end();
+}
+
+void AudioPlayer::setMicGain(int step) { es8311_set_mic_gain((uint8_t)constrain(step, 0, 7)); }
+
+// Bring-up self-test: read the mic directly for `ms` and print level stats
+// (RMS / peak / DC). Bypasses the WebSocket entirely. Assumes no playback.
+void AudioPlayer::micSelfTest(int ms) {
+  if (busy()) { Serial.println("[mic] busy (audio playing)"); return; }
+  AudioCodec::setCaptureRate();
+  int16_t buf[320];
+  int64_t sum = 0, sumsq = 0;
+  int n = 0, peak = 0;
+  const uint32_t t0 = millis();
+  while ((int)(millis() - t0) < ms) {
+    const size_t got = AudioCodec::readMicMono(buf, 320, 50);
+    for (size_t i = 0; i < got; i++) {
+      const int v = buf[i];
+      sum += v;
+      sumsq += (int64_t)v * v;
+      if (abs(v) > peak) peak = abs(v);
+      n++;
+    }
+  }
+  if (!n) { Serial.println("[mic] no samples"); return; }
+  const double dc = (double)sum / n;
+  const double rms = sqrt((double)sumsq / n - dc * dc);
+  Serial.printf("[mic] %dms n=%d RMS=%.0f peak=%d (%.0f%%FS) DC=%.0f\n", ms, n, rms,
+                peak, 100.0 * peak / 32767.0, dc);
 }
 
 // Request a clip (preempts the current one). Non-blocking. Suppressed while a
