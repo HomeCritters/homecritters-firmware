@@ -149,8 +149,9 @@ void WebPortal::pumpMic() {
 }
 
 // --- Voice push-to-talk (called from the render loop, same thread as _ws) ---
+// These only handle the mic + the ptt event; the voice UI state (listening/
+// thinking/speaking) is driven by the main loop via setVoiceState().
 void WebPortal::voicePttStart() {
-  _voiceState = "listening";
   _micOn = true;  // capture task streams to _micClient (HA, via voice:sub)
   if (_serverUp) _ws.broadcastTXT("evt:ptt:start");
   _dirty = true;
@@ -158,7 +159,6 @@ void WebPortal::voicePttStart() {
 
 void WebPortal::voicePttEnd() {
   _micOn = false;
-  _voiceState = "idle";
   if (_serverUp) _ws.broadcastTXT("evt:ptt:end");
   _dirty = true;
 }

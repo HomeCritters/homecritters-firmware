@@ -61,6 +61,12 @@ class WebPortal {
   // the reply back via "media:play:" (the existing TTS voice-ring path).
   void voicePttStart();
   void voicePttEnd();
+  // Voice UI state, driven by the main loop's state machine (idle|listening|
+  // thinking|speaking). Reflected in the WS state so the portal/HA can mirror
+  // the on-screen ring. Coalesced: only nudges a broadcast on change.
+  void setVoiceState(const char* s) {
+    if (strcmp(_voiceState, s) != 0) { _voiceState = s; _dirty = true; }
+  }
   const char* voiceState() const { return _voiceState; }
 
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)

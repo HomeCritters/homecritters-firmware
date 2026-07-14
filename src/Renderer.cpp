@@ -919,7 +919,7 @@ void Renderer::drawBatteryPill(int topY, int pct, uint16_t outline, uint16_t txt
 void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
                     bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
                     bool wifiOn, const char* ip, bool clockActive, Clock& clock,
-                    uint8_t mediaFx) {
+                    uint8_t mediaFx, uint8_t voiceState) {
   // Theme follows the real time of day (06-16 day, 16-18 afternoon, else
   // night). Without a synced clock, fall back to the pet's sleep state.
   enum { TOD_DAY, TOD_AFTERNOON, TOD_NIGHT } tod;
@@ -976,9 +976,14 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     }
   }
 
-  // Media overlay on top of everything (skip while the config menu covers
-  // the screen): party show for music, voice ring for TTS.
-  if (mediaFx && !menuOpen) drawMediaFx(mediaFx);
+  // Media/voice overlay on top of everything (skip while the config menu
+  // covers the screen). Music gets the party show; the assistant voice states
+  // (listening/thinking/speaking) get their own ring so there's never a gap in
+  // feedback between releasing the button and hearing the reply.
+  if (!menuOpen) {
+    if (mediaFx == 1) drawMediaFx(1);           // music party show
+    else if (voiceState) drawVoiceRing(voiceState);
+  }
 
   _canvas.pushSprite(0, 0);
 }
@@ -1146,21 +1151,45 @@ void Renderer::drawMediaFx(uint8_t kind) {
         _canvas.drawPixel(tx + 1, ty, LASER[k % 4]);
       }
     }
-  } else if (kind == 2) {
-    // --- voice ring (Alexa style) ---
-    // Pulled 2px in from the panel edge: the glass is centered on 119.5, so a
-    // ring hugging r=119 from integer (120,120) reads visibly off-center.
-    const int cx = 120, cy = 120;
-    // Dim navy base ring.
-    _canvas.fillArc(cx, cy, 108, 117, 0, 360, _canvas.color565(0, 24, 56));
-    // Bright cyan sweep + a hot leading edge, rotating steadily.
-    const int a = (int)((t / 4) % 360);
-    _canvas.fillArc(cx, cy, 108, 117, a, (a + 70) % 360, _canvas.color565(0, 150, 220));
-    _canvas.fillArc(cx, cy, 109, 116, (a + 40) % 360, (a + 70) % 360,
-                    _canvas.color565(120, 230, 255));
-    // Gentle breathing pulse on the opposite side for the "listening" feel.
-    const uint8_t pulse = (uint8_t)(90 + 70 * sinf(t / 300.0f));
-    _canvas.fillArc(cx, cy, 110, 115, (a + 180) % 360, (a + 220) % 360,
-                    _canvas.color565(0, pulse / 2, pulse));
+  }
+}
+
+// Assistant voice feedback ring around the round display edge. Three distinct
+// looks so each phase reads at a glance: 1 listening (calm cyan breath),
+// 2 thinking (amber comet spinner), 3 speaking (cyan waveform pulsing). The
+// ring hugs r=108..117 (pulled in from the 119.5 glass center so it reads
+// centered from integer (120,120)).
+void Renderer::drawVoiceRing(uint8_t state) {
+  const uint32_t t = millis();
+  const int cx = 120, cy = 120, r0 = 108, r1 = 117;
+  if (state == 1) {
+    // LISTENING: whole ring breathes cyan + a slow bright sweep. "I'm hearing."
+    const float br = 0.5f + 0.5f * sinf(t / 550.0f);
+    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(0, 28, 52));
+    const uint8_t g = (uint8_t)(55 + 95 * br), b = (uint8_t)(90 + 150 * br);
+    _canvas.fillArc(cx, cy, r0 + 1, r1 - 1, 0, 360, _canvas.color565(0, g, b));
+    const int a = (int)((t / 8) % 360);
+    _canvas.fillArc(cx, cy, r0, r1, a, (a + 55) % 360, _canvas.color565(120, 235, 255));
+  } else if (state == 2) {
+    // THINKING: amber comet racing around a dim ring. "Working on it."
+    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(34, 20, 0));
+    const int a = (int)((t / 3) % 360);
+    _canvas.fillArc(cx, cy, r0, r1, a, (a + 60) % 360, _canvas.color565(230, 140, 0));
+    _canvas.fillArc(cx, cy, r0 + 1, r1 - 1, (a + 35) % 360, (a + 60) % 360,
+                    _canvas.color565(255, 215, 130));
+    const int a2 = (a + 180) % 360;  // faint trailing comet for balance
+    _canvas.fillArc(cx, cy, r0 + 2, r1 - 2, a2, (a2 + 38) % 360, _canvas.color565(120, 70, 0));
+  } else {
+    // SPEAKING: symmetric segments pulse in/out like a voice waveform.
+    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(0, 24, 48));
+    const int N = 12;
+    for (int k = 0; k < N; k++) {
+      const float amp = 0.5f + 0.5f * sinf(t / 130.0f + k * 1.3f);
+      const int seg0 = k * (360 / N);
+      const int seg1 = seg0 + (360 / N) - 3;  // small gap between bars
+      const int ri = r1 - (int)(2 + amp * (r1 - r0));
+      const uint8_t g = (uint8_t)(80 + 150 * amp), b = (uint8_t)(120 + 135 * amp);
+      _canvas.fillArc(cx, cy, ri, r1, seg0, seg1, _canvas.color565(0, g, b));
+    }
   }
 }

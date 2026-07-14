@@ -97,6 +97,7 @@ static void handleUi(ui::UiHit hit) {
 }
 
 static bool g_shotPending = false;  // serial "shot": capture after the next render
+static int g_voiceDebug = -1;       // serial "voice:N": force a voice ring (-1 = off)
 // Serve pending screenshots (serial console + web portal) right after a render,
 // when the canvas holds a complete frame. Both play the camera shutter.
 static void serviceShots() {
@@ -388,6 +389,7 @@ static void loopGamesMenu(unsigned long now) {
 static bool consoleNavigate(const String& c) {
   const unsigned long now = millis();
   if (c == "shot")   { g_shotPending = true; return true; }  // captured post-render
+  if (c.startsWith("voice:")) { g_voiceDebug = c.substring(6).toInt(); return true; }  // force voice ring
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
@@ -601,15 +603,39 @@ void loop() {
                            (idleSince(now, lastInteractionMs) > (unsigned long)petClock.idleSec() * 1000);
 
   InputEvent ev = input.poll(lcd, menuOpen, menuPage);
-  // Push-to-talk (BOOT hold) works in any mode and also wakes the screen.
+
+  // --- Voice assistant feedback state machine (drives the on-screen ring +
+  // LED + portal). listening (BOOT held) -> thinking (released, STT/intent) ->
+  // speaking (TTS plays) -> idle. The thinking phase closes the feedback gap
+  // between releasing the button and hearing the reply; a timeout clears it if
+  // no answer comes (e.g. STT heard nothing). 0 idle,1 listen,2 think,3 speak.
+  static uint8_t g_voice = 0, g_voiceLast = 0;
+  static unsigned long g_voiceSince = 0;
   if (ev.voice == InputEvent::V_PTT_START) {
-    lastInteractionMs = now;
-    web.voicePttStart();
-    led.gameColor(0, 200, 255);  // cyan "listening" while the mic streams
+    lastInteractionMs = now; web.voicePttStart(); g_voice = 1; g_voiceSince = now;
   } else if (ev.voice == InputEvent::V_PTT_END) {
-    web.voicePttEnd();
-    led.endGame();  // release the LED override back to mood
+    web.voicePttEnd(); g_voice = 2; g_voiceSince = now;  // -> thinking
   }
+  if (audio.mediaKind() == AudioPlayer::MEDIA_TTS) {
+    g_voice = 3; g_voiceSince = now;                     // reply is speaking
+  } else if (g_voice == 3) {
+    g_voice = 0;                                         // TTS finished
+  } else if (g_voice == 2 && now - g_voiceSince > 12000) {
+    g_voice = 0;                                         // no reply: give up
+  }
+  if (g_voiceDebug >= 0) g_voice = (uint8_t)g_voiceDebug;  // debug: force a ring
+  if (g_voice != g_voiceLast) {
+    static const char* const NAMES[] = {"idle", "listening", "thinking", "speaking"};
+    web.setVoiceState(NAMES[g_voice]);
+    switch (g_voice) {
+      case 1: led.gameColor(0, 200, 255); break;   // cyan
+      case 2: led.gameColor(255, 150, 0); break;   // amber
+      case 3: led.gameColor(0, 200, 255); break;   // cyan
+      default: led.endGame(); break;               // release to mood
+    }
+    g_voiceLast = g_voice;
+  }
+
   if (ev.ui != ui::UI_NONE || ev.action != ACTION_NONE) {
     lastInteractionMs = now;
     if (clockActive) {
@@ -653,7 +679,7 @@ void loop() {
   if (menuOpen && web.connected()) ip = web.ip();
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
-                (uint8_t)audio.mediaKind());
+                (uint8_t)audio.mediaKind(), g_voice);
   serviceShots();
 
   delay(30);
