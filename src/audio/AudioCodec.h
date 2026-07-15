@@ -38,6 +38,10 @@ void setCaptureRate();
 // (0 on timeout). `frames` is the mono sample count wanted.
 size_t readMicMono(int16_t* dst, size_t frames, uint32_t timeoutMs);
 
+// Mean |amplitude| of the last ~512 played samples (0..32767, post-gain).
+// Fed by CodecOutput::ConsumeSample; drives the beat-following party LED.
+uint16_t outLevel();
+
 }  // namespace AudioCodec
 
 // AudioOutput sink the ESP8266Audio decoders write into. Delegates to the

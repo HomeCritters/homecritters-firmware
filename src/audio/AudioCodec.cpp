@@ -82,13 +82,31 @@ bool CodecOutput::SetRate(int hz) {
   return true;
 }
 
+// Rolling output level meter (see AudioCodec::outLevel). Written only by the
+// decoder task; read by the render loop (16-bit, atomic on ESP32).
+static volatile uint16_t s_outLevel = 0;
+static uint32_t s_lvlAcc = 0;
+static uint16_t s_lvlN = 0;
+
+uint16_t AudioCodec::outLevel() { return s_outLevel; }
+
 bool CodecOutput::ConsumeSample(int16_t sample[2]) {
   int16_t ms[2] = {sample[0], sample[1]};
   MakeSampleStereo16(ms);
-  const uint32_t s32 = ((uint32_t)(uint16_t)Amplify(ms[RIGHTCHANNEL]) << 16) |
-                       ((uint16_t)Amplify(ms[LEFTCHANNEL]) & 0xffff);
+  const int16_t al = Amplify(ms[LEFTCHANNEL]);
+  const int16_t ar = Amplify(ms[RIGHTCHANNEL]);
+  const uint32_t s32 = ((uint32_t)(uint16_t)ar << 16) | ((uint16_t)al & 0xffff);
   size_t written = 0;
   i2s_write(PORT, &s32, sizeof(s32), &written, 0);  // non-blocking (decoder paces)
+  if (written) {
+    // Level meter: mean |left| over 512-sample windows (~12ms @ 44.1kHz).
+    s_lvlAcc += al < 0 ? -al : al;
+    if (++s_lvlN >= 512) {
+      s_outLevel = (uint16_t)(s_lvlAcc / 512);
+      s_lvlAcc = 0;
+      s_lvlN = 0;
+    }
+  }
   return written != 0;
 }
 

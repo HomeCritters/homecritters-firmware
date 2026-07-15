@@ -595,13 +595,30 @@ void loop() {
     static uint8_t lastKind = 0;
     const uint8_t mk = (uint8_t)audio.mediaKind();
     if (mk == AudioPlayer::MEDIA_MUSIC) {
-      const uint8_t h = (now / 24) & 0xFF;  // hue 0..255 rainbow wheel
-      const uint8_t x = (h % 85) * 3;
+      // Beat-follow: the CodecOutput reports the live PCM envelope. A spike
+      // above the ~1s running average = beat -> hue jump + full-bright flash
+      // that decays; between beats the LED holds a dim glow of the current
+      // color. If the track has no clear transients, the hue still drifts.
+      static float slowEnv = 40.0f, flash = 0.0f;
+      static uint8_t hue = 0;
+      static unsigned long lastBeatMs = 0;
+      const float lvl = (float)audio.mediaLevel();       // 0..255
+      slowEnv += (lvl - slowEnv) * 0.03f;                // ~1s average @33fps
+      if (lvl > slowEnv * 1.35f + 6.0f && now - lastBeatMs > 160) {
+        lastBeatMs = now;
+        flash = 1.0f;
+        hue += 47;                                       // new color per beat
+      } else {
+        flash *= 0.86f;                                  // fast decay
+      }
+      if (now - lastBeatMs > 1800) hue += 2;             // beatless: slow drift
+      const uint8_t x = (hue % 85) * 3;
       uint8_t r, g, b;
-      if (h < 85)       { r = 255 - x; g = x;       b = 0; }
-      else if (h < 170) { r = 0;       g = 255 - x; b = x; }
-      else              { r = x;       g = 0;       b = 255 - x; }
-      led.gameColor(r, g, b);
+      if (hue < 85)       { r = 255 - x; g = x;       b = 0; }
+      else if (hue < 170) { r = 0;       g = 255 - x; b = x; }
+      else                { r = x;       g = 0;       b = 255 - x; }
+      const float k = 0.25f + 0.75f * flash;             // dim glow <-> flash
+      led.gameColor((uint8_t)(r * k), (uint8_t)(g * k), (uint8_t)(b * k));
     } else if (mk == AudioPlayer::MEDIA_TTS) {
       const uint8_t p = (uint8_t)(120 + 100 * sinf(now / 300.0f));
       led.gameColor(0, p / 2, p);
@@ -681,9 +698,19 @@ void loop() {
   static uint8_t g_voice = 0, g_voiceLast = 0;
   static unsigned long g_voiceSince = 0;
   if (ev.voice == InputEvent::V_PTT_START) {
-    lastInteractionMs = now; web.voicePttStart(); g_voice = 1; g_voiceSince = now;
+    lastInteractionMs = now;
+    if (!web.micMuted()) {  // muted: PTT is denied (red LED already says why)
+      web.voicePttStart(); g_voice = 1; g_voiceSince = now;
+    }
   } else if (ev.voice == InputEvent::V_PTT_END) {
-    web.voicePttEnd(); g_voice = 2; g_voiceSince = now;  // -> thinking
+    if (g_voice == 1) { web.voicePttEnd(); g_voice = 2; g_voiceSince = now; }
+  } else if (ev.voice == InputEvent::V_MUTE_TOGGLE) {
+    // Quick BOOT tap: privacy mute, Echo-style. Down chime = mic closed,
+    // up chime = mic open; the LED stays red while muted (below).
+    lastInteractionMs = now;
+    const bool muted = !web.micMuted();
+    web.setMicMuted(muted);
+    if (muted) audio.playConfirm(); else audio.playListen();
   }
   if (audio.mediaKind() == AudioPlayer::MEDIA_TTS) {
     g_voice = 3; g_voiceSince = now;                     // reply is speaking
@@ -748,7 +775,7 @@ void loop() {
   if (menuOpen && web.connected()) ip = web.ip();
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
-                (uint8_t)audio.mediaKind(), g_voice);
+                (uint8_t)audio.mediaKind(), g_voice, web.micMuted());
   serviceShots();
 
   delay(30);

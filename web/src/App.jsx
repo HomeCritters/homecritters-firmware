@@ -600,6 +600,19 @@ export default function App() {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
+              <Text strong>🎙️ Microfone</Text>
+              <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                Desligado = assistente não escuta (LED vermelho)
+              </Text>
+            </div>
+            <Switch
+              checked={!state?.micMuted}
+              onChange={(v) => send(v ? 'mute:off' : 'mute:on')}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+            <div>
               <Text strong>🌙 Modo noite</Text>
               <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
                 Apaga tela e LED, Leon dorme

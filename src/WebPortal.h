@@ -61,6 +61,11 @@ class WebPortal {
   // the reply back via "media:play:" (the existing TTS voice-ring path).
   void voicePttStart();
   void voicePttEnd();
+  // Mic mute (privacy, Echo-style): while muted NO audio leaves the device -
+  // PTT is denied and mic:on is ignored. Toggled by a quick BOOT tap, the
+  // portal switch and HA ("mute:on|off"). Persisted in NVS.
+  bool micMuted() const { return _micMuted; }
+  void setMicMuted(bool muted);
   // Voice UI state, driven by the main loop's state machine (idle|listening|
   // thinking|speaking). Reflected in the WS state so the portal/HA can mirror
   // the on-screen ring. Coalesced: only nudges a broadcast on change.
@@ -134,6 +139,7 @@ class WebPortal {
   // stalled client can never freeze rendering. Half-duplex: capture pauses
   // while audio plays (playback owns the shared I2S clock).
   volatile bool _micOn = false;  // written on render loop, read by capture task
+  volatile bool _micMuted = false;  // privacy mute (NVS-persisted)
   int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
   const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)

@@ -209,7 +209,7 @@ void Renderer::drawSparkles(bool night) {
   }
 }
 
-void Renderer::drawHeader(const Pet& pet, bool wifiOn) {
+void Renderer::drawHeader(const Pet& pet, bool wifiOn, bool micMuted) {
   const Mood mood = pet.mood();
   _canvas.setTextColor(_p.text);
   _canvas.setTextSize(2);
@@ -218,6 +218,26 @@ void Renderer::drawHeader(const Pet& pet, bool wifiOn) {
 
   // WiFi indicator (small dot), inside the visible circle next to the status
   if (wifiOn) _canvas.fillCircle(196, 42, 3, _p.sparkle);
+
+  // Mic muted: small crossed-out mic top-left. The LED stays on mood duty -
+  // this is the on-screen privacy hint. Position pulled INSIDE the round
+  // glass: at (44,38) the slash corner sat at r~123 from center, past the
+  // 119.5 bezel - it looked fine on the square canvas but was clipped on
+  // the physical display. Worst corner now sits at r~109.
+  if (micMuted) {
+    const int mx = 58, my = 46;
+    const uint16_t body = _canvas.color565(232, 232, 236);
+    _canvas.fillRoundRect(mx - 2, my - 7, 5, 9, 2, body);  // capsule
+    _canvas.drawFastVLine(mx - 4, my - 1, 5, body);        // holder U
+    _canvas.drawFastVLine(mx + 4, my - 1, 5, body);
+    _canvas.drawFastHLine(mx - 4, my + 4, 9, body);
+    _canvas.drawFastVLine(mx, my + 5, 3, body);            // stem
+    _canvas.drawFastHLine(mx - 2, my + 8, 5, body);        // base
+    const uint16_t red = _canvas.color565(235, 40, 40);    // bold red slash
+    _canvas.drawLine(mx - 6, my - 9, mx + 6, my + 9, red);
+    _canvas.drawLine(mx - 5, my - 9, mx + 7, my + 9, red);
+    _canvas.drawLine(mx - 6, my - 8, mx + 6, my + 10, red);
+  }
 
   // "Dormindo" only when actually asleep; MOOD_SLEEPY while awake means tired.
   const char* status = "Feliz";
@@ -927,7 +947,7 @@ void Renderer::drawBatteryPill(int topY, int pct, uint16_t outline, uint16_t txt
 void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
                     bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
                     bool wifiOn, const char* ip, bool clockActive, Clock& clock,
-                    uint8_t mediaFx, uint8_t voiceState) {
+                    uint8_t mediaFx, uint8_t voiceState, bool micMuted) {
   // Theme follows the real time of day (06-16 day, 16-18 afternoon, else
   // night). Without a synced clock, fall back to the pet's sleep state.
   enum { TOD_DAY, TOD_AFTERNOON, TOD_NIGHT } tod;
@@ -963,7 +983,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   // Disco floor goes UNDER the pet (Leon dances on it); the ball + lasers
   // overlay goes on top of everything at the end.
   if (mediaFx == 1 && !menuOpen) drawDiscoFloor();
-  drawHeader(pet, wifiOn);
+  drawHeader(pet, wifiOn, micMuted);
   drawFerret(ferret);
   // battery is shown in the config menu (not the home scene)
 
