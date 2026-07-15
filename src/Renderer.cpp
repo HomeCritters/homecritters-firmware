@@ -219,10 +219,13 @@ void Renderer::drawHeader(const Pet& pet, bool wifiOn, bool micMuted) {
   // WiFi indicator (small dot), inside the visible circle next to the status
   if (wifiOn) _canvas.fillCircle(196, 42, 3, _p.sparkle);
 
-  // Mic muted: small crossed-out mic top-left (mirrors the wifi dot). The
-  // LED stays on mood duty - this is the on-screen privacy hint.
+  // Mic muted: small crossed-out mic top-left. The LED stays on mood duty -
+  // this is the on-screen privacy hint. Position pulled INSIDE the round
+  // glass: at (44,38) the slash corner sat at r~123 from center, past the
+  // 119.5 bezel - it looked fine on the square canvas but was clipped on
+  // the physical display. Worst corner now sits at r~109.
   if (micMuted) {
-    const int mx = 44, my = 38;
+    const int mx = 58, my = 46;
     const uint16_t body = _canvas.color565(232, 232, 236);
     _canvas.fillRoundRect(mx - 2, my - 7, 5, 9, 2, body);  // capsule
     _canvas.drawFastVLine(mx - 4, my - 1, 5, body);        // holder U
