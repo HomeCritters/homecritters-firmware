@@ -1,5 +1,6 @@
 #include "AudioPlayer.h"
 #include <Wire.h>
+#include <WiFi.h>  // adaptive modem sleep (full radio only while streaming)
 #include <Preferences.h>
 #include <esp_task_wdt.h>
 #include <AudioGeneratorMP3.h>
@@ -134,9 +135,11 @@ void AudioPlayer::begin() {
   Wire.begin(PIN_I2C_A_SDA, PIN_I2C_A_SCL, 400000);
   es8311_init();
 
-  // Enable the speaker amplifier.
+  // Speaker amplifier: starts OFF. The audio task gates it around playback -
+  // leaving EN high 24/7 amplified the DAC noise floor into a faint idle hiss
+  // (the full-duplex I2S TX runs permanently feeding zeros for the mic clock).
   pinMode(PIN_SPEAKER_EN, OUTPUT);
-  digitalWrite(PIN_SPEAKER_EN, HIGH);
+  digitalWrite(PIN_SPEAKER_EN, LOW);
 
   // Full-duplex I2S (port 0): AudioCodec owns the driver (playback TX + mic RX
   // on the shared clock), replacing ESP8266Audio's TX-only AudioOutputI2S.
@@ -406,6 +409,34 @@ void AudioPlayer::taskLoop() {
     }
     if (streamNow) startMedia(url);
     else if (data) startDecode(data, len);
+
+    // Speaker amp gating: powered only while something plays, +300ms linger
+    // (so back-to-back SFX don't click). Killing EN at idle silences the
+    // amplified DAC noise floor (faint hiss with an ear on the speaker).
+    static bool ampOn = false;
+    static uint32_t ampIdleAt = 0;
+    if (_playing) {
+      if (!ampOn) { digitalWrite(PIN_SPEAKER_EN, HIGH); ampOn = true; }
+      ampIdleAt = 0;
+    } else if (ampOn) {
+      const uint32_t nowMs = millis();
+      if (!ampIdleAt) ampIdleAt = nowMs;
+      else if (nowMs - ampIdleAt > 300) {
+        digitalWrite(PIN_SPEAKER_EN, LOW);
+        ampOn = false;
+        ampIdleAt = 0;
+      }
+    }
+
+    // WiFi power: modem sleep while idle (radio naps between AP beacons; PS
+    // off 24/7 ran the S3 noticeably hot), full radio only while a media
+    // stream is up. The old "always on" rule predates the MCLK/GPIO0 fix -
+    // the multi-second spikes blamed on modem sleep were really EMI desense.
+    static bool wasStreaming = false;
+    if (_streaming != wasStreaming) {
+      wasStreaming = _streaming;
+      WiFi.setSleep(!_streaming);
+    }
 
     if (_playing) {
       if (!DEC->loop()) {  // clip finished / EOF (or a live stream dropped)

@@ -22,10 +22,12 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor*
   _onAction = onAction;
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOSTNAME);
-  // Modem power save (the default) makes the radio nap between AP beacons:
-  // multi-second latency spikes and packet loss under load - fatal for media
-  // streaming and the HA WebSocket. Always-on RX costs ~50mA; worth it here.
-  WiFi.setSleep(false);
+  // Modem power save ON by default: the radio naps between AP beacons, which
+  // cuts ~50mA and real heat (the S3 ran hot with PS off 24/7). The old
+  // "always on" rule here predates the MCLK/GPIO0 fix - the latency spikes
+  // blamed on modem sleep were really EMI desense. AudioPlayer escalates to
+  // full radio power while a media stream plays and restores sleep after.
+  WiFi.setSleep(true);
   WiFi.begin();  // reconnect using previously saved credentials
 }
 
