@@ -348,12 +348,13 @@ export default function App() {
   const [needToken, setNeedToken] = useState(!localStorage.getItem('token'));
   const [pinDraft, setPinDraft] = useState('');
   const gotState = useRef(false);
-  // antd's Input.OTP doesn't forward inputMode: patch the underlying inputs
-  // so phones open the NUMERIC keyboard for the 6-digit PIN.
+  // antd's Input.OTP doesn't forward input attributes: patch the underlying
+  // inputs to type=tel so phones reliably open the numeric keypad.
   const otpWrapRef = useRef(null);
   useEffect(() => {
     if (!needToken || !otpWrapRef.current) return;
     otpWrapRef.current.querySelectorAll('input').forEach((i) => {
+      i.type = 'tel';
       i.inputMode = 'numeric';
       i.pattern = '[0-9]*';
       i.autocomplete = 'one-time-code';
