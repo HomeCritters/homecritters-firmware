@@ -611,10 +611,12 @@ void Renderer::drawPairingOverlay() {
                         menu::CELL_BG);
   _canvas.drawRoundRect(PAIR_CANCEL_X, PAIR_CANCEL_Y, PAIR_CANCEL_W, PAIR_CANCEL_H, 8,
                         rgb565(200, 90, 90));
+  _canvas.setTextSize(2);
   _canvas.setTextColor(rgb565(200, 60, 60));
   const char* lbl = "Voltar";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(lbl) / 2 + 1,
-                    PAIR_CANCEL_Y + (PAIR_CANCEL_H - 7) / 2 - 1);
+  // Optical centering: ink is textWidth minus the trailing 2px gap (size 2).
+  _canvas.setCursor(CENTER_X - (_canvas.textWidth(lbl) - 2) / 2,
+                    PAIR_CANCEL_Y + (PAIR_CANCEL_H - 14) / 2);
   _canvas.print(lbl);
 }
 
