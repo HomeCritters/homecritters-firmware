@@ -582,14 +582,18 @@ void Renderer::drawPairingOverlay() {
   // Six digit boxes centered: 30px boxes with 4px gaps (6*30+5*4 = 200px).
   const int bw = 30, bh = 40, gap = 4;
   const int x0 = CENTER_X - (6 * bw + 5 * gap) / 2;
-  const int y0 = 96;
-  _canvas.setTextSize(3);  // 18x24 glyphs
+  const int y0 = 92;
+  _canvas.setTextSize(3);
   for (int i = 0; i < 6 && _pairPin[i]; i++) {
     const int x = x0 + i * (bw + gap);
     _canvas.fillRoundRect(x, y0, bw, bh, 6, menu::CELL_BG);
     _canvas.drawRoundRect(x, y0, bw, bh, 6, menu::AP_NAME);
     _canvas.setTextColor(menu::BG);
-    _canvas.setCursor(x + bw / 2 - 9, y0 + 9);
+    // Optical centering: the 6x8 font carries a 1px trailing gap baked into
+    // the glyph (15px of ink in an 18px cell at size 3), so a "mathematical"
+    // center sits visibly left. +2 rebalances; same idea vertically (21px of
+    // ink in a 24px cell).
+    _canvas.setCursor(x + (bw - 18) / 2 + 2, y0 + (bh - 21) / 2);
     _canvas.print(_pairPin[i]);
   }
 
@@ -597,18 +601,21 @@ void Renderer::drawPairingOverlay() {
   _canvas.setTextColor(menu::TEXT_DIM);
   const char* l1 = "Digite este codigo no app";
   const char* l2 = "para conectar (90s).";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 154);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 152);
   _canvas.print(l1);
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 166);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 164);
   _canvas.print(l2);
 
-  // Cancel (X) button - a tap here closes the pairing window.
-  _canvas.fillCircle(PAIR_CANCEL_CX, PAIR_CANCEL_CY, 16, menu::CELL_BG);
-  _canvas.drawCircle(PAIR_CANCEL_CX, PAIR_CANCEL_CY, 16, rgb565(200, 90, 90));
-  _canvas.setTextSize(2);
+  // "Voltar" button - closes the pairing window.
+  _canvas.fillRoundRect(PAIR_CANCEL_X, PAIR_CANCEL_Y, PAIR_CANCEL_W, PAIR_CANCEL_H, 8,
+                        menu::CELL_BG);
+  _canvas.drawRoundRect(PAIR_CANCEL_X, PAIR_CANCEL_Y, PAIR_CANCEL_W, PAIR_CANCEL_H, 8,
+                        rgb565(200, 90, 90));
   _canvas.setTextColor(rgb565(200, 60, 60));
-  _canvas.setCursor(PAIR_CANCEL_CX - 5, PAIR_CANCEL_CY - 7);
-  _canvas.print('x');
+  const char* lbl = "Voltar";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(lbl) / 2 + 1,
+                    PAIR_CANCEL_Y + (PAIR_CANCEL_H - 7) / 2 - 1);
+  _canvas.print(lbl);
 }
 
 // QR detail page: the code (large) + what it is + how to use it + the URLs.

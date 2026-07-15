@@ -82,11 +82,13 @@ enum UiHit {
 
 // "Revogar acesso" button on the Dispositivos page (bottom, inside the circle).
 constexpr int16_t REVOKE_X = 50, REVOKE_Y = 172, REVOKE_W = 140, REVOKE_H = 30;
-// Cancel (X) button on the pairing overlay.
-constexpr int16_t PAIR_CANCEL_CX = 120, PAIR_CANCEL_CY = 202, PAIR_CANCEL_R = 22;
+// "Voltar" button on the pairing overlay (bottom, inside the circle).
+constexpr int16_t PAIR_CANCEL_X = 70, PAIR_CANCEL_Y = 188;
+constexpr int16_t PAIR_CANCEL_W = 100, PAIR_CANCEL_H = 28;
 inline bool inPairCancel(int32_t tx, int32_t ty) {
-  const int32_t dx = tx - PAIR_CANCEL_CX, dy = ty - PAIR_CANCEL_CY;
-  return dx * dx + dy * dy <= PAIR_CANCEL_R * PAIR_CANCEL_R;
+  // Forgiving 8px margin (inRect is declared further down in this header).
+  return tx >= PAIR_CANCEL_X - 8 && tx <= PAIR_CANCEL_X + PAIR_CANCEL_W + 8 &&
+         ty >= PAIR_CANCEL_Y - 8 && ty <= PAIR_CANCEL_Y + PAIR_CANCEL_H + 8;
 }
 
 constexpr int16_t HANDLE_CX = 120, HANDLE_TOP = 0, HANDLE_W = 54, HANDLE_H = 16;
