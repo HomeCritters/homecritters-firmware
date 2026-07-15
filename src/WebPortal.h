@@ -94,6 +94,15 @@ class WebPortal {
     }
   }
 
+  // --- pairing auth (F-Sec 1) ---
+  // 16-hex token generated on first boot (NVS), shown on the device's QR
+  // config page. Every WS client must send "auth:<token>" as its FIRST
+  // message (5s grace) or it is dropped: no state, no commands, no mic.
+  // /shot.bmp requires ?token=; /info stays public (identity only).
+  const char* authToken() const { return _token; }
+  // '\n'-separated IPs of authenticated WS clients (Seguranca > HA page).
+  void clientsInfo(char* out, size_t n);
+
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
   void cancelConfig();         // abort configuration (Exit button)
@@ -141,6 +150,12 @@ class WebPortal {
   volatile bool _micOn = false;  // written on render loop, read by capture task
   volatile bool _micMuted = false;  // privacy mute (NVS-persisted)
   int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
+
+  // Pairing auth state (see authToken()).
+  char _token[17] = {0};
+  bool _wsAuthed[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};
+  unsigned long _wsConnAt[WEBSOCKETS_SERVER_CLIENT_MAX] = {0};  // 0 = free slot
+  void sendAuthedTXT(const char* msg);  // broadcast to authed clients only
   const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   bool _fullSleep = false;           // actual mode, reported by main

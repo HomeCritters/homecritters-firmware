@@ -80,13 +80,17 @@ static void handleUi(ui::UiHit hit) {
       menuOpen = !menuOpen;
       if (menuOpen) menuPage = ui::PAGE_MAIN;  // always open on the main page
       break;
-    case ui::UI_MENU_BACK:  // left-edge "back": sub-page -> main, main -> close
-      if (menuPage != ui::PAGE_MAIN) menuPage = ui::PAGE_MAIN;
+    case ui::UI_MENU_BACK:  // left-edge "back": one level up, main -> close
+      if (menuPage != ui::PAGE_MAIN) menuPage = ui::menuParent(menuPage);
       else menuOpen = false;
       break;
-    case ui::UI_OPEN_AUDIO:  menuPage = ui::PAGE_AUDIO; break;
-    case ui::UI_OPEN_LIGHT:  menuPage = ui::PAGE_LIGHT; break;
-    case ui::UI_OPEN_QR:     menuPage = ui::PAGE_QR;    break;
+    case ui::UI_OPEN_AUDIO:  menuPage = ui::PAGE_AUDIO;  break;
+    case ui::UI_OPEN_LIGHT:  menuPage = ui::PAGE_LIGHT;  break;
+    case ui::UI_OPEN_CONN:   menuPage = ui::PAGE_CONN;   break;
+    case ui::UI_OPEN_QR:     menuPage = ui::PAGE_QR;     break;
+    case ui::UI_OPEN_SEC:    menuPage = ui::PAGE_SEC;    break;
+    case ui::UI_OPEN_HA_INFO: menuPage = ui::PAGE_SEC_HA; break;
+    case ui::UI_OPEN_TOKEN:  menuPage = ui::PAGE_TOKEN;  break;
     case ui::UI_VOL_DOWN:    audio.setVolume(audio.volume() - 10); break;
     case ui::UI_VOL_UP:      audio.setVolume(audio.volume() + 10); break;
     case ui::UI_LED_DOWN:    led.setBrightness(led.brightness() - 10); break;
@@ -398,6 +402,7 @@ static bool consoleNavigate(const String& c) {
   const unsigned long now = millis();
   if (c == "shot")   { g_shotPending = true; return true; }  // captured post-render
   if (c.startsWith("voice:")) { g_voiceDebug = c.substring(6).toInt(); return true; }  // force voice ring
+  if (c == "token")  { Serial.printf("[auth] pairing token: %s\n", web.authToken()); return true; }
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
@@ -406,10 +411,14 @@ static bool consoleNavigate(const String& c) {
 
   if (c.startsWith("menu")) {
     screen = SCREEN_PET; menuOpen = true;
-    const String pg = c.substring(4);  // "" or ":audio"/":luz"/":qr"/":main"
+    const String pg = c.substring(4);  // "" or ":audio"/":luz"/":conn"/":qr"/":seg"/":ha"/":token"
     menuPage = pg == ":audio" ? ui::PAGE_AUDIO
              : pg == ":luz"   ? ui::PAGE_LIGHT
+             : pg == ":conn"  ? ui::PAGE_CONN
              : pg == ":qr"    ? ui::PAGE_QR
+             : pg == ":seg"   ? ui::PAGE_SEC
+             : pg == ":ha"    ? ui::PAGE_SEC_HA
+             : pg == ":token" ? ui::PAGE_TOKEN
                               : ui::PAGE_MAIN;
     return true;
   }
@@ -773,6 +782,16 @@ void loop() {
   // String allocation otherwise.
   String ip;
   if (menuOpen && web.connected()) ip = web.ip();
+  // Seguranca > HA page: refresh the authed-clients list once a second.
+  if (menuOpen && menuPage == ui::PAGE_SEC_HA) {
+    static unsigned long lastCli = 0;
+    if (now - lastCli > 1000) {
+      lastCli = now;
+      char ci[120];
+      web.clientsInfo(ci, sizeof(ci));
+      renderer.setClientsInfo(ci);
+    }
+  }
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
                 (uint8_t)audio.mediaKind(), g_voice, web.micMuted());

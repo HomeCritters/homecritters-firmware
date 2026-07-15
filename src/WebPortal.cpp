@@ -35,6 +35,20 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor*
   prefs.begin("voice", true);
   _micMuted = prefs.getBool("muted", false);
   prefs.end();
+
+  // Pairing token: generated once on first boot, then permanent (NVS). Shown
+  // on the QR config page + serial "token" command - never over the network.
+  prefs.begin("auth", false);
+  String tok = prefs.getString("token", "");
+  if (tok.length() != 16) {
+    char gen[17];
+    snprintf(gen, sizeof(gen), "%08x%08x", (unsigned)esp_random(), (unsigned)esp_random());
+    tok = gen;
+    prefs.putString("token", tok);
+  }
+  prefs.end();
+  strlcpy(_token, tok.c_str(), sizeof(_token));
+  if (_renderer) _renderer->setAuthToken(_token);
 }
 
 void WebPortal::setMicMuted(bool muted) {
@@ -124,6 +138,18 @@ void WebPortal::handle() {
     broadcastState();
     _lastBroadcast = now;
   }
+  // Sweep clients that never authenticated (5s grace, checked 1x/s).
+  static unsigned long lastSweep = 0;
+  if (now - lastSweep > 1000) {
+    lastSweep = now;
+    for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+      if (_wsConnAt[i] && !_wsAuthed[i] && now - _wsConnAt[i] > 5000) {
+        Serial.printf("[ws] client %u dropped (no auth)\n", i);
+        _ws.disconnect(i);
+        _wsConnAt[i] = 0;
+      }
+    }
+  }
   pumpMic();
 }
 
@@ -176,14 +202,14 @@ void WebPortal::voicePttStart() {
   // right after the chime finishes (the capture task waits out audio.busy()).
   if (_audio) _audio->playListen();
   _micOn = true;  // capture task streams to _micClient (HA, via voice:sub)
-  if (_serverUp) _ws.broadcastTXT("evt:ptt:start");
+  if (_serverUp) sendAuthedTXT("evt:ptt:start");
   _dirty = true;
 }
 
 void WebPortal::voicePttEnd() {
   _micOn = false;
   if (_audio) _audio->playConfirm();  // descending chime: got it, processing
-  if (_serverUp) _ws.broadcastTXT("evt:ptt:end");
+  if (_serverUp) sendAuthedTXT("evt:ptt:end");
   _dirty = true;
 }
 
@@ -240,6 +266,11 @@ void WebPortal::handleRoot() {
 // (core 0): it asks the render loop for a stable snapshot, waits briefly, then
 // streams the BMP. Serving here (not the WS) keeps the ~170KB off the render.
 void WebPortal::handleShot() {
+  // Screenshot of the live screen = privacy-sensitive: require the token.
+  if (!_server.hasArg("token") || _server.arg("token") != _token) {
+    _server.send(401, "text/plain", "unauthorized");
+    return;
+  }
   if (!_renderer) { _server.send(503, "text/plain", "no renderer"); return; }
   _renderer->requestWebSnapshot();
   const unsigned long t0 = millis();
@@ -289,18 +320,35 @@ void WebPortal::handleShot() {
 
 void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
   if (type == WStype_CONNECTED) {
-    Serial.printf("[ws] client %u connected (%s)\n", num,
+    Serial.printf("[ws] client %u connected (%s) - awaiting auth\n", num,
                   _ws.remoteIP(num).toString().c_str());
-    char buf[768];
-    stateJson(buf, sizeof(buf));
-    _ws.sendTXT(num, buf);  // send the current state on connect
+    _wsAuthed[num] = false;
+    _wsConnAt[num] = millis();  // unauth grace timer (swept in handle())
   } else if (type == WStype_DISCONNECTED) {
     Serial.printf("[ws] client %u disconnected\n", num);
+    _wsAuthed[num] = false;
+    _wsConnAt[num] = 0;
     if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
   } else if (type == WStype_TEXT) {
     String msg;
     msg.reserve(len);
     for (size_t i = 0; i < len; i++) msg += (char)payload[i];
+    // Auth gate: the FIRST message must be "auth:<token>". Until then the
+    // client gets nothing (no state) and can do nothing; a wrong token is an
+    // instant disconnect. Protects commands, state, screenshots and the MIC.
+    if (!_wsAuthed[num]) {
+      if (msg.startsWith("auth:") && msg.substring(5) == _token) {
+        _wsAuthed[num] = true;
+        Serial.printf("[ws] client %u authenticated\n", num);
+        char buf[768];
+        stateJson(buf, sizeof(buf));
+        _ws.sendTXT(num, buf);  // now it may see the state
+      } else {
+        Serial.printf("[ws] client %u rejected (bad auth)\n", num);
+        _ws.disconnect(num);
+      }
+      return;
+    }
     // Mic control needs the client num (audio is streamed back to it).
     // Muted = ignore any request to open the mic (privacy wins over HA).
     if (msg == "mic:on")  { if (_micMuted) return; _micClient = num; _micOn = true; _dirty = true; return; }
@@ -443,7 +491,29 @@ void WebPortal::broadcastState() {
   if (_ws.connectedClients() == 0) return;  // nobody listening: skip the work
   char buf[768];
   stateJson(buf, sizeof(buf));
-  _ws.broadcastTXT(buf);
+  sendAuthedTXT(buf);
+}
+
+// Broadcast to AUTHENTICATED clients only (broadcastTXT would leak state to
+// sockets that never presented the pairing token).
+void WebPortal::sendAuthedTXT(const char* msg) {
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+    if (_wsAuthed[i]) _ws.sendTXT(i, (uint8_t*)msg, strlen(msg));
+  }
+}
+
+// IPs of the currently authenticated clients, one per line (Seguranca > HA
+// screen). Runs on the render loop (same thread as _ws).
+void WebPortal::clientsInfo(char* out, size_t n) {
+  size_t o = 0;
+  int cnt = 0;
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+    if (!_wsAuthed[i]) continue;
+    cnt++;
+    const String ip = _ws.remoteIP(i).toString();
+    o += snprintf(out + o, n > o ? n - o : 0, "%s%s", o ? "\n" : "", ip.c_str());
+  }
+  if (!cnt) strlcpy(out, "Nenhum cliente pareado", n);
 }
 
 static const char* moodName(Mood m) {

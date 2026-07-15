@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Capture mic audio from a HomeCritters device over WebSocket -> WAV.
 
-Connects to ws://<host>:81, sends "mic:on", collects binary PCM frames
-(16 kHz mono 16-bit) for N seconds, sends "mic:off", writes a WAV.
-Usage: wsmic_to_wav.py [host] [seconds] [out.wav]
+Connects to ws://<host>:81, authenticates ("auth:<token>", the pairing code
+from the ball's Config > Seguranca > Senha page), sends "mic:on", collects
+binary PCM frames (16 kHz mono 16-bit) for N seconds, writes a WAV.
+Usage: wsmic_to_wav.py [host] [seconds] [out.wav] [token]
 """
 import sys, socket, base64, os, struct, time, wave
 
 host = sys.argv[1] if len(sys.argv) > 1 else "critter.local"
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5.0
 out  = sys.argv[3] if len(sys.argv) > 3 else "mic.wav"
+token = sys.argv[4] if len(sys.argv) > 4 else ""
 
 s = socket.create_connection((host, 81), timeout=8)
 key = base64.b64encode(os.urandom(16)).decode()
@@ -40,6 +42,8 @@ def frames():
         payload = rd(ln)
         yield op, payload
 
+send_text("auth:" + token)  # pairing gate: first message must be the token
+time.sleep(0.3)
 send_text("mic:on")
 pcm = bytearray(); peak = 0; t0 = time.time()
 for op, payload in frames():

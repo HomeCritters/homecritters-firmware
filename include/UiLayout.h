@@ -50,14 +50,31 @@ inline int buttonAt(int32_t tx, int32_t ty) {
 
 // ------------------- Config menu (full screen) -------------------
 // Opens with a swipe down (or a tap on the top handle). Takes over the whole
-// screen (not a modal). The main page has two icon buttons (Audio, Light) that
-// open sub-pages; each sub-page has a Back button. Closes with a swipe up or
-// the Close button.
-enum MenuPage { PAGE_MAIN, PAGE_AUDIO, PAGE_LIGHT, PAGE_QR };
+// screen (not a modal). Two levels of nesting:
+//   MAIN (2x2): Audio | Luz | Conexao | Seguranca
+//   CONN:       WiFi (config portal) | Portal (-> QR page)
+//   SEC:        HA (authed clients)  | Senha (-> pairing token page)
+// The left-edge tab is "back" one level everywhere (menuParent()).
+enum MenuPage {
+  PAGE_MAIN, PAGE_AUDIO, PAGE_LIGHT,
+  PAGE_CONN, PAGE_QR,          // QR ("Portal") nests under CONN
+  PAGE_SEC, PAGE_SEC_HA, PAGE_TOKEN,  // HA + token nest under SEC
+};
+
+// Where "back" lands from each page (MAIN = will close the menu).
+inline MenuPage menuParent(MenuPage p) {
+  switch (p) {
+    case PAGE_QR:     return PAGE_CONN;
+    case PAGE_SEC_HA: return PAGE_SEC;
+    case PAGE_TOKEN:  return PAGE_SEC;
+    default:          return PAGE_MAIN;
+  }
+}
 
 enum UiHit {
   UI_NONE, UI_MENU_TOGGLE, UI_MENU_BACK,
   UI_OPEN_AUDIO, UI_OPEN_LIGHT, UI_OPEN_QR,
+  UI_OPEN_CONN, UI_OPEN_SEC, UI_OPEN_HA_INFO, UI_OPEN_TOKEN,
   UI_VOL_DOWN, UI_VOL_UP,
   UI_LED_DOWN, UI_LED_UP,
   UI_SCR_DOWN, UI_SCR_UP,
@@ -89,6 +106,8 @@ constexpr int16_t MENU_CELL_W = 70, MENU_CELL_H = 66;
 constexpr int16_t MENU_COL_L = 43, MENU_COL_R = 127;   // column x
 constexpr int16_t MENU_ROW_1 = 48, MENU_ROW_2 = 118;   // row y (battery pill above)
 constexpr int16_t MENU_QR_CX  = MENU_COL_R + MENU_CELL_W / 2;  // QR center x
+// Sub-pages with two tiles (Conexao, Seguranca): one centered row.
+constexpr int16_t MENU_SUB_ROW = 86;
 
 // Audio sub-page: one volume stepper (centered).
 constexpr ButtonSlot MENU_VOL_MINUS = {40, 100};
@@ -131,12 +150,22 @@ inline UiHit menuHit(MenuPage page, int32_t tx, int32_t ty) {
     if (inCircle(tx, ty, MENU_SCR_PLUS, MENU_BTN_R + 8)) return UI_SCR_UP;
     return UI_NONE;
   }
-  if (page == PAGE_QR) return UI_NONE;
+  if (page == PAGE_CONN) {  // WiFi | Portal (QR)
+    if (inRect(tx, ty, MENU_COL_L, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_WIFI;
+    if (inRect(tx, ty, MENU_COL_R, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_QR;
+    return UI_NONE;
+  }
+  if (page == PAGE_SEC) {  // HA | Senha (token)
+    if (inRect(tx, ty, MENU_COL_L, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_HA_INFO;
+    if (inRect(tx, ty, MENU_COL_R, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_TOKEN;
+    return UI_NONE;
+  }
+  if (page == PAGE_QR || page == PAGE_SEC_HA || page == PAGE_TOKEN) return UI_NONE;
   // PAGE_MAIN: 2x2 grid.
   if (inRect(tx, ty, MENU_COL_L, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_AUDIO;
   if (inRect(tx, ty, MENU_COL_R, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_LIGHT;
-  if (inRect(tx, ty, MENU_COL_L, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_WIFI;
-  if (inRect(tx, ty, MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_QR;
+  if (inRect(tx, ty, MENU_COL_L, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_CONN;
+  if (inRect(tx, ty, MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_SEC;
   return UI_NONE;
 }
 

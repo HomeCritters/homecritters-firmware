@@ -36,6 +36,10 @@ class Renderer {
   int screenBrightness() const { return _scrBright; }
   // Full-sleep blank: backlight hard off / restore (never persisted).
   void setDisplayOff(bool off);
+  // Pairing token shown on the Seguranca > Senha page (set once at boot).
+  void setAuthToken(const char* t) { strlcpy(_authToken, t, sizeof(_authToken)); }
+  // Authed clients summary for the Seguranca > HA page (refreshed by main).
+  void setClientsInfo(const char* s) { strlcpy(_clientsInfo, s, sizeof(_clientsInfo)); }
 
   // Full-screen WiFi setup screen (captive portal active) with Exit button.
   void drawWifiConfig(const char* apName);
@@ -71,6 +75,8 @@ class Renderer {
   unsigned long _pressedUntil = 0;
   int _scrBright = 70;  // screen backlight brightness (0..100)
   bool _displayOff = false;  // full-sleep blank (setDisplayOff)
+  char _authToken[17] = {0};    // pairing token (Seguranca > Senha page)
+  char _clientsInfo[120] = {0}; // authed WS clients ('\n'-separated, HA page)
 
   uint16_t* _snap = nullptr;       // stable copy of the canvas for /shot.bmp
   volatile bool _snapReq = false;  // HTTP task -> render loop
@@ -107,13 +113,21 @@ class Renderer {
   void drawMenuMain(int batteryPct, bool wifiOn, const char* ip);
   void drawMenuAudio(int volume);
   void drawMenuLight(int ledBright);
-  void drawMenuQr(bool wifiOn, const char* ip);
+  void drawMenuConn(bool wifiOn, const char* ip);  // Conexao: WiFi | Portal
+  void drawMenuQr(bool wifiOn, const char* ip);    // Portal (QR) detail
+  void drawMenuSec();      // Seguranca: HA | Senha
+  void drawMenuSecHa();    // authed clients list
+  void drawMenuToken();    // pairing token (the only place it's shown)
   void drawStepper(const char* label, int pct, const ui::ButtonSlot& minus,
                    const ui::ButtonSlot& plus);
   void drawGridCell(int x, int y, const char* label, char icon);
   void drawAudioIcon(int cx, int cy, uint16_t bg);
   void drawLightIcon(int cx, int cy);
   void drawWifiIcon(int cx, int cy);
+  void drawLockIcon(int cx, int cy);   // Seguranca tile (padlock)
+  void drawHouseIcon(int cx, int cy);  // HA tile
+  void drawKeyIcon(int cx, int cy);    // Senha tile
+  void drawQrGlyph(int cx, int cy);    // Portal tile (mini QR)
   void drawGameTile(int x, int y, const char* label, char icon, uint16_t iconColor);
   void drawQr(const char* text, int topY, int cx = ui::CENTER_X, int quiet = 3);
   void drawPillButton(int x, int y, int w, int h, const char* label, uint16_t bg);

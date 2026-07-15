@@ -340,8 +340,14 @@ export default function App() {
   const [shotLoading, setShotLoading] = useState(false);
   const takeShot = () => {
     setShotLoading(true);
-    setShotSrc(`/shot.bmp?t=${Date.now()}`);
+    setShotSrc(`/shot.bmp?token=${localStorage.getItem('token') || ''}&t=${Date.now()}`);
   };
+  // Pairing token (F-Sec 1): the device drops any WS client whose first
+  // message isn't "auth:<token>". We keep it in localStorage and prompt once
+  // (the token is shown on the ball: Config > Seguranca > Senha).
+  const [needToken, setNeedToken] = useState(!localStorage.getItem('token'));
+  const [tokenDraft, setTokenDraft] = useState('');
+  const gotState = useRef(false);
   const [name, setName] = useState('');
   const [vol, setVol] = useState(80);
   const [ledBright, setLedBright] = useState(50);
@@ -358,14 +364,26 @@ export default function App() {
     const connect = () => {
       ws = new WebSocket(`ws://${location.hostname}:81/`);
       wsRef.current = ws;
-      ws.onopen = () => setOnline(true);
+      ws.onopen = () => {
+        // First frame MUST be the auth token; the device answers with the
+        // state JSON when it's accepted (and disconnects when it isn't).
+        gotState.current = false;
+        ws.send('auth:' + (localStorage.getItem('token') || ''));
+      };
       ws.onclose = () => {
         setOnline(false);
+        // Closed before any state arrived = bad/missing token: ask for it.
+        if (!gotState.current) setNeedToken(true);
         retry = setTimeout(connect, 1500);
       };
       ws.onmessage = (ev) => {
         try {
           const j = JSON.parse(ev.data);
+          if (!gotState.current) {
+            gotState.current = true;  // authenticated
+            setOnline(true);
+            setNeedToken(false);
+          }
           setState(j);
           if (!nameDirty.current) setName(j.name);
           if (!volDirty.current && typeof j.volume === 'number') setVol(j.volume);
@@ -701,6 +719,37 @@ export default function App() {
             />
           </div>
         </Drawer>
+
+        {/* Pairing (F-Sec 1): the device requires its token before anything */}
+        <Modal title="🔑 Parear com o bichinho" open={needToken} closable={false} footer={null}>
+          <Text>
+            No aparelho: deslize para baixo → <b>Seguranca</b> → <b>Senha</b> e
+            digite o código aqui:
+          </Text>
+          <Input
+            style={{ marginTop: 12, fontFamily: 'monospace', letterSpacing: 2 }}
+            maxLength={16}
+            placeholder="ex.: 1a2b3c4d5e6f7a8b"
+            value={tokenDraft}
+            onChange={(e) => setTokenDraft(e.target.value.trim().toLowerCase())}
+            onPressEnter={() => {
+              localStorage.setItem('token', tokenDraft.trim());
+              location.reload();
+            }}
+          />
+          <Button
+            type="primary"
+            block
+            style={{ marginTop: 12 }}
+            disabled={tokenDraft.trim().length !== 16}
+            onClick={() => {
+              localStorage.setItem('token', tokenDraft.trim());
+              location.reload();
+            }}
+          >
+            Parear
+          </Button>
+        </Modal>
 
         {/* Hardware screenshot: /shot.bmp rendered by the firmware on demand */}
         <Modal

@@ -391,7 +391,54 @@ void Renderer::drawWifiIcon(int cx, int cy) {
   _canvas.fillCircle(dotx, doty, 2, c);  // emitter dot
 }
 
-// One grid cell: light tile, colored icon (a/l/w) on top, label under it.
+// Padlock: gold body + gray shackle (Seguranca tile).
+void Renderer::drawLockIcon(int cx, int cy) {
+  const uint16_t body = rgb565(235, 180, 50), dark = rgb565(150, 110, 20);
+  _canvas.fillArc(cx, cy - 3, 5, 8, 180, 360, rgb565(165, 165, 175));  // shackle
+  _canvas.fillRoundRect(cx - 9, cy - 3, 18, 15, 3, body);              // body
+  _canvas.drawRoundRect(cx - 9, cy - 3, 18, 15, 3, dark);
+  _canvas.fillCircle(cx, cy + 3, 2, dark);                             // keyhole
+  _canvas.drawFastVLine(cx, cy + 4, 4, dark);
+}
+
+// Little house (Home Assistant tile) in HA blue.
+void Renderer::drawHouseIcon(int cx, int cy) {
+  const uint16_t blue = rgb565(65, 190, 240), dark = rgb565(30, 110, 160);
+  _canvas.fillTriangle(cx - 12, cy, cx + 12, cy, cx, cy - 12, blue);   // roof
+  _canvas.fillRect(cx - 8, cy, 16, 12, blue);                          // walls
+  _canvas.drawRect(cx - 8, cy, 16, 12, dark);
+  _canvas.fillRect(cx - 2, cy + 4, 5, 8, dark);                        // door
+}
+
+// Key (Senha tile): gold ring + shaft + teeth.
+void Renderer::drawKeyIcon(int cx, int cy) {
+  const uint16_t gold = rgb565(235, 180, 50);
+  _canvas.fillCircle(cx - 7, cy - 5, 6, gold);            // bow (ring)
+  _canvas.fillCircle(cx - 7, cy - 5, 3, menu::CELL_BG);   // ring hole
+  // Shaft going down-right + two teeth.
+  _canvas.drawLine(cx - 3, cy - 1, cx + 9, cy + 11, gold);
+  _canvas.drawLine(cx - 2, cy - 2, cx + 10, cy + 10, gold);
+  _canvas.drawLine(cx - 4, cy, cx + 8, cy + 12, gold);
+  _canvas.drawLine(cx + 6, cy + 12, cx + 9, cy + 9, gold);   // tooth 1
+  _canvas.drawLine(cx + 9, cy + 15, cx + 13, cy + 11, gold); // tooth 2
+}
+
+// Mini QR glyph (Portal tile): three finder squares + a few data dots.
+void Renderer::drawQrGlyph(int cx, int cy) {
+  const uint16_t c = TFT_WHITE;
+  const int s = 7;  // finder square size
+  const int x0 = cx - 11, y0 = cy - 11;
+  static constexpr int8_t FP[3][2] = {{0, 0}, {15, 0}, {0, 15}};  // finder pos
+  for (int i = 0; i < 3; i++) {
+    _canvas.fillRect(x0 + FP[i][0], y0 + FP[i][1], s, s, c);
+    _canvas.fillRect(x0 + FP[i][0] + 2, y0 + FP[i][1] + 2, s - 4, s - 4, menu::CELL_BG);
+  }
+  _canvas.fillRect(x0 + 15, y0 + 15, 3, 3, c);  // data dots
+  _canvas.fillRect(x0 + 19, y0 + 12, 3, 3, c);
+  _canvas.fillRect(x0 + 12, y0 + 19, 3, 3, c);
+}
+
+// One grid cell: light tile, colored icon on top, label under it.
 void Renderer::drawGridCell(int x, int y, const char* label, char icon) {
   _canvas.fillRoundRect(x, y, MENU_CELL_W, MENU_CELL_H, 12, menu::CELL_BG);
   _canvas.drawRoundRect(x, y, MENU_CELL_W, MENU_CELL_H, 12, BTN_BORDER);
@@ -400,6 +447,10 @@ void Renderer::drawGridCell(int x, int y, const char* label, char icon) {
     case 'a': drawAudioIcon(cx, iy, menu::CELL_BG); break;
     case 'l': drawLightIcon(cx, iy);                break;
     case 'w': drawWifiIcon(cx, iy);                 break;
+    case 's': drawLockIcon(cx, iy);                 break;
+    case 'h': drawHouseIcon(cx, iy);                break;
+    case 'k': drawKeyIcon(cx, iy);                  break;
+    case 'q': drawQrGlyph(cx, iy);                  break;
   }
   _canvas.setTextColor(menu::CELL_LABEL);
   _canvas.setTextSize(1);
@@ -410,10 +461,14 @@ void Renderer::drawGridCell(int x, int y, const char* label, char icon) {
 void Renderer::drawMenu(ui::MenuPage page, int volume, int ledBright,
                         int batteryPct, bool wifiOn, const char* ip) {
   _canvas.fillScreen(menu::BG);  // full-screen dark purple background
-  if (page == PAGE_AUDIO)      drawMenuAudio(volume);
-  else if (page == PAGE_LIGHT) drawMenuLight(ledBright);
-  else if (page == PAGE_QR)    drawMenuQr(wifiOn, ip);
-  else                         drawMenuMain(batteryPct, wifiOn, ip);
+  if (page == PAGE_AUDIO)       drawMenuAudio(volume);
+  else if (page == PAGE_LIGHT)  drawMenuLight(ledBright);
+  else if (page == PAGE_CONN)   drawMenuConn(wifiOn, ip);
+  else if (page == PAGE_QR)     drawMenuQr(wifiOn, ip);
+  else if (page == PAGE_SEC)    drawMenuSec();
+  else if (page == PAGE_SEC_HA) drawMenuSecHa();
+  else if (page == PAGE_TOKEN)  drawMenuToken();
+  else                          drawMenuMain(batteryPct, wifiOn, ip);
 }
 
 // Main page: title + battery, a 2x2 grid - Audio/Luz (top), WiFi/QR (bottom).
@@ -428,32 +483,116 @@ void Renderer::drawMenuMain(int batteryPct, bool wifiOn, const char* ip) {
 
   drawGridCell(MENU_COL_L, MENU_ROW_1, "Audio", 'a');
   drawGridCell(MENU_COL_R, MENU_ROW_1, "Luz", 'l');
-  drawGridCell(MENU_COL_L, MENU_ROW_2, "WiFi", 'w');
-
-  // Bottom-right QR tile (white, rounded to match the grid). When offline it
-  // shows a placeholder; either way it opens the QR detail page on tap.
-  _canvas.fillRoundRect(MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H, 12, TFT_WHITE);
-  _canvas.drawRoundRect(MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H, 12, BTN_BORDER);
-  if (wifiOn && ip && ip[0]) {
-    char qrUrl[40];
-    snprintf(qrUrl, sizeof(qrUrl), "http://%s/", ip);
-    drawQr(qrUrl, MENU_ROW_2 + 2, MENU_QR_CX, 1);  // 62px, centered in the 66px tile
-  } else {
-    _canvas.setTextSize(1);
-    _canvas.setTextColor(menu::CELL_LABEL);
-    const char* q = "QR";
-    _canvas.setCursor(MENU_QR_CX - _canvas.textWidth(q) / 2, MENU_ROW_2 + MENU_CELL_H / 2 - 4);
-    _canvas.print(q);
-  }
+  drawGridCell(MENU_COL_L, MENU_ROW_2, "Conexao", 'w');
+  drawGridCell(MENU_COL_R, MENU_ROW_2, "Seguranca", 's');
 
   drawLeftHandle();  // pull (or tap) the left tab to close the menu
+}
+
+// Conexao: WiFi setup + Portal (QR). Shows the connection status up top.
+void Renderer::drawMenuConn(bool wifiOn, const char* ip) {
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setTextSize(2);
+  const char* title = "Conexao";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
+  _canvas.print(title);
+  _canvas.setTextSize(1);
+  _canvas.setTextColor(menu::TEXT_DIM);
+  char status[48];
+  if (wifiOn && ip && ip[0]) snprintf(status, sizeof(status), "Conectado: %s", ip);
+  else strlcpy(status, "Sem WiFi", sizeof(status));
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(status) / 2, 40);
+  _canvas.print(status);
+
+  drawGridCell(MENU_COL_L, MENU_SUB_ROW, "WiFi", 'w');
+  drawGridCell(MENU_COL_R, MENU_SUB_ROW, "Portal", 'q');
+  drawLeftHandle();
+}
+
+// Seguranca: HA (paired clients) + Senha (pairing token).
+void Renderer::drawMenuSec() {
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setTextSize(2);
+  const char* title = "Seguranca";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
+  _canvas.print(title);
+  _canvas.setTextSize(1);
+  _canvas.setTextColor(menu::TEXT_DIM);
+  const char* sub = "Pareamento e acesso";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(sub) / 2, 40);
+  _canvas.print(sub);
+
+  drawGridCell(MENU_COL_L, MENU_SUB_ROW, "HA", 'h');
+  drawGridCell(MENU_COL_R, MENU_SUB_ROW, "Senha", 'k');
+  drawLeftHandle();
+}
+
+// Seguranca > HA: who is paired right now (authed WS clients, IP list).
+void Renderer::drawMenuSecHa() {
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setTextSize(2);
+  const char* title = "Clientes";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
+  _canvas.print(title);
+  _canvas.setTextSize(1);
+  _canvas.setTextColor(menu::TEXT_DIM);
+  const char* sub = "Pareados agora (HA / portal)";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(sub) / 2, 40);
+  _canvas.print(sub);
+
+  // One centered line per client IP ('\n'-separated summary from main).
+  _canvas.setTextColor(TFT_WHITE);
+  int y = 78;
+  const char* p = _clientsInfo;
+  while (*p && y < 190) {
+    const char* nl = strchr(p, '\n');
+    const int len = nl ? (int)(nl - p) : (int)strlen(p);
+    char line[40];
+    snprintf(line, sizeof(line), "%.*s", len, p);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(line) / 2, y);
+    _canvas.print(line);
+    y += 16;
+    p += len + (nl ? 1 : 0);
+    if (!nl) break;
+  }
+  drawLeftHandle();
+}
+
+// Seguranca > Senha: THE pairing token - the only place it is ever shown
+// (screen = physical access = trusted). Portal and HA ask for it once.
+void Renderer::drawMenuToken() {
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setTextSize(2);
+  const char* title = "Senha";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
+  _canvas.print(title);
+
+  // Token split into two 8-char halves, large and centered.
+  char half[9];
+  _canvas.setTextColor(menu::AP_NAME);
+  snprintf(half, sizeof(half), "%.8s", _authToken);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(half) / 2, 84);
+  _canvas.print(half);
+  snprintf(half, sizeof(half), "%.8s", _authToken + 8);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(half) / 2, 106);
+  _canvas.print(half);
+
+  _canvas.setTextSize(1);
+  _canvas.setTextColor(menu::TEXT_DIM);
+  const char* l1 = "Digite no portal web e no";
+  const char* l2 = "Home Assistant para parear.";
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 146);
+  _canvas.print(l1);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 158);
+  _canvas.print(l2);
+  drawLeftHandle();
 }
 
 // QR detail page: the code (large) + what it is + how to use it + the URLs.
 void Renderer::drawMenuQr(bool wifiOn, const char* ip) {
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
-  const char* title = "QR Code";
+  const char* title = "Portal";
   _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 8);
   _canvas.print(title);
 
