@@ -46,8 +46,6 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor*
     char k[4];
     snprintf(k, sizeof(k), "t%d", i);
     prefs.getString(k, _creds[i].token, sizeof(_creds[i].token));
-    snprintf(k, sizeof(k), "l%d", i);
-    prefs.getString(k, _creds[i].label, sizeof(_creds[i].label));
   }
   // Migrate a legacy single "token" into slot 0 (keeps an existing HA/portal
   // working). A fresh or fully-revoked device just stays empty: clients pair
@@ -57,7 +55,6 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor*
     String legacy = prefs.getString("token", "");
     if (legacy.length() == 16) {
       strlcpy(_creds[0].token, legacy.c_str(), 17);
-      strlcpy(_creds[0].label, "Anterior", sizeof(_creds[0].label));
       migrated = true;
     }
   }
@@ -90,20 +87,15 @@ void WebPortal::_saveCred(int slot) {
   char k[4];
   snprintf(k, sizeof(k), "t%d", slot);
   p.putString(k, _creds[slot].token);
-  snprintf(k, sizeof(k), "l%d", slot);
-  p.putString(k, _creds[slot].label);
   p.end();
 }
 
 void WebPortal::_clearCred(int slot) {
   _creds[slot].token[0] = 0;
-  _creds[slot].label[0] = 0;
   Preferences p;
   p.begin("auth", false);
   char k[4];
   snprintf(k, sizeof(k), "t%d", slot);
-  p.remove(k);
-  snprintf(k, sizeof(k), "l%d", slot);
   p.remove(k);
   p.end();
 }
@@ -203,7 +195,7 @@ void WebPortal::handle() {
     for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
       if (!_wsAuthed[i]) continue;
       char j[512];
-      clientsJson(j, sizeof(j), _wsSlot[i]);
+      clientsJson(j, sizeof(j), i);
       _ws.sendTXT(i, j);
     }
   }
@@ -427,6 +419,7 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     const bool was = _wsAuthed[num];
     _wsAuthed[num] = false;
     _wsSlot[num] = -1;
+    _wsLabel[num][0] = 0;
     _wsPairing[num] = false;
     _wsConnAt[num] = 0;
     if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
@@ -494,7 +487,6 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
           return;
         }
         randHex(_creds[slot].token, 16);
-        strlcpy(_creds[slot].label, "Novo aparelho", sizeof(_creds[slot].label));
         _saveCred(slot);
         _wsAuthed[num] = true;
         _wsSlot[num] = slot;
@@ -519,18 +511,15 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
       return;
     }
     // Client names itself for the connections manager (portal/HA send this
-    // right after auth). Stored on the credential slot so it survives reconnects.
+    // right after auth). Per-connection, so sockets sharing a credential still
+    // show distinct names; re-sent on every connect (no need to persist).
     if (msg.startsWith("label:")) {
-      const int s = _wsSlot[num];
-      if (s >= 0) {
-        strlcpy(_creds[s].label, msg.substring(6).c_str(), sizeof(_creds[s].label));
-        _saveCred(s);
-        _clientsDirty = true;
-      }
+      strlcpy(_wsLabel[num], msg.substring(6).c_str(), sizeof(_wsLabel[num]));
+      _clientsDirty = true;
       return;
     }
     // Connections manager: request the list, or revoke a slot / everyone.
-    if (msg == "clients?") { char j[512]; clientsJson(j, sizeof(j), _wsSlot[num]);
+    if (msg == "clients?") { char j[512]; clientsJson(j, sizeof(j), num);
                              _ws.sendTXT(num, j); return; }
     if (msg.startsWith("revoke:")) {
       const String w = msg.substring(7);
@@ -764,20 +753,19 @@ void WebPortal::revokeSlot(int slot) {
 }
 
 // JSON array of connected clients for the manager: [{"slot":N,"ip":"..",
-// "label":"..","me":bool}]. `selfSlot` marks the recipient's own row.
-void WebPortal::clientsJson(char* out, size_t n, int selfSlot) {
+// "label":"..","me":bool}]. `selfNum` = the recipient's own socket number.
+void WebPortal::clientsJson(char* out, size_t n, int selfNum) {
   size_t o = 0;
   o += snprintf(out + o, n - o, "clients:[");
   bool first = true;
   for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
     if (!_wsAuthed[i]) continue;
-    const int s = _wsSlot[i];
-    const char* lbl = (s >= 0 && _creds[s].label[0]) ? _creds[s].label : "Aparelho";
+    const char* lbl = _wsLabel[i][0] ? _wsLabel[i] : "Aparelho";
     o += snprintf(out + o, n > o ? n - o : 0,
                   "%s{\"slot\":%d,\"ip\":\"%s\",\"label\":\"%s\",\"me\":%s}",
-                  first ? "" : ",", s,
+                  first ? "" : ",", _wsSlot[i],
                   _ws.remoteIP(i).toString().c_str(), lbl,
-                  s == selfSlot ? "true" : "false");
+                  (int)i == selfNum ? "true" : "false");
     first = false;
   }
   snprintf(out + o, n > o ? n - o : 0, "]");
@@ -790,8 +778,7 @@ void WebPortal::clientsInfo(char* out, size_t n) {
   for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
     if (!_wsAuthed[i]) continue;
     cnt++;
-    const int s = _wsSlot[i];
-    const char* lbl = (s >= 0 && _creds[s].label[0]) ? _creds[s].label : "Aparelho";
+    const char* lbl = _wsLabel[i][0] ? _wsLabel[i] : "Aparelho";
     const String ip = _ws.remoteIP(i).toString();
     o += snprintf(out + o, n > o ? n - o : 0, "%s%s", o ? "\n" : "", lbl);
     o += snprintf(out + o, n > o ? n - o : 0, "\n %s", ip.c_str());

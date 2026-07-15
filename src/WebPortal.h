@@ -125,8 +125,8 @@ class WebPortal {
   // '\n'-separated IP list of connected clients (hardware Conexoes page).
   void clientsInfo(char* out, size_t n);
   // JSON array of connected clients for the portal/HA manager. Marks the
-  // recipient's own row via `selfSlot` (-1 = none).
-  void clientsJson(char* out, size_t n, int selfSlot);
+  // recipient's own row via its socket number `selfNum`.
+  void clientsJson(char* out, size_t n, int selfNum);
 
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
@@ -176,9 +176,11 @@ class WebPortal {
   volatile bool _micMuted = false;  // privacy mute (NVS-persisted)
   int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
 
-  // Per-client credential table (NVS "auth", keys t<i>/l<i>).
+  // Per-client credential table (NVS "auth", keys t<i>). Labels are NOT stored
+  // here: they're per-connection (below), set by the client on each connect,
+  // so two sockets sharing one credential still show distinct names.
   static constexpr int MAX_CREDS = 8;
-  struct Cred { char token[17]; char label[25]; };  // token[0]==0 = empty slot
+  struct Cred { char token[17]; };  // token[0]==0 = empty slot
   Cred _creds[MAX_CREDS] = {};
   int _credCount() const;                // non-empty slots
   int _freeCredSlot();                   // first empty (evicts an idle one if full)
@@ -186,6 +188,7 @@ class WebPortal {
   void _clearCred(int slot);
   bool _wsAuthed[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};
   int _wsSlot[WEBSOCKETS_SERVER_CLIENT_MAX];             // cred slot each socket used
+  char _wsLabel[WEBSOCKETS_SERVER_CLIENT_MAX][25] = {};  // per-connection name
   bool _wsPairing[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};  // exempt from sweep
   unsigned long _wsConnAt[WEBSOCKETS_SERVER_CLIENT_MAX] = {0};  // 0 = free slot
   char _wsNonce[WEBSOCKETS_SERVER_CLIENT_MAX][33] = {};  // per-socket challenge
