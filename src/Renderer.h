@@ -117,9 +117,10 @@ class Renderer {
   void drawMenuMain(int batteryPct, bool wifiOn, const char* ip);
   void drawMenuAudio(int volume);
   void drawMenuLight(int ledBright);
+  void drawPageHeader(const char* title, const char* sub);  // bezel-safe title
   void drawMenuConn(bool wifiOn, const char* ip);  // Conexao: WiFi | Portal
   void drawMenuQr(bool wifiOn, const char* ip);    // Portal (QR) detail
-  void drawMenuSec();      // Seguranca: Aparelhos | Parear
+  void drawMenuSec();      // Seguranca: Dispositivos | Parear
   void drawMenuSecHa();    // paired clients list ("Dispositivos")
   void drawPairingOverlay();  // full-screen 6-digit PIN (auto-shown)
   void drawStepper(const char* label, int pct, const ui::ButtonSlot& minus,

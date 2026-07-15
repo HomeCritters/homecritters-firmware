@@ -401,13 +401,21 @@ void Renderer::drawLockIcon(int cx, int cy) {
   _canvas.drawFastVLine(cx, cy + 4, 4, dark);
 }
 
-// Little house (Home Assistant tile) in HA blue.
+// Connected devices (Dispositivos tile): a monitor + a phone, universal
+// "devices" glyph, in a friendly blue.
 void Renderer::drawHouseIcon(int cx, int cy) {
-  const uint16_t blue = rgb565(65, 190, 240), dark = rgb565(30, 110, 160);
-  _canvas.fillTriangle(cx - 12, cy, cx + 12, cy, cx, cy - 12, blue);   // roof
-  _canvas.fillRect(cx - 8, cy, 16, 12, blue);                          // walls
-  _canvas.drawRect(cx - 8, cy, 16, 12, dark);
-  _canvas.fillRect(cx - 2, cy + 4, 5, 8, dark);                        // door
+  const uint16_t body = rgb565(210, 218, 230), scr = rgb565(70, 160, 235),
+                 dark = rgb565(70, 82, 100);
+  // Monitor (left): screen + stand + base.
+  _canvas.fillRoundRect(cx - 13, cy - 9, 18, 14, 2, body);
+  _canvas.drawRoundRect(cx - 13, cy - 9, 18, 14, 2, dark);
+  _canvas.fillRect(cx - 11, cy - 7, 14, 10, scr);
+  _canvas.fillRect(cx - 5, cy + 5, 4, 3, dark);      // stand
+  _canvas.fillRect(cx - 9, cy + 8, 12, 2, dark);     // base
+  // Phone (right, overlapping): screen with a home dot.
+  _canvas.fillRoundRect(cx + 4, cy - 5, 10, 16, 3, dark);
+  _canvas.fillRect(cx + 6, cy - 2, 6, 10, scr);
+  _canvas.fillCircle(cx + 9, cy + 9, 1, body);       // home button
 }
 
 // Key (Parear tile): horizontal gold key - bow ring left, straight shaft
@@ -448,7 +456,7 @@ void Renderer::drawGridCell(int x, int y, const char* label, char icon) {
     case 'l': drawLightIcon(cx, iy);                break;
     case 'w': drawWifiIcon(cx, iy);                 break;
     case 's': drawLockIcon(cx, iy);                 break;
-    case 'h': drawHouseIcon(cx, iy);                break;
+    case 'd': drawHouseIcon(cx, iy);                break;  // devices glyph
     case 'k': drawKeyIcon(cx, iy);                  break;
     case 'q': drawQrGlyph(cx, iy);                  break;
   }
@@ -490,58 +498,45 @@ void Renderer::drawMenuMain(int batteryPct, bool wifiOn, const char* ip) {
 
 // Conexao: WiFi setup + Portal (QR). Shows the connection status up top.
 void Renderer::drawMenuConn(bool wifiOn, const char* ip) {
-  _canvas.setTextColor(TFT_WHITE);
-  _canvas.setTextSize(2);
-  const char* title = "Conexao";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
-  _canvas.print(title);
-  _canvas.setTextSize(1);
-  _canvas.setTextColor(menu::TEXT_DIM);
   char status[48];
   if (wifiOn && ip && ip[0]) snprintf(status, sizeof(status), "Conectado: %s", ip);
   else strlcpy(status, "Sem WiFi", sizeof(status));
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(status) / 2, 40);
-  _canvas.print(status);
+  drawPageHeader("Conexao", status);
 
   drawGridCell(MENU_COL_L, MENU_SUB_ROW, "WiFi", 'w');
   drawGridCell(MENU_COL_R, MENU_SUB_ROW, "Portal", 'q');
   drawLeftHandle();
 }
 
-// Seguranca: HA (paired clients) + Senha (pairing token).
-void Renderer::drawMenuSec() {
+// Centered page title + subtitle at a y that clears the round bezel: a
+// full-width title at the very top (y=14) gets clipped where the circle
+// narrows, so titles start lower where the chord is wide enough.
+void Renderer::drawPageHeader(const char* title, const char* sub) {
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
-  const char* title = "Seguranca";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 28);
   _canvas.print(title);
   _canvas.setTextSize(1);
   _canvas.setTextColor(menu::TEXT_DIM);
-  const char* sub = "Pareamento e acesso";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(sub) / 2, 40);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(sub) / 2, 52);
   _canvas.print(sub);
+}
 
-  drawGridCell(MENU_COL_L, MENU_SUB_ROW, "Aparelhos", 'h');
+// Seguranca: Dispositivos (paired clients) + Parear (PIN).
+void Renderer::drawMenuSec() {
+  drawPageHeader("Seguranca", "Pareamento e acesso");
+  drawGridCell(MENU_COL_L, MENU_SUB_ROW, "Dispositivos", 'd');
   drawGridCell(MENU_COL_R, MENU_SUB_ROW, "Parear", 'k');
   drawLeftHandle();
 }
 
-// Seguranca > Aparelhos: who is paired right now (authed clients, IP list).
+// Seguranca > Dispositivos: who is paired right now (authed clients, IP list).
 void Renderer::drawMenuSecHa() {
-  _canvas.setTextColor(TFT_WHITE);
-  _canvas.setTextSize(2);
-  const char* title = "Dispositivos";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(title) / 2, 14);
-  _canvas.print(title);
-  _canvas.setTextSize(1);
-  _canvas.setTextColor(menu::TEXT_DIM);
-  const char* sub = "Conectados agora (HA / portal)";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(sub) / 2, 40);
-  _canvas.print(sub);
+  drawPageHeader("Dispositivos", "Conectados agora (HA / portal)");
 
   // One centered line per client IP ('\n'-separated summary from main).
   _canvas.setTextColor(TFT_WHITE);
-  int y = 72;
+  int y = 80;
   const char* p = _clientsInfo;
   while (*p && y < 160) {
     const char* nl = strchr(p, '\n');
