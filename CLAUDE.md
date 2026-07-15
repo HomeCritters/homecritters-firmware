@@ -122,13 +122,20 @@ portal/tools ficam aqui.
   Conexao = WiFi (config portal) + Portal (página do QR + URLs). Seguranca =
   HA (lista de IPs dos clientes WS pareados, 1s refresh) + Senha (o token).
   Navegação por serial: `menu[:main|audio|luz|conn|qr|seg|ha|token]`.
-- **AUTH (F-Sec 1)**: token de pareamento 16-hex gerado no 1º boot (NVS
-  "auth"), mostrado SÓ na tela (Seguranca > Senha) + comando serial `token`.
-  Todo cliente WS deve mandar `auth:<token>` como PRIMEIRA mensagem (errado =
-  desconecta; mudo = derrubado em 5s); broadcasts/evt só pra autenticados.
-  `/shot.bmp` exige `?token=`; `/info` continua público (identidade pro
-  discovery). Portal pede o código 1x (localStorage); plugin HA pede no config
-  flow (+ reauth automático após 3 conexões fechadas sem estado).
+- **AUTH (F-Sec 1 + 2)**: credencial 16-hex em NVS ("auth"), **nunca trafega
+  na rede**. No connect o device manda `challenge:<nonce>` (novo por socket);
+  o cliente responde `auth:<HMAC-SHA256(token,nonce)>[:<cnonce>]` (hex). Com o
+  cnonce o device devolve `proof:<HMAC(token,cnonce)>` = **auth mútua** (device
+  falso por mDNS spoof não se passa pelo Leon). Sem auth: sem estado/comando/
+  mic (5s → derruba). Pareamento por PIN (Seguranca > Parear): PIN 6 díg. na
+  tela (90s, 3 tentativas), `pair:<pin>` → `token:<token>` (único momento que o
+  token vai no fio, handover curto e supervisionado). Revogar acesso (2 toques)
+  rotaciona o token e derruba todos. `/shot.bmp`: GET nu → 401 `nonce:` → retry
+  `?sig=HMAC(token,"shot:<nonce>")` (single-use, sem segredo na URL). `/info`
+  público. Portal traz HMAC-SHA256 próprio (`web/src/hmac.js` — `crypto.subtle`
+  não existe em http://). Plugin HA responde o challenge e verifica o proof;
+  reauth automático (3 fechamentos sem estado) → re-pareia por PIN. HMAC no
+  firmware via mbedtls. Serial: `token`/`pair`/`revoke`.
 - **Config de WiFi não-bloqueante**: `WiFiManager` em modo `process()` (tela
   viva), tela dedicada `drawWifiConfig()` com botão **Sair** (`cancelConfig()`).
 - **Portal web React + WebSocket** (`WebPortal`): `WebServer` (porta 80) serve
