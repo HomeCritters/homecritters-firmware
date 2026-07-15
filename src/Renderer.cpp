@@ -541,9 +541,9 @@ void Renderer::drawMenuSecHa() {
 
   // One centered line per client IP ('\n'-separated summary from main).
   _canvas.setTextColor(TFT_WHITE);
-  int y = 78;
+  int y = 72;
   const char* p = _clientsInfo;
-  while (*p && y < 190) {
+  while (*p && y < 160) {
     const char* nl = strchr(p, '\n');
     const int len = nl ? (int)(nl - p) : (int)strlen(p);
     char line[40];
@@ -554,6 +554,16 @@ void Renderer::drawMenuSecHa() {
     p += len + (nl ? 1 : 0);
     if (!nl) break;
   }
+
+  // Revoke-all button (two-tap confirm): rotates the token and kicks every
+  // paired client - they all have to PIN-pair again.
+  const uint16_t red = _revokeArmed ? rgb565(230, 60, 50) : rgb565(120, 35, 35);
+  _canvas.fillRoundRect(REVOKE_X, REVOKE_Y, REVOKE_W, REVOKE_H, 8, red);
+  _canvas.drawRoundRect(REVOKE_X, REVOKE_Y, REVOKE_W, REVOKE_H, 8, rgb565(255, 120, 110));
+  const char* lbl = _revokeArmed ? "Confirma?" : "Revogar acesso";
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(lbl) / 2, REVOKE_Y + 11);
+  _canvas.print(lbl);
   drawLeftHandle();
 }
 
@@ -587,10 +597,18 @@ void Renderer::drawPairingOverlay() {
   _canvas.setTextColor(menu::TEXT_DIM);
   const char* l1 = "Digite este codigo no app";
   const char* l2 = "para conectar (90s).";
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 158);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 154);
   _canvas.print(l1);
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 170);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 166);
   _canvas.print(l2);
+
+  // Cancel (X) button - a tap here closes the pairing window.
+  _canvas.fillCircle(PAIR_CANCEL_CX, PAIR_CANCEL_CY, 16, menu::CELL_BG);
+  _canvas.drawCircle(PAIR_CANCEL_CX, PAIR_CANCEL_CY, 16, rgb565(200, 90, 90));
+  _canvas.setTextSize(2);
+  _canvas.setTextColor(rgb565(200, 60, 60));
+  _canvas.setCursor(PAIR_CANCEL_CX - 5, PAIR_CANCEL_CY - 7);
+  _canvas.print('x');
 }
 
 // QR detail page: the code (large) + what it is + how to use it + the URLs.

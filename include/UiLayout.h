@@ -73,12 +73,21 @@ inline MenuPage menuParent(MenuPage p) {
 enum UiHit {
   UI_NONE, UI_MENU_TOGGLE, UI_MENU_BACK,
   UI_OPEN_AUDIO, UI_OPEN_LIGHT, UI_OPEN_QR,
-  UI_OPEN_CONN, UI_OPEN_SEC, UI_OPEN_HA_INFO, UI_PAIR,
+  UI_OPEN_CONN, UI_OPEN_SEC, UI_OPEN_HA_INFO, UI_PAIR, UI_REVOKE,
   UI_VOL_DOWN, UI_VOL_UP,
   UI_LED_DOWN, UI_LED_UP,
   UI_SCR_DOWN, UI_SCR_UP,
   UI_WIFI, UI_GAMES_TOGGLE
 };
+
+// "Revogar acesso" button on the Dispositivos page (bottom, inside the circle).
+constexpr int16_t REVOKE_X = 50, REVOKE_Y = 172, REVOKE_W = 140, REVOKE_H = 30;
+// Cancel (X) button on the pairing overlay.
+constexpr int16_t PAIR_CANCEL_CX = 120, PAIR_CANCEL_CY = 202, PAIR_CANCEL_R = 22;
+inline bool inPairCancel(int32_t tx, int32_t ty) {
+  const int32_t dx = tx - PAIR_CANCEL_CX, dy = ty - PAIR_CANCEL_CY;
+  return dx * dx + dy * dy <= PAIR_CANCEL_R * PAIR_CANCEL_R;
+}
 
 constexpr int16_t HANDLE_CX = 120, HANDLE_TOP = 0, HANDLE_W = 54, HANDLE_H = 16;
 
@@ -159,7 +168,11 @@ inline UiHit menuHit(MenuPage page, int32_t tx, int32_t ty) {
     if (inRect(tx, ty, MENU_COL_R, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_PAIR;
     return UI_NONE;
   }
-  if (page == PAGE_QR || page == PAGE_SEC_HA) return UI_NONE;
+  if (page == PAGE_SEC_HA) {  // Dispositivos: revoke-all button
+    if (inRect(tx, ty, REVOKE_X, REVOKE_Y, REVOKE_W, REVOKE_H)) return UI_REVOKE;
+    return UI_NONE;
+  }
+  if (page == PAGE_QR) return UI_NONE;
   // PAGE_MAIN: 2x2 grid.
   if (inRect(tx, ty, MENU_COL_L, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_AUDIO;
   if (inRect(tx, ty, MENU_COL_R, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_LIGHT;

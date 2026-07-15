@@ -105,8 +105,13 @@ class WebPortal {
   //   close the window. The token itself never appears on screen.
   const char* authToken() const { return _token; }
   void startPairing();  // opens (or extends) the PIN window - also the menu tile
+  void cancelPairing();  // the X on the pairing overlay
   bool pairingActive() const { return _pairUntil != 0 && millis() < _pairUntil; }
   const char* pairingPin() const { return _pairPin; }
+  // Revoke ALL paired clients (Dispositivos > Revogar): regenerates the
+  // long-lived token (NVS) and disconnects everyone. HA falls into its
+  // reauth flow and the portal into its pairing modal - both re-pair by PIN.
+  void revokeAll();
   // '\n'-separated IPs of authenticated WS clients (Seguranca > Aparelhos).
   void clientsInfo(char* out, size_t n);
 

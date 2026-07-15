@@ -547,6 +547,28 @@ void WebPortal::endPairing() {
   for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) _wsPairing[i] = false;
 }
 
+void WebPortal::cancelPairing() { endPairing(); }
+
+// Rotate the credential and kick everyone: every paired client (HA, portal,
+// scripts) must PIN-pair again. The on-screen "Revogar acesso" action.
+void WebPortal::revokeAll() {
+  endPairing();
+  char gen[17];
+  snprintf(gen, sizeof(gen), "%08x%08x", (unsigned)esp_random(), (unsigned)esp_random());
+  strlcpy(_token, gen, sizeof(_token));
+  Preferences prefs;
+  prefs.begin("auth", false);
+  prefs.putString("token", _token);
+  prefs.end();
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+    if (_wsAuthed[i]) _ws.disconnect(i);
+    _wsAuthed[i] = false;
+  }
+  _micOn = false;
+  _micClient = -1;
+  Serial.println("[auth] all clients revoked (new token)");
+}
+
 // IPs of the currently authenticated clients, one per line (Seguranca >
 // Aparelhos screen). Runs on the render loop (same thread as _ws).
 void WebPortal::clientsInfo(char* out, size_t n) {

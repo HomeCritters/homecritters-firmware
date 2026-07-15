@@ -41,6 +41,8 @@ class Renderer {
   void setPairingPin(const char* p) { strlcpy(_pairPin, p, sizeof(_pairPin)); }
   // Authed clients summary for Seguranca > Aparelhos (refreshed by main).
   void setClientsInfo(const char* s) { strlcpy(_clientsInfo, s, sizeof(_clientsInfo)); }
+  // Revoke button state: false = "Revogar acesso", true = "Confirma?" (armed).
+  void setRevokeArmed(bool a) { _revokeArmed = a; }
 
   // Full-screen WiFi setup screen (captive portal active) with Exit button.
   void drawWifiConfig(const char* apName);
@@ -78,6 +80,7 @@ class Renderer {
   bool _displayOff = false;  // full-sleep blank (setDisplayOff)
   char _pairPin[7] = {0};       // active pairing PIN ("" = no overlay)
   char _clientsInfo[120] = {0}; // authed WS clients ('\n'-separated)
+  bool _revokeArmed = false;    // revoke button in "Confirma?" state
 
   uint16_t* _snap = nullptr;       // stable copy of the canvas for /shot.bmp
   volatile bool _snapReq = false;  // HTTP task -> render loop

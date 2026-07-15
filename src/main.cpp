@@ -74,6 +74,8 @@ void doAction(Action a) {
   }
 }
 
+static unsigned long g_revokeArmedUntil = 0;  // revoke 2-tap confirm window
+
 static void handleUi(ui::UiHit hit) {
   switch (hit) {
     case ui::UI_MENU_TOGGLE:
@@ -91,6 +93,15 @@ static void handleUi(ui::UiHit hit) {
     case ui::UI_OPEN_SEC:    menuPage = ui::PAGE_SEC;    break;
     case ui::UI_OPEN_HA_INFO: menuPage = ui::PAGE_SEC_HA; break;
     case ui::UI_PAIR:        web.startPairing(); menuOpen = false; break;
+    case ui::UI_REVOKE:  // two-tap confirm: arm first, revoke on the second
+      if (millis() < g_revokeArmedUntil) {
+        g_revokeArmedUntil = 0;
+        web.revokeAll();
+        audio.playBuzzer();  // destructive-action feedback
+      } else {
+        g_revokeArmedUntil = millis() + 4000;
+      }
+      break;
     case ui::UI_VOL_DOWN:    audio.setVolume(audio.volume() - 10); break;
     case ui::UI_VOL_UP:      audio.setVolume(audio.volume() + 10); break;
     case ui::UI_LED_DOWN:    led.setBrightness(led.brightness() - 10); break;
@@ -404,6 +415,7 @@ static bool consoleNavigate(const String& c) {
   if (c.startsWith("voice:")) { g_voiceDebug = c.substring(6).toInt(); return true; }  // force voice ring
   if (c == "token")  { Serial.printf("[auth] pairing token: %s\n", web.authToken()); return true; }
   if (c == "pair")   { web.startPairing(); Serial.printf("[auth] pairing pin: %s\n", web.pairingPin()); return true; }
+  if (c == "revoke") { web.revokeAll(); Serial.println("[auth] revoked (all clients)"); return true; }
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
@@ -544,10 +556,17 @@ void loop() {
     }
     // Pairing overlay: mirror the PIN (renderer takes over the screen while
     // it's set) and make sure we're on the pet screen so it actually shows.
+    // While it's up, the ONLY live touch target is the cancel X - everything
+    // else is swallowed (taps must not invisibly feed/pet the hidden scene).
     renderer.setPairingPin(web.pairingActive() ? web.pairingPin() : "");
-    if (web.pairingActive() && screen != SCREEN_PET) {
-      screen = SCREEN_PET;
-      menuOpen = false;
+    if (web.pairingActive()) {
+      if (screen != SCREEN_PET) { screen = SCREEN_PET; menuOpen = false; }
+      int32_t tx, ty;
+      if (lcd.getTouch(&tx, &ty) && ui::inPairCancel(tx, ty)) {
+        web.cancelPairing();
+        audio.playClick();
+        g_inputSwallowUntil = now + 800;  // the cancel tap ends here
+      }
     }
 
     // Night sound settings changed from HA/portal: apply + persist.
@@ -703,9 +722,9 @@ void loop() {
                            (idleSince(now, lastInteractionMs) > (unsigned long)petClock.idleSec() * 1000);
 
   InputEvent ev = input.poll(lcd, menuOpen, menuPage);
-  // Full sleep (or just woken by a tap): discard the event - the dark screen
-  // must not react, and the wake tap must not also pet/feed Leon.
-  if (g_fullSleep || now < g_inputSwallowUntil) ev = InputEvent{};
+  // Full sleep, pairing overlay, or just woken by a tap: discard the event -
+  // the hidden scene must not react to invisible touches.
+  if (g_fullSleep || web.pairingActive() || now < g_inputSwallowUntil) ev = InputEvent{};
 
   // --- Voice assistant feedback state machine (drives the on-screen ring +
   // LED + portal). listening (BOOT held) -> thinking (released, STT/intent) ->
@@ -790,7 +809,8 @@ void loop() {
   // String allocation otherwise.
   String ip;
   if (menuOpen && web.connected()) ip = web.ip();
-  // Seguranca > HA page: refresh the authed-clients list once a second.
+  // Seguranca > Aparelhos page: refresh the client list once a second and
+  // mirror the revoke button's confirm state (auto-disarms after 4s).
   if (menuOpen && menuPage == ui::PAGE_SEC_HA) {
     static unsigned long lastCli = 0;
     if (now - lastCli > 1000) {
@@ -799,6 +819,7 @@ void loop() {
       web.clientsInfo(ci, sizeof(ci));
       renderer.setClientsInfo(ci);
     }
+    renderer.setRevokeArmed(now < g_revokeArmedUntil);
   }
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,

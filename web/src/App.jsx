@@ -348,6 +348,17 @@ export default function App() {
   const [needToken, setNeedToken] = useState(!localStorage.getItem('token'));
   const [pinDraft, setPinDraft] = useState('');
   const gotState = useRef(false);
+  // antd's Input.OTP doesn't forward inputMode: patch the underlying inputs
+  // so phones open the NUMERIC keyboard for the 6-digit PIN.
+  const otpWrapRef = useRef(null);
+  useEffect(() => {
+    if (!needToken || !otpWrapRef.current) return;
+    otpWrapRef.current.querySelectorAll('input').forEach((i) => {
+      i.inputMode = 'numeric';
+      i.pattern = '[0-9]*';
+      i.autocomplete = 'one-time-code';
+    });
+  }, [needToken]);
   const [name, setName] = useState('');
   const [vol, setVol] = useState(80);
   const [ledBright, setLedBright] = useState(50);
@@ -739,7 +750,7 @@ export default function App() {
             Um código de <b>6 dígitos</b> apareceu na tela do bichinho. Digite
             ele aqui:
           </Text>
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+          <div ref={otpWrapRef} style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
             <Input.OTP
               length={6}
               size="large"
