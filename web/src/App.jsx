@@ -18,6 +18,7 @@ import {
   Badge,
   Space,
   Modal,
+  Popconfirm,
   Spin,
 } from 'antd';
 import ferretSheet from './ferret-sheet.png';
@@ -90,6 +91,16 @@ function BatteryTag({ pct }) {
 
 // Detects the browser timezone -> POSIX TZ string. Tries to match the IANA
 // name against the list; otherwise falls back to a fixed offset (no DST).
+// A friendly name for THIS browser, shown in the connections manager.
+function browserLabel() {
+  const ua = navigator.userAgent;
+  const os = /iPhone|iPad/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android'
+    : /Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Navegador';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome'
+    : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
+  return `Portal ${os}${br ? ' · ' + br : ''}`.slice(0, 24);
+}
+
 function detectPosixTz() {
   try {
     const iana = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -358,6 +369,7 @@ export default function App() {
   // and the device hands us the long-lived token (localStorage).
   const [needToken, setNeedToken] = useState(!localStorage.getItem('token'));
   const [pinDraft, setPinDraft] = useState('');
+  const [clients, setClients] = useState([]);   // connections manager list
   const gotState = useRef(false);
   // antd's Input.OTP doesn't forward input attributes: patch the underlying
   // inputs to type=tel so phones reliably open the numeric keypad.
@@ -430,6 +442,10 @@ export default function App() {
             setNeedToken(false);
             return;
           }
+          if (ev.data.startsWith('clients:')) {
+            try { setClients(JSON.parse(ev.data.slice(8))); } catch { /* ignore */ }
+            return;
+          }
         }
         try {
           const j = JSON.parse(ev.data);
@@ -437,6 +453,9 @@ export default function App() {
             gotState.current = true;  // authenticated
             setOnline(true);
             setNeedToken(false);
+            // Name this connection for the manager, then fetch the list.
+            ws.send('label:' + browserLabel());
+            ws.send('clients?');
           }
           setState(j);
           if (!nameDirty.current) setName(j.name);
@@ -666,6 +685,55 @@ export default function App() {
               options={MENU_TIMEOUT_OPTIONS}
               onChange={(v) => send('menu:' + v)}
             />
+          </div>
+
+          <Divider />
+
+          <div>
+            <Text strong>🔒 Conexões pareadas</Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              Aparelhos com acesso ao bichinho agora
+            </Text>
+            {clients.length === 0 && (
+              <Text type="secondary" style={{ fontSize: 13 }}>Nenhuma conexão.</Text>
+            )}
+            {clients.map((c) => (
+              <div
+                key={c.slot + '-' + c.ip}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <Text style={{ fontSize: 13 }}>
+                    {c.label || 'Aparelho'} {c.me && <Text type="secondary">(este)</Text>}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>{c.ip}</Text>
+                </div>
+                <Popconfirm
+                  title="Encerrar esta conexão?"
+                  description={c.me ? 'Você precisará parear de novo.' : 'O aparelho precisará parear de novo.'}
+                  okText="Encerrar"
+                  cancelText="Cancelar"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => send('revoke:' + c.slot)}
+                >
+                  <Button size="small" danger>Encerrar</Button>
+                </Popconfirm>
+              </div>
+            ))}
+            {clients.length > 1 && (
+              <Popconfirm
+                title="Encerrar TODAS as conexões?"
+                description="Todos os aparelhos (inclusive o HA) terão que parear de novo."
+                okText="Encerrar todas"
+                cancelText="Cancelar"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => send('revoke:all')}
+              >
+                <Button size="small" danger block style={{ marginTop: 6 }}>
+                  Encerrar todas
+                </Button>
+              </Popconfirm>
+            )}
           </div>
 
           <Divider />
