@@ -95,12 +95,19 @@ class WebPortal {
   }
 
   // --- pairing auth (F-Sec 1) ---
-  // 16-hex token generated on first boot (NVS), shown on the device's QR
-  // config page. Every WS client must send "auth:<token>" as its FIRST
-  // message (5s grace) or it is dropped: no state, no commands, no mic.
-  // /shot.bmp requires ?token=; /info stays public (identity only).
+  // Long-lived 16-hex credential in NVS. Clients that know it authenticate
+  // with "auth:<token>" as their FIRST message (5s grace) or are dropped:
+  // no state, no commands, no mic. /shot.bmp requires ?token=; /info stays
+  // public (identity only). New clients get the token via PIN pairing:
+  //   client sends "pair:start" -> a random 6-digit PIN pops on the SCREEN
+  //   (90s window) -> client sends "pair:<pin>" -> device replies
+  //   "token:<token>" and marks it authenticated. 3 wrong PINs or timeout
+  //   close the window. The token itself never appears on screen.
   const char* authToken() const { return _token; }
-  // '\n'-separated IPs of authenticated WS clients (Seguranca > HA page).
+  void startPairing();  // opens (or extends) the PIN window - also the menu tile
+  bool pairingActive() const { return _pairUntil != 0 && millis() < _pairUntil; }
+  const char* pairingPin() const { return _pairPin; }
+  // '\n'-separated IPs of authenticated WS clients (Seguranca > Aparelhos).
   void clientsInfo(char* out, size_t n);
 
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
@@ -154,7 +161,12 @@ class WebPortal {
   // Pairing auth state (see authToken()).
   char _token[17] = {0};
   bool _wsAuthed[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};
+  bool _wsPairing[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};  // exempt from sweep
   unsigned long _wsConnAt[WEBSOCKETS_SERVER_CLIENT_MAX] = {0};  // 0 = free slot
+  char _pairPin[7] = {0};        // current 6-digit PIN ("" = none)
+  unsigned long _pairUntil = 0;  // window deadline (0 = closed)
+  uint8_t _pairAttempts = 0;     // wrong PINs this window (3 = close)
+  void endPairing();
   void sendAuthedTXT(const char* msg);  // broadcast to authed clients only
   const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)

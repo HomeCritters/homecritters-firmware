@@ -342,11 +342,11 @@ export default function App() {
     setShotLoading(true);
     setShotSrc(`/shot.bmp?token=${localStorage.getItem('token') || ''}&t=${Date.now()}`);
   };
-  // Pairing token (F-Sec 1): the device drops any WS client whose first
-  // message isn't "auth:<token>". We keep it in localStorage and prompt once
-  // (the token is shown on the ball: Config > Seguranca > Senha).
+  // Pairing (F-Sec 1): without a stored token we send "pair:start" - a
+  // 6-digit PIN pops on the device screen by itself; the user types it here
+  // and the device hands us the long-lived token (localStorage).
   const [needToken, setNeedToken] = useState(!localStorage.getItem('token'));
-  const [tokenDraft, setTokenDraft] = useState('');
+  const [pinDraft, setPinDraft] = useState('');
   const gotState = useRef(false);
   const [name, setName] = useState('');
   const [vol, setVol] = useState(80);
@@ -364,19 +364,32 @@ export default function App() {
     const connect = () => {
       ws = new WebSocket(`ws://${location.hostname}:81/`);
       wsRef.current = ws;
+      let opened = false;
       ws.onopen = () => {
-        // First frame MUST be the auth token; the device answers with the
-        // state JSON when it's accepted (and disconnects when it isn't).
+        // First frame MUST be the credential. With a stored token we auth
+        // straight away; without one we ask to pair (the PIN pops on the
+        // device screen automatically).
+        opened = true;
         gotState.current = false;
-        ws.send('auth:' + (localStorage.getItem('token') || ''));
+        const tok = localStorage.getItem('token');
+        ws.send(tok ? 'auth:' + tok : 'pair:start');
       };
       ws.onclose = () => {
         setOnline(false);
-        // Closed before any state arrived = bad/missing token: ask for it.
-        if (!gotState.current) setNeedToken(true);
+        // Socket opened but closed before any state = our token was rejected
+        // (device re-paired/reset): drop it and fall back to PIN pairing.
+        if (opened && !gotState.current) {
+          if (localStorage.getItem('token')) localStorage.removeItem('token');
+          setNeedToken(true);
+        }
         retry = setTimeout(connect, 1500);
       };
       ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string' && ev.data.startsWith('token:')) {
+          localStorage.setItem('token', ev.data.slice(6));  // paired!
+          setNeedToken(false);
+          return;
+        }
         try {
           const j = JSON.parse(ev.data);
           if (!gotState.current) {
@@ -720,35 +733,37 @@ export default function App() {
           </div>
         </Drawer>
 
-        {/* Pairing (F-Sec 1): the device requires its token before anything */}
+        {/* Pairing (F-Sec 1): a 6-digit PIN pops on the device screen */}
         <Modal title="🔑 Parear com o bichinho" open={needToken} closable={false} footer={null}>
           <Text>
-            No aparelho: deslize para baixo → <b>Seguranca</b> → <b>Senha</b> e
-            digite o código aqui:
+            Um código de <b>6 dígitos</b> apareceu na tela do bichinho. Digite
+            ele aqui:
           </Text>
-          <Input
-            style={{ marginTop: 12, fontFamily: 'monospace', letterSpacing: 2 }}
-            maxLength={16}
-            placeholder="ex.: 1a2b3c4d5e6f7a8b"
-            value={tokenDraft}
-            onChange={(e) => setTokenDraft(e.target.value.trim().toLowerCase())}
-            onPressEnter={() => {
-              localStorage.setItem('token', tokenDraft.trim());
-              location.reload();
-            }}
-          />
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+            <Input.OTP
+              length={6}
+              size="large"
+              value={pinDraft}
+              formatter={(v) => v.replace(/\D/g, '')}
+              onChange={(v) => setPinDraft(v)}
+            />
+          </div>
           <Button
             type="primary"
             block
-            style={{ marginTop: 12 }}
-            disabled={tokenDraft.trim().length !== 16}
+            style={{ marginTop: 16 }}
+            disabled={pinDraft.length !== 6}
             onClick={() => {
-              localStorage.setItem('token', tokenDraft.trim());
-              location.reload();
+              send('pair:' + pinDraft);
+              setPinDraft('');
             }}
           >
             Parear
           </Button>
+          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 10 }}>
+            Sem código na tela? Aguarde reconectar, ou no aparelho: deslize
+            para baixo → Seguranca → Parear.
+          </Text>
         </Modal>
 
         {/* Hardware screenshot: /shot.bmp rendered by the firmware on demand */}

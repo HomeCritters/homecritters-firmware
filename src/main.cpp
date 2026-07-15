@@ -90,7 +90,7 @@ static void handleUi(ui::UiHit hit) {
     case ui::UI_OPEN_QR:     menuPage = ui::PAGE_QR;     break;
     case ui::UI_OPEN_SEC:    menuPage = ui::PAGE_SEC;    break;
     case ui::UI_OPEN_HA_INFO: menuPage = ui::PAGE_SEC_HA; break;
-    case ui::UI_OPEN_TOKEN:  menuPage = ui::PAGE_TOKEN;  break;
+    case ui::UI_PAIR:        web.startPairing(); menuOpen = false; break;
     case ui::UI_VOL_DOWN:    audio.setVolume(audio.volume() - 10); break;
     case ui::UI_VOL_UP:      audio.setVolume(audio.volume() + 10); break;
     case ui::UI_LED_DOWN:    led.setBrightness(led.brightness() - 10); break;
@@ -403,6 +403,7 @@ static bool consoleNavigate(const String& c) {
   if (c == "shot")   { g_shotPending = true; return true; }  // captured post-render
   if (c.startsWith("voice:")) { g_voiceDebug = c.substring(6).toInt(); return true; }  // force voice ring
   if (c == "token")  { Serial.printf("[auth] pairing token: %s\n", web.authToken()); return true; }
+  if (c == "pair")   { web.startPairing(); Serial.printf("[auth] pairing pin: %s\n", web.pairingPin()); return true; }
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
@@ -418,7 +419,6 @@ static bool consoleNavigate(const String& c) {
              : pg == ":qr"    ? ui::PAGE_QR
              : pg == ":seg"   ? ui::PAGE_SEC
              : pg == ":ha"    ? ui::PAGE_SEC_HA
-             : pg == ":token" ? ui::PAGE_TOKEN
                               : ui::PAGE_MAIN;
     return true;
   }
@@ -542,6 +542,14 @@ void loop() {
       lastInteractionMs = now;
       g_inputSwallowUntil = now + 800;  // the wake tap must not also feed/pat
     }
+    // Pairing overlay: mirror the PIN (renderer takes over the screen while
+    // it's set) and make sure we're on the pet screen so it actually shows.
+    renderer.setPairingPin(web.pairingActive() ? web.pairingPin() : "");
+    if (web.pairingActive() && screen != SCREEN_PET) {
+      screen = SCREEN_PET;
+      menuOpen = false;
+    }
+
     // Night sound settings changed from HA/portal: apply + persist.
     int ss, ws;
     if (web.consumeNightSnd(ss, ws)) {

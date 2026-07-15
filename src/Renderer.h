@@ -36,9 +36,10 @@ class Renderer {
   int screenBrightness() const { return _scrBright; }
   // Full-sleep blank: backlight hard off / restore (never persisted).
   void setDisplayOff(bool off);
-  // Pairing token shown on the Seguranca > Senha page (set once at boot).
-  void setAuthToken(const char* t) { strlcpy(_authToken, t, sizeof(_authToken)); }
-  // Authed clients summary for the Seguranca > HA page (refreshed by main).
+  // Active pairing PIN ("" = none): draws a full-screen overlay with the
+  // 6 digits in boxes. Driven by main from WebPortal::pairingPin().
+  void setPairingPin(const char* p) { strlcpy(_pairPin, p, sizeof(_pairPin)); }
+  // Authed clients summary for Seguranca > Aparelhos (refreshed by main).
   void setClientsInfo(const char* s) { strlcpy(_clientsInfo, s, sizeof(_clientsInfo)); }
 
   // Full-screen WiFi setup screen (captive portal active) with Exit button.
@@ -75,8 +76,8 @@ class Renderer {
   unsigned long _pressedUntil = 0;
   int _scrBright = 70;  // screen backlight brightness (0..100)
   bool _displayOff = false;  // full-sleep blank (setDisplayOff)
-  char _authToken[17] = {0};    // pairing token (Seguranca > Senha page)
-  char _clientsInfo[120] = {0}; // authed WS clients ('\n'-separated, HA page)
+  char _pairPin[7] = {0};       // active pairing PIN ("" = no overlay)
+  char _clientsInfo[120] = {0}; // authed WS clients ('\n'-separated)
 
   uint16_t* _snap = nullptr;       // stable copy of the canvas for /shot.bmp
   volatile bool _snapReq = false;  // HTTP task -> render loop
@@ -115,9 +116,9 @@ class Renderer {
   void drawMenuLight(int ledBright);
   void drawMenuConn(bool wifiOn, const char* ip);  // Conexao: WiFi | Portal
   void drawMenuQr(bool wifiOn, const char* ip);    // Portal (QR) detail
-  void drawMenuSec();      // Seguranca: HA | Senha
-  void drawMenuSecHa();    // authed clients list
-  void drawMenuToken();    // pairing token (the only place it's shown)
+  void drawMenuSec();      // Seguranca: Aparelhos | Parear
+  void drawMenuSecHa();    // paired clients list ("Dispositivos")
+  void drawPairingOverlay();  // full-screen 6-digit PIN (auto-shown)
   void drawStepper(const char* label, int pct, const ui::ButtonSlot& minus,
                    const ui::ButtonSlot& plus);
   void drawGridCell(int x, int y, const char* label, char icon);

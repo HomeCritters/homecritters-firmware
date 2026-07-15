@@ -53,12 +53,12 @@ inline int buttonAt(int32_t tx, int32_t ty) {
 // screen (not a modal). Two levels of nesting:
 //   MAIN (2x2): Audio | Luz | Conexao | Seguranca
 //   CONN:       WiFi (config portal) | Portal (-> QR page)
-//   SEC:        HA (authed clients)  | Senha (-> pairing token page)
+//   SEC:        Aparelhos (paired clients) | Parear (starts a PIN pairing)
 // The left-edge tab is "back" one level everywhere (menuParent()).
 enum MenuPage {
   PAGE_MAIN, PAGE_AUDIO, PAGE_LIGHT,
-  PAGE_CONN, PAGE_QR,          // QR ("Portal") nests under CONN
-  PAGE_SEC, PAGE_SEC_HA, PAGE_TOKEN,  // HA + token nest under SEC
+  PAGE_CONN, PAGE_QR,       // QR ("Portal") nests under CONN
+  PAGE_SEC, PAGE_SEC_HA,    // devices list nests under SEC
 };
 
 // Where "back" lands from each page (MAIN = will close the menu).
@@ -66,7 +66,6 @@ inline MenuPage menuParent(MenuPage p) {
   switch (p) {
     case PAGE_QR:     return PAGE_CONN;
     case PAGE_SEC_HA: return PAGE_SEC;
-    case PAGE_TOKEN:  return PAGE_SEC;
     default:          return PAGE_MAIN;
   }
 }
@@ -74,7 +73,7 @@ inline MenuPage menuParent(MenuPage p) {
 enum UiHit {
   UI_NONE, UI_MENU_TOGGLE, UI_MENU_BACK,
   UI_OPEN_AUDIO, UI_OPEN_LIGHT, UI_OPEN_QR,
-  UI_OPEN_CONN, UI_OPEN_SEC, UI_OPEN_HA_INFO, UI_OPEN_TOKEN,
+  UI_OPEN_CONN, UI_OPEN_SEC, UI_OPEN_HA_INFO, UI_PAIR,
   UI_VOL_DOWN, UI_VOL_UP,
   UI_LED_DOWN, UI_LED_UP,
   UI_SCR_DOWN, UI_SCR_UP,
@@ -155,12 +154,12 @@ inline UiHit menuHit(MenuPage page, int32_t tx, int32_t ty) {
     if (inRect(tx, ty, MENU_COL_R, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_QR;
     return UI_NONE;
   }
-  if (page == PAGE_SEC) {  // HA | Senha (token)
+  if (page == PAGE_SEC) {  // Aparelhos | Parear (PIN)
     if (inRect(tx, ty, MENU_COL_L, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_HA_INFO;
-    if (inRect(tx, ty, MENU_COL_R, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_TOKEN;
+    if (inRect(tx, ty, MENU_COL_R, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_PAIR;
     return UI_NONE;
   }
-  if (page == PAGE_QR || page == PAGE_SEC_HA || page == PAGE_TOKEN) return UI_NONE;
+  if (page == PAGE_QR || page == PAGE_SEC_HA) return UI_NONE;
   // PAGE_MAIN: 2x2 grid.
   if (inRect(tx, ty, MENU_COL_L, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_AUDIO;
   if (inRect(tx, ty, MENU_COL_R, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_LIGHT;
@@ -170,11 +169,11 @@ inline UiHit menuHit(MenuPage page, int32_t tx, int32_t ty) {
 }
 
 // ------------------- Games menu (full screen) -------------------
-// Three square tiles: Jump! + Bolinha on top, Genius centered below.
-// Back to the pet scene via the LEFT-edge pull tab (no Voltar button).
-constexpr int16_t GAME_TILE_W = 88, GAME_TILE_H = 88;
-constexpr int16_t GAME_ROW_1 = 38, GAME_ROW_2 = 134;
-constexpr int16_t GAME_COL_L = 24, GAME_COL_R = 128;
+// Three tiles: Jump! + Bolinha on top, Genius centered below. Same tile size
+// and columns as the config menu (owner request: consistent buttons).
+constexpr int16_t GAME_TILE_W = MENU_CELL_W, GAME_TILE_H = MENU_CELL_H;
+constexpr int16_t GAME_ROW_1 = 48, GAME_ROW_2 = 124;
+constexpr int16_t GAME_COL_L = MENU_COL_L, GAME_COL_R = MENU_COL_R;
 constexpr int16_t GAME_COL_C = (SCREEN_W - GAME_TILE_W) / 2;
 
 inline bool inGameDoodle(int32_t tx, int32_t ty) {

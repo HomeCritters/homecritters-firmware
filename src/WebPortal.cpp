@@ -48,7 +48,6 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor*
   }
   prefs.end();
   strlcpy(_token, tok.c_str(), sizeof(_token));
-  if (_renderer) _renderer->setAuthToken(_token);
 }
 
 void WebPortal::setMicMuted(bool muted) {
@@ -138,11 +137,15 @@ void WebPortal::handle() {
     broadcastState();
     _lastBroadcast = now;
   }
-  // Sweep clients that never authenticated (5s grace, checked 1x/s).
+  // Expire the PIN pairing window.
+  if (_pairUntil && now >= _pairUntil) endPairing();
+  // Sweep clients that never authenticated (5s grace, checked 1x/s). Clients
+  // mid-pairing ride the pairing window instead (the user is typing the PIN).
   static unsigned long lastSweep = 0;
   if (now - lastSweep > 1000) {
     lastSweep = now;
     for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+      if (_wsPairing[i] && pairingActive()) continue;
       if (_wsConnAt[i] && !_wsAuthed[i] && now - _wsConnAt[i] > 5000) {
         Serial.printf("[ws] client %u dropped (no auth)\n", i);
         _ws.disconnect(i);
@@ -327,15 +330,16 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
   } else if (type == WStype_DISCONNECTED) {
     Serial.printf("[ws] client %u disconnected\n", num);
     _wsAuthed[num] = false;
+    _wsPairing[num] = false;
     _wsConnAt[num] = 0;
     if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
   } else if (type == WStype_TEXT) {
     String msg;
     msg.reserve(len);
     for (size_t i = 0; i < len; i++) msg += (char)payload[i];
-    // Auth gate: the FIRST message must be "auth:<token>". Until then the
-    // client gets nothing (no state) and can do nothing; a wrong token is an
-    // instant disconnect. Protects commands, state, screenshots and the MIC.
+    // Auth gate: the FIRST message must be "auth:<token>" (paired clients)
+    // or the PIN pairing dance (new clients). Until then the client gets
+    // nothing and can do nothing. Protects commands, state, shots and the MIC.
     if (!_wsAuthed[num]) {
       if (msg.startsWith("auth:") && msg.substring(5) == _token) {
         _wsAuthed[num] = true;
@@ -343,6 +347,30 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
         char buf[768];
         stateJson(buf, sizeof(buf));
         _ws.sendTXT(num, buf);  // now it may see the state
+      } else if (msg == "pair:start") {
+        // New client asks to pair: pop the PIN on the screen and keep this
+        // socket alive (exempt from the no-auth sweep) while the window is
+        // open, so it can submit the PIN the user reads.
+        startPairing();
+        _wsPairing[num] = true;
+        Serial.printf("[ws] client %u pairing (pin on screen)\n", num);
+      } else if (msg.startsWith("pair:") && pairingActive() &&
+                 msg.substring(5) == _pairPin) {
+        // Correct PIN: hand over the long-lived token + authenticate.
+        _wsAuthed[num] = true;
+        _wsPairing[num] = false;
+        endPairing();
+        char rep[32];
+        snprintf(rep, sizeof(rep), "token:%s", _token);
+        _ws.sendTXT(num, rep);
+        char buf[768];
+        stateJson(buf, sizeof(buf));
+        _ws.sendTXT(num, buf);
+        Serial.printf("[ws] client %u paired via PIN\n", num);
+      } else if (msg.startsWith("pair:")) {
+        if (pairingActive() && ++_pairAttempts >= 3) endPairing();  // brute guard
+        Serial.printf("[ws] client %u wrong PIN\n", num);
+        _ws.disconnect(num);
       } else {
         Serial.printf("[ws] client %u rejected (bad auth)\n", num);
         _ws.disconnect(num);
@@ -502,8 +530,25 @@ void WebPortal::sendAuthedTXT(const char* msg) {
   }
 }
 
-// IPs of the currently authenticated clients, one per line (Seguranca > HA
-// screen). Runs on the render loop (same thread as _ws).
+// Open (or refresh) the PIN pairing window: a fresh random 6-digit code,
+// 90s deadline, 3 attempts. main() mirrors it on screen automatically.
+void WebPortal::startPairing() {
+  if (!pairingActive()) {
+    snprintf(_pairPin, sizeof(_pairPin), "%06u",
+             (unsigned)(esp_random() % 900000u + 100000u));
+    _pairAttempts = 0;
+  }
+  _pairUntil = millis() + 90000;  // starting again just extends the window
+}
+
+void WebPortal::endPairing() {
+  _pairUntil = 0;
+  _pairPin[0] = 0;
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) _wsPairing[i] = false;
+}
+
+// IPs of the currently authenticated clients, one per line (Seguranca >
+// Aparelhos screen). Runs on the render loop (same thread as _ws).
 void WebPortal::clientsInfo(char* out, size_t n) {
   size_t o = 0;
   int cnt = 0;
