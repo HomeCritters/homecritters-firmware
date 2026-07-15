@@ -117,8 +117,18 @@ portal/tools ficam aqui.
   Decoder task no **core 1** (prio 5); rede de mídia no core 0. **Áudio
   validado no hardware.**
 - **Menu de config (tela cheia)**: abre por **swipe pra baixo** (ou tap na aba
-  ⌄); fecha por swipe pra cima ou botão **Fechar**. Volume −/+, botão **WiFi**
-  e, quando conectado, **QR code** do portal (URL do IP) + `ferret.local`.
+  ⌄); fecha por swipe pra cima; aba esquerda = voltar um nível (`menuParent`).
+  Estrutura aninhada: **Main 2x2** = Audio | Luz | **Conexao** | **Seguranca**.
+  Conexao = WiFi (config portal) + Portal (página do QR + URLs). Seguranca =
+  HA (lista de IPs dos clientes WS pareados, 1s refresh) + Senha (o token).
+  Navegação por serial: `menu[:main|audio|luz|conn|qr|seg|ha|token]`.
+- **AUTH (F-Sec 1)**: token de pareamento 16-hex gerado no 1º boot (NVS
+  "auth"), mostrado SÓ na tela (Seguranca > Senha) + comando serial `token`.
+  Todo cliente WS deve mandar `auth:<token>` como PRIMEIRA mensagem (errado =
+  desconecta; mudo = derrubado em 5s); broadcasts/evt só pra autenticados.
+  `/shot.bmp` exige `?token=`; `/info` continua público (identidade pro
+  discovery). Portal pede o código 1x (localStorage); plugin HA pede no config
+  flow (+ reauth automático após 3 conexões fechadas sem estado).
 - **Config de WiFi não-bloqueante**: `WiFiManager` em modo `process()` (tela
   viva), tela dedicada `drawWifiConfig()` com botão **Sair** (`cancelConfig()`).
 - **Portal web React + WebSocket** (`WebPortal`): `WebServer` (porta 80) serve
@@ -258,8 +268,8 @@ pio device monitor       # log serial, 115200 baud
 
 **REGRA: após QUALQUER mudança visual ou feature nova, SEMPRE valide com a
 ferramenta de screenshot antes de reportar ao dono** — `tools/hwshot.py` para
-telas navegadas (menus/jogos) ou `curl http://ferret.local/shot.bmp` para
-estado vivo (relógio/tema). Nunca assuma que a UI ficou certa sem ver o print.
+telas navegadas (menus/jogos) ou `curl 'http://ferret.local/shot.bmp?token=<token>'` para
+estado vivo (token: comando serial `token` ou tela Seguranca > Senha) (relógio/tema). Nunca assuma que a UI ficou certa sem ver o print.
 
 Para validar UI **sem olhar o hardware**: o firmware tem um **console serial**
 (`dispatchSerialCmd` em `main.cpp`, um comando por linha) e o comando `shot`
@@ -282,14 +292,14 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
   auto-detectam `/dev/cu.usbmodem*`.
 - Detalhes de formato do dump (header `@@SHOT w h` + RGB565 **big-endian**,
   pois o canvas usa `setSwapBytes`): `tools/README.md`.
-- **Também tem screenshot no portal web**: `GET /shot.bmp` (servido pelo task
+- **Também tem screenshot no portal web**: `GET /shot.bmp?token=<token>` (task
   HTTP no core 0) devolve a tela atual em BMP; o portal tem um botão **📸**. O
   render loop copia o canvas pra um buffer estável (`takeWebSnapshot`) antes de
   servir. Todo screenshot (serial ou web) toca o som de câmera (`playCamera`).
 - **IMPORTANTE — reset da serial:** abrir a porta serial **reinicia** a placa
   (auto-reset do S3). Então print por **serial** mostra a tela recém-bootada e
   NÃO captura estado vivo (relógio NTP, tema por horário — perdidos no reboot).
-  Pra ver o estado real, use a **web** (`curl http://ferret.local/shot.bmp` ou o
+  Pra ver o estado real, use a **web** (`curl` no /shot.bmp com token ou o
   botão 📸). Serial serve pra checar UI navegada (menus/jogos).
 - **A captura acontece pós-render** (flag `g_shotPending` → `maybeShot()`); ler
   o buffer no topo do loop dava tela preta. Usar `_canvas.getBuffer()`, não
