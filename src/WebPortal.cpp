@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include <mbedtls/md.h>  // HMAC-SHA256 (challenge-response auth)
 #include <cstring>
 #include "Renderer.h"
 #include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
@@ -35,6 +36,68 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor*
   prefs.begin("voice", true);
   _micMuted = prefs.getBool("muted", false);
   prefs.end();
+
+  // Per-client credential table (NVS). Migrate a legacy single "token" into
+  // slot 0 (so an existing HA/portal keeps working after the upgrade); slot 0
+  // seeds fresh on a brand-new device too.
+  for (int i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) _wsSlot[i] = -1;
+  prefs.begin("auth", false);
+  for (int i = 0; i < MAX_CREDS; i++) {
+    char k[4];
+    snprintf(k, sizeof(k), "t%d", i);
+    prefs.getString(k, _creds[i].token, sizeof(_creds[i].token));
+  }
+  // Migrate a legacy single "token" into slot 0 (keeps an existing HA/portal
+  // working). A fresh or fully-revoked device just stays empty: clients pair
+  // by PIN and get their own minted token - no unknown token to seed.
+  bool migrated = false;
+  if (_credCount() == 0) {
+    String legacy = prefs.getString("token", "");
+    if (legacy.length() == 16) {
+      strlcpy(_creds[0].token, legacy.c_str(), 17);
+      migrated = true;
+    }
+  }
+  prefs.remove("token");  // legacy key retired (would resurrect after revoke)
+  prefs.end();
+  if (migrated) _saveCred(0);
+}
+
+int WebPortal::_credCount() const {
+  int n = 0;
+  for (int i = 0; i < MAX_CREDS; i++) if (_creds[i].token[0]) n++;
+  return n;
+}
+
+int WebPortal::_freeCredSlot() {
+  for (int i = 0; i < MAX_CREDS; i++) if (!_creds[i].token[0]) return i;
+  // Table full: evict a slot that has no live connection.
+  for (int i = 1; i < MAX_CREDS; i++) {
+    bool live = false;
+    for (int c = 0; c < WEBSOCKETS_SERVER_CLIENT_MAX; c++)
+      if (_wsAuthed[c] && _wsSlot[c] == i) live = true;
+    if (!live) return i;
+  }
+  return -1;  // full and all connected
+}
+
+void WebPortal::_saveCred(int slot) {
+  Preferences p;
+  p.begin("auth", false);
+  char k[4];
+  snprintf(k, sizeof(k), "t%d", slot);
+  p.putString(k, _creds[slot].token);
+  p.end();
+}
+
+void WebPortal::_clearCred(int slot) {
+  _creds[slot].token[0] = 0;
+  Preferences p;
+  p.begin("auth", false);
+  char k[4];
+  snprintf(k, sizeof(k), "t%d", slot);
+  p.remove(k);
+  p.end();
 }
 
 void WebPortal::setMicMuted(bool muted) {
@@ -124,6 +187,32 @@ void WebPortal::handle() {
     broadcastState();
     _lastBroadcast = now;
   }
+  // Expire the PIN pairing window.
+  if (_pairUntil && now >= _pairUntil) endPairing();
+  // Push an updated connections list to every manager when it changes.
+  if (_clientsDirty) {
+    _clientsDirty = false;
+    for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+      if (!_wsAuthed[i]) continue;
+      char j[512];
+      clientsJson(j, sizeof(j), i);
+      _ws.sendTXT(i, j);
+    }
+  }
+  // Sweep clients that never authenticated (5s grace, checked 1x/s). Clients
+  // mid-pairing ride the pairing window instead (the user is typing the PIN).
+  static unsigned long lastSweep = 0;
+  if (now - lastSweep > 1000) {
+    lastSweep = now;
+    for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+      if (_wsPairing[i] && pairingActive()) continue;
+      if (_wsConnAt[i] && !_wsAuthed[i] && now - _wsConnAt[i] > 5000) {
+        Serial.printf("[ws] client %u dropped (no auth)\n", i);
+        _ws.disconnect(i);
+        _wsConnAt[i] = 0;
+      }
+    }
+  }
   pumpMic();
 }
 
@@ -176,14 +265,14 @@ void WebPortal::voicePttStart() {
   // right after the chime finishes (the capture task waits out audio.busy()).
   if (_audio) _audio->playListen();
   _micOn = true;  // capture task streams to _micClient (HA, via voice:sub)
-  if (_serverUp) _ws.broadcastTXT("evt:ptt:start");
+  if (_serverUp) sendAuthedTXT("evt:ptt:start");
   _dirty = true;
 }
 
 void WebPortal::voicePttEnd() {
   _micOn = false;
   if (_audio) _audio->playConfirm();  // descending chime: got it, processing
-  if (_serverUp) _ws.broadcastTXT("evt:ptt:end");
+  if (_serverUp) sendAuthedTXT("evt:ptt:end");
   _dirty = true;
 }
 
@@ -240,6 +329,32 @@ void WebPortal::handleRoot() {
 // (core 0): it asks the render loop for a stable snapshot, waits briefly, then
 // streams the BMP. Serving here (not the WS) keeps the ~170KB off the render.
 void WebPortal::handleShot() {
+  // Screenshot = privacy-sensitive, and a ?token= URL would leak the secret
+  // into logs/history. Challenge-response instead: a bare GET answers 401
+  // with a one-shot nonce; retry with ?sig=HMAC-SHA256(token, "shot:<nonce>").
+  if (!_server.hasArg("sig")) {
+    randHex(_shotNonce, 32);
+    _shotNonceAt = millis();
+    char body[48];
+    snprintf(body, sizeof(body), "nonce:%s", _shotNonce);
+    _server.send(401, "text/plain", body);
+    return;
+  }
+  char m[48];
+  snprintf(m, sizeof(m), "shot:%s", _shotNonce);
+  const bool fresh = _shotNonce[0] && millis() - _shotNonceAt < 60000;
+  const String sig = _server.arg("sig");
+  bool ok = false;
+  if (fresh) {  // any credential may sign a screenshot request
+    for (int i = 0; i < MAX_CREDS; i++) {
+      if (!_creds[i].token[0]) continue;
+      char expect[65];
+      hmacHex(_creds[i].token, m, expect);
+      if (sig.equalsIgnoreCase(expect)) { ok = true; break; }
+    }
+  }
+  if (!ok) { _server.send(401, "text/plain", "unauthorized"); return; }
+  _shotNonce[0] = 0;  // single-use
   if (!_renderer) { _server.send(503, "text/plain", "no renderer"); return; }
   _renderer->requestWebSnapshot();
   const unsigned long t0 = millis();
@@ -289,18 +404,129 @@ void WebPortal::handleShot() {
 
 void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
   if (type == WStype_CONNECTED) {
-    Serial.printf("[ws] client %u connected (%s)\n", num,
+    Serial.printf("[ws] client %u connected (%s) - challenging\n", num,
                   _ws.remoteIP(num).toString().c_str());
-    char buf[768];
-    stateJson(buf, sizeof(buf));
-    _ws.sendTXT(num, buf);  // send the current state on connect
+    _wsAuthed[num] = false;
+    _wsConnAt[num] = millis();  // unauth grace timer (swept in handle())
+    // Challenge-response: fresh nonce per socket; the client must answer
+    // with HMAC-SHA256(token, nonce) - the token itself never on the wire.
+    randHex(_wsNonce[num], 32);
+    char ch[48];
+    snprintf(ch, sizeof(ch), "challenge:%s", _wsNonce[num]);
+    _ws.sendTXT(num, ch);
   } else if (type == WStype_DISCONNECTED) {
     Serial.printf("[ws] client %u disconnected\n", num);
+    const bool was = _wsAuthed[num];
+    _wsAuthed[num] = false;
+    _wsSlot[num] = -1;
+    _wsLabel[num][0] = 0;
+    _wsPairing[num] = false;
+    _wsConnAt[num] = 0;
     if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
+    if (was) _clientsDirty = true;  // refresh the connections list
   } else if (type == WStype_TEXT) {
     String msg;
     msg.reserve(len);
     for (size_t i = 0; i < len; i++) msg += (char)payload[i];
+    // Auth gate: the FIRST message must be "auth:<token>" (paired clients)
+    // or the PIN pairing dance (new clients). Until then the client gets
+    // nothing and can do nothing. Protects commands, state, shots and the MIC.
+    if (!_wsAuthed[num]) {
+      if (msg.startsWith("auth:")) {
+        // "auth:<hmac>[:<client_nonce>]" - hmac = HMAC(token, our nonce). We
+        // don't know WHICH credential, so try every stored token; the match
+        // identifies the client's slot. Optional client nonce -> mutual auth
+        // (proof:<HMAC(that token, client_nonce)>), the mDNS-spoof defense.
+        const String body = msg.substring(5);
+        const int sep = body.indexOf(':');
+        const String mac = sep >= 0 ? body.substring(0, sep) : body;
+        int slot = -1;
+        if (_wsNonce[num][0]) {
+          for (int i = 0; i < MAX_CREDS; i++) {
+            if (!_creds[i].token[0]) continue;
+            char expect[65];
+            hmacHex(_creds[i].token, _wsNonce[num], expect);
+            if (mac.equalsIgnoreCase(expect)) { slot = i; break; }
+          }
+        }
+        if (slot >= 0) {
+          _wsAuthed[num] = true;
+          _wsSlot[num] = slot;
+          _wsNonce[num][0] = 0;  // single-use
+          _clientsDirty = true;
+          Serial.printf("[ws] client %u authenticated (slot %d)\n", num, slot);
+          if (sep >= 0) {
+            char proofMac[65], proof[80];
+            hmacHex(_creds[slot].token, body.substring(sep + 1).c_str(), proofMac);
+            snprintf(proof, sizeof(proof), "proof:%s", proofMac);
+            _ws.sendTXT(num, proof);
+          }
+          char buf[768];
+          stateJson(buf, sizeof(buf));
+          _ws.sendTXT(num, buf);  // now it may see the state
+        } else {
+          Serial.printf("[ws] client %u rejected (bad hmac)\n", num);
+          _ws.disconnect(num);
+        }
+      } else if (msg == "pair:start") {
+        // New client asks to pair: pop the PIN on the screen and keep this
+        // socket alive (exempt from the no-auth sweep) while the window is
+        // open, so it can submit the PIN the user reads.
+        startPairing();
+        _wsPairing[num] = true;
+        Serial.printf("[ws] client %u pairing (pin on screen)\n", num);
+      } else if (msg.startsWith("pair:") && pairingActive() &&
+                 msg.substring(5) == _pairPin) {
+        // Correct PIN: mint a NEW per-client token in a free slot and hand it
+        // over (the one moment a token is on the wire - supervised handover).
+        int slot = _freeCredSlot();
+        if (slot < 0) {  // table full and everyone's connected
+          _ws.sendTXT(num, "err:full");
+          _ws.disconnect(num);
+          endPairing();
+          return;
+        }
+        randHex(_creds[slot].token, 16);
+        _saveCred(slot);
+        _wsAuthed[num] = true;
+        _wsSlot[num] = slot;
+        _wsPairing[num] = false;
+        _clientsDirty = true;
+        endPairing();
+        char rep[32];
+        snprintf(rep, sizeof(rep), "token:%s", _creds[slot].token);
+        _ws.sendTXT(num, rep);
+        char buf[768];
+        stateJson(buf, sizeof(buf));
+        _ws.sendTXT(num, buf);
+        Serial.printf("[ws] client %u paired -> slot %d\n", num, slot);
+      } else if (msg.startsWith("pair:")) {
+        if (pairingActive() && ++_pairAttempts >= 3) endPairing();  // brute guard
+        Serial.printf("[ws] client %u wrong PIN\n", num);
+        _ws.disconnect(num);
+      } else {
+        Serial.printf("[ws] client %u rejected (bad auth)\n", num);
+        _ws.disconnect(num);
+      }
+      return;
+    }
+    // Client names itself for the connections manager (portal/HA send this
+    // right after auth). Per-connection, so sockets sharing a credential still
+    // show distinct names; re-sent on every connect (no need to persist).
+    if (msg.startsWith("label:")) {
+      strlcpy(_wsLabel[num], msg.substring(6).c_str(), sizeof(_wsLabel[num]));
+      _clientsDirty = true;
+      return;
+    }
+    // Connections manager: request the list, or revoke a slot / everyone.
+    if (msg == "clients?") { char j[512]; clientsJson(j, sizeof(j), num);
+                             _ws.sendTXT(num, j); return; }
+    if (msg.startsWith("revoke:")) {
+      const String w = msg.substring(7);
+      if (w == "all") revokeAll();
+      else revokeSlot(w.toInt());
+      return;
+    }
     // Mic control needs the client num (audio is streamed back to it).
     // Muted = ignore any request to open the mic (privacy wins over HA).
     if (msg == "mic:on")  { if (_micMuted) return; _micClient = num; _micOn = true; _dirty = true; return; }
@@ -443,7 +669,121 @@ void WebPortal::broadcastState() {
   if (_ws.connectedClients() == 0) return;  // nobody listening: skip the work
   char buf[768];
   stateJson(buf, sizeof(buf));
-  _ws.broadcastTXT(buf);
+  sendAuthedTXT(buf);
+}
+
+// Broadcast to AUTHENTICATED clients only (broadcastTXT would leak state to
+// sockets that never presented the pairing token).
+void WebPortal::sendAuthedTXT(const char* msg) {
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+    if (_wsAuthed[i]) _ws.sendTXT(i, (uint8_t*)msg, strlen(msg));
+  }
+}
+
+// Fill out with hexChars random hex digits (+ NUL).
+void WebPortal::randHex(char* out, size_t hexChars) {
+  static const char* H = "0123456789abcdef";
+  for (size_t i = 0; i < hexChars; i++) out[i] = H[esp_random() & 0xF];
+  out[hexChars] = 0;
+}
+
+// HMAC-SHA256(key, msg) -> lowercase hex (65 bytes incl. NUL).
+void WebPortal::hmacHex(const char* key, const char* msg, char out65[65]) {
+  uint8_t mac[32] = {0};
+  const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  mbedtls_md_hmac(info, (const uint8_t*)key, strlen(key),
+                  (const uint8_t*)msg, strlen(msg), mac);
+  static const char* H = "0123456789abcdef";
+  for (int i = 0; i < 32; i++) {
+    out65[i * 2] = H[mac[i] >> 4];
+    out65[i * 2 + 1] = H[mac[i] & 0xF];
+  }
+  out65[64] = 0;
+}
+
+// Open (or refresh) the PIN pairing window: a fresh random 6-digit code,
+// 90s deadline, 3 attempts. main() mirrors it on screen automatically.
+void WebPortal::startPairing() {
+  if (!pairingActive()) {
+    snprintf(_pairPin, sizeof(_pairPin), "%06u",
+             (unsigned)(esp_random() % 900000u + 100000u));
+    _pairAttempts = 0;
+  }
+  _pairUntil = millis() + 90000;  // starting again just extends the window
+}
+
+void WebPortal::endPairing() {
+  _pairUntil = 0;
+  _pairPin[0] = 0;
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) _wsPairing[i] = false;
+}
+
+void WebPortal::cancelPairing() { endPairing(); }
+
+// Wipe EVERY credential and kick everyone: all clients must PIN-pair again.
+// The hardware "Revogar acesso" button + "revoke:all".
+void WebPortal::revokeAll() {
+  endPairing();
+  for (int i = 0; i < MAX_CREDS; i++) if (_creds[i].token[0]) _clearCred(i);
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+    if (_wsAuthed[i]) _ws.disconnect(i);
+    _wsAuthed[i] = false;
+    _wsSlot[i] = -1;
+  }
+  _micOn = false;
+  _micClient = -1;
+  Serial.println("[auth] ALL credentials revoked");
+}
+
+// Revoke ONE credential: wipe the slot and kick sockets using it; the other
+// clients keep their own tokens. The portal/HA "encerrar conexao" action.
+void WebPortal::revokeSlot(int slot) {
+  if (slot < 0 || slot >= MAX_CREDS || !_creds[slot].token[0]) return;
+  _clearCred(slot);
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+    if (_wsAuthed[i] && _wsSlot[i] == slot) {
+      if ((int)i == _micClient) { _micOn = false; _micClient = -1; }
+      _ws.disconnect(i);
+      _wsAuthed[i] = false;
+      _wsSlot[i] = -1;
+    }
+  }
+  _clientsDirty = true;
+  Serial.printf("[auth] revoked slot %d\n", slot);
+}
+
+// JSON array of connected clients for the manager: [{"slot":N,"ip":"..",
+// "label":"..","me":bool}]. `selfNum` = the recipient's own socket number.
+void WebPortal::clientsJson(char* out, size_t n, int selfNum) {
+  size_t o = 0;
+  o += snprintf(out + o, n - o, "clients:[");
+  bool first = true;
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+    if (!_wsAuthed[i]) continue;
+    const char* lbl = _wsLabel[i][0] ? _wsLabel[i] : "Aparelho";
+    o += snprintf(out + o, n > o ? n - o : 0,
+                  "%s{\"slot\":%d,\"ip\":\"%s\",\"label\":\"%s\",\"me\":%s}",
+                  first ? "" : ",", _wsSlot[i],
+                  _ws.remoteIP(i).toString().c_str(), lbl,
+                  (int)i == selfNum ? "true" : "false");
+    first = false;
+  }
+  snprintf(out + o, n > o ? n - o : 0, "]");
+}
+
+// "label - ip", one per connected client (hardware Conexoes page, view-only).
+void WebPortal::clientsInfo(char* out, size_t n) {
+  size_t o = 0;
+  int cnt = 0;
+  for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
+    if (!_wsAuthed[i]) continue;
+    cnt++;
+    const char* lbl = _wsLabel[i][0] ? _wsLabel[i] : "Aparelho";
+    const String ip = _ws.remoteIP(i).toString();
+    o += snprintf(out + o, n > o ? n - o : 0, "%s%s", o ? "\n" : "", lbl);
+    o += snprintf(out + o, n > o ? n - o : 0, "\n %s", ip.c_str());
+  }
+  if (!cnt) strlcpy(out, "Nenhum cliente conectado", n);
 }
 
 static const char* moodName(Mood m) {

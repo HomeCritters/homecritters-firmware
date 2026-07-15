@@ -18,9 +18,11 @@ import {
   Badge,
   Space,
   Modal,
+  Popconfirm,
   Spin,
 } from 'antd';
 import ferretSheet from './ferret-sheet.png';
+import { hmacSha256Hex } from './hmac.js';
 
 const { Title, Text } = Typography;
 
@@ -89,6 +91,16 @@ function BatteryTag({ pct }) {
 
 // Detects the browser timezone -> POSIX TZ string. Tries to match the IANA
 // name against the list; otherwise falls back to a fixed offset (no DST).
+// A friendly name for THIS browser, shown in the connections manager.
+function browserLabel() {
+  const ua = navigator.userAgent;
+  const os = /iPhone|iPad/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android'
+    : /Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Navegador';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome'
+    : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
+  return `Portal ${os}${br ? ' · ' + br : ''}`.slice(0, 24);
+}
+
 function detectPosixTz() {
   try {
     const iana = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -338,10 +350,39 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shotSrc, setShotSrc] = useState(null);   // /shot.bmp?t=... when the modal is open
   const [shotLoading, setShotLoading] = useState(false);
-  const takeShot = () => {
+  const takeShot = async () => {
     setShotLoading(true);
-    setShotSrc(`/shot.bmp?t=${Date.now()}`);
+    // Challenge-response for the screenshot (no token in the URL): a bare GET
+    // 401s with a one-shot nonce; retry signed.
+    const tok = localStorage.getItem('token') || '';
+    try {
+      const r = await fetch(`/shot.bmp?t=${Date.now()}`);
+      const nonce = (await r.text()).replace('nonce:', '').trim();
+      const sig = hmacSha256Hex(tok, 'shot:' + nonce);
+      setShotSrc(`/shot.bmp?sig=${sig}&t=${Date.now()}`);
+    } catch {
+      setShotLoading(false);
+    }
   };
+  // Pairing (F-Sec 1): without a stored token we send "pair:start" - a
+  // 6-digit PIN pops on the device screen by itself; the user types it here
+  // and the device hands us the long-lived token (localStorage).
+  const [needToken, setNeedToken] = useState(!localStorage.getItem('token'));
+  const [pinDraft, setPinDraft] = useState('');
+  const [clients, setClients] = useState([]);   // connections manager list
+  const gotState = useRef(false);
+  // antd's Input.OTP doesn't forward input attributes: patch the underlying
+  // inputs to type=tel so phones reliably open the numeric keypad.
+  const otpWrapRef = useRef(null);
+  useEffect(() => {
+    if (!needToken || !otpWrapRef.current) return;
+    otpWrapRef.current.querySelectorAll('input').forEach((i) => {
+      i.type = 'tel';
+      i.inputMode = 'numeric';
+      i.pattern = '[0-9]*';
+      i.autocomplete = 'one-time-code';
+    });
+  }, [needToken]);
   const [name, setName] = useState('');
   const [vol, setVol] = useState(80);
   const [ledBright, setLedBright] = useState(50);
@@ -358,14 +399,64 @@ export default function App() {
     const connect = () => {
       ws = new WebSocket(`ws://${location.hostname}:81/`);
       wsRef.current = ws;
-      ws.onopen = () => setOnline(true);
+      let opened = false;
+      const cnonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map((x) => x.toString(16).padStart(2, '0')).join('');
+      ws.onopen = () => {
+        // The device greets with "challenge:<nonce>" (handled in onmessage).
+        // Without a stored token we ask to pair right away instead.
+        opened = true;
+        gotState.current = false;
+        if (!localStorage.getItem('token')) ws.send('pair:start');
+      };
       ws.onclose = () => {
         setOnline(false);
+        // Socket opened but closed before any state = our token was rejected
+        // (device re-paired/reset): drop it and fall back to PIN pairing.
+        if (opened && !gotState.current) {
+          if (localStorage.getItem('token')) localStorage.removeItem('token');
+          setNeedToken(true);
+        }
         retry = setTimeout(connect, 1500);
       };
       ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string') {
+          // Challenge-response (F-Sec 2): prove we know the token without
+          // sending it, and require the device to prove itself back (mutual).
+          if (ev.data.startsWith('challenge:')) {
+            const tok = localStorage.getItem('token');
+            if (tok) {
+              ws.send('auth:' + hmacSha256Hex(tok, ev.data.slice(10)) + ':' + cnonce);
+            }
+            return;
+          }
+          if (ev.data.startsWith('proof:')) {
+            const tok = localStorage.getItem('token');
+            if (!tok || ev.data.slice(6) !== hmacSha256Hex(tok, cnonce)) {
+              ws.close();  // not the real device (mDNS spoof) - bail
+            }
+            return;
+          }
+          if (ev.data.startsWith('token:')) {
+            localStorage.setItem('token', ev.data.slice(6));  // paired!
+            setNeedToken(false);
+            return;
+          }
+          if (ev.data.startsWith('clients:')) {
+            try { setClients(JSON.parse(ev.data.slice(8))); } catch { /* ignore */ }
+            return;
+          }
+        }
         try {
           const j = JSON.parse(ev.data);
+          if (!gotState.current) {
+            gotState.current = true;  // authenticated
+            setOnline(true);
+            setNeedToken(false);
+            // Name this connection for the manager, then fetch the list.
+            ws.send('label:' + browserLabel());
+            ws.send('clients?');
+          }
           setState(j);
           if (!nameDirty.current) setName(j.name);
           if (!volDirty.current && typeof j.volume === 'number') setVol(j.volume);
@@ -598,6 +689,55 @@ export default function App() {
 
           <Divider />
 
+          <div>
+            <Text strong>🔒 Conexões pareadas</Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              Aparelhos com acesso ao bichinho agora
+            </Text>
+            {clients.length === 0 && (
+              <Text type="secondary" style={{ fontSize: 13 }}>Nenhuma conexão.</Text>
+            )}
+            {clients.map((c) => (
+              <div
+                key={c.slot + '-' + c.ip}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <Text style={{ fontSize: 13 }}>
+                    {c.label || 'Aparelho'} {c.me && <Text type="secondary">(este)</Text>}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>{c.ip}</Text>
+                </div>
+                <Popconfirm
+                  title="Encerrar esta conexão?"
+                  description={c.me ? 'Você precisará parear de novo.' : 'O aparelho precisará parear de novo.'}
+                  okText="Encerrar"
+                  cancelText="Cancelar"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => send('revoke:' + c.slot)}
+                >
+                  <Button size="small" danger>Encerrar</Button>
+                </Popconfirm>
+              </div>
+            ))}
+            {clients.length > 1 && (
+              <Popconfirm
+                title="Encerrar TODAS as conexões?"
+                description="Todos os aparelhos (inclusive o HA) terão que parear de novo."
+                okText="Encerrar todas"
+                cancelText="Cancelar"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => send('revoke:all')}
+              >
+                <Button size="small" danger block style={{ marginTop: 6 }}>
+                  Encerrar todas
+                </Button>
+              </Popconfirm>
+            )}
+          </div>
+
+          <Divider />
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <Text strong>🎙️ Microfone</Text>
@@ -701,6 +841,39 @@ export default function App() {
             />
           </div>
         </Drawer>
+
+        {/* Pairing (F-Sec 1): a 6-digit PIN pops on the device screen */}
+        <Modal title="🔑 Parear com o bichinho" open={needToken} closable={false} footer={null}>
+          <Text>
+            Um código de <b>6 dígitos</b> apareceu na tela do bichinho. Digite
+            ele aqui:
+          </Text>
+          <div ref={otpWrapRef} style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+            <Input.OTP
+              length={6}
+              size="large"
+              value={pinDraft}
+              formatter={(v) => v.replace(/\D/g, '')}
+              onChange={(v) => setPinDraft(v)}
+            />
+          </div>
+          <Button
+            type="primary"
+            block
+            style={{ marginTop: 16 }}
+            disabled={pinDraft.length !== 6}
+            onClick={() => {
+              send('pair:' + pinDraft);
+              setPinDraft('');
+            }}
+          >
+            Parear
+          </Button>
+          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 10 }}>
+            Sem código na tela? Aguarde reconectar, ou no aparelho: deslize
+            para baixo → Seguranca → Parear.
+          </Text>
+        </Modal>
 
         {/* Hardware screenshot: /shot.bmp rendered by the firmware on demand */}
         <Modal

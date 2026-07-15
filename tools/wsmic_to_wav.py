@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Capture mic audio from a HomeCritters device over WebSocket -> WAV.
 
-Connects to ws://<host>:81, sends "mic:on", collects binary PCM frames
-(16 kHz mono 16-bit) for N seconds, sends "mic:off", writes a WAV.
-Usage: wsmic_to_wav.py [host] [seconds] [out.wav]
+Connects to ws://<host>:81, answers the device challenge with
+HMAC-SHA256(token, nonce) (token = the pairing credential), sends "mic:on",
+collects binary PCM frames (16 kHz mono 16-bit) for N seconds, writes a WAV.
+Usage: wsmic_to_wav.py [host] [seconds] [out.wav] [token]
 """
-import sys, socket, base64, os, struct, time, wave
+import sys, socket, base64, os, struct, time, wave, hmac, hashlib
 
 host = sys.argv[1] if len(sys.argv) > 1 else "critter.local"
 secs = float(sys.argv[2]) if len(sys.argv) > 2 else 5.0
 out  = sys.argv[3] if len(sys.argv) > 3 else "mic.wav"
+token = sys.argv[4] if len(sys.argv) > 4 else ""
 
 s = socket.create_connection((host, 81), timeout=8)
 key = base64.b64encode(os.urandom(16)).decode()
@@ -40,9 +42,17 @@ def frames():
         payload = rd(ln)
         yield op, payload
 
+# Challenge-response: wait for "challenge:<nonce>", answer HMAC(token, nonce).
+gen = frames()
+for op, payload in gen:
+    if op == 0x1 and payload.startswith(b"challenge:"):
+        nonce = payload[10:].decode()
+        sig = hmac.new(token.encode(), nonce.encode(), hashlib.sha256).hexdigest()
+        send_text("auth:" + sig)
+        break
 send_text("mic:on")
 pcm = bytearray(); peak = 0; t0 = time.time()
-for op, payload in frames():
+for op, payload in gen:
     if op == 0x2:  # binary
         pcm += payload
         for i in range(0, len(payload) - 1, 2):

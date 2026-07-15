@@ -50,19 +50,46 @@ inline int buttonAt(int32_t tx, int32_t ty) {
 
 // ------------------- Config menu (full screen) -------------------
 // Opens with a swipe down (or a tap on the top handle). Takes over the whole
-// screen (not a modal). The main page has two icon buttons (Audio, Light) that
-// open sub-pages; each sub-page has a Back button. Closes with a swipe up or
-// the Close button.
-enum MenuPage { PAGE_MAIN, PAGE_AUDIO, PAGE_LIGHT, PAGE_QR };
+// screen (not a modal). Two levels of nesting:
+//   MAIN (2x2): Audio | Luz | Conexao | Seguranca
+//   CONN:       WiFi (config portal) | Portal (-> QR page)
+//   SEC:        Aparelhos (paired clients) | Parear (starts a PIN pairing)
+// The left-edge tab is "back" one level everywhere (menuParent()).
+enum MenuPage {
+  PAGE_MAIN, PAGE_AUDIO, PAGE_LIGHT,
+  PAGE_CONN, PAGE_QR,       // QR ("Portal") nests under CONN
+  PAGE_SEC, PAGE_SEC_HA,    // devices list nests under SEC
+};
+
+// Where "back" lands from each page (MAIN = will close the menu).
+inline MenuPage menuParent(MenuPage p) {
+  switch (p) {
+    case PAGE_QR:     return PAGE_CONN;
+    case PAGE_SEC_HA: return PAGE_SEC;
+    default:          return PAGE_MAIN;
+  }
+}
 
 enum UiHit {
   UI_NONE, UI_MENU_TOGGLE, UI_MENU_BACK,
   UI_OPEN_AUDIO, UI_OPEN_LIGHT, UI_OPEN_QR,
+  UI_OPEN_CONN, UI_OPEN_SEC, UI_OPEN_HA_INFO, UI_PAIR, UI_REVOKE,
   UI_VOL_DOWN, UI_VOL_UP,
   UI_LED_DOWN, UI_LED_UP,
   UI_SCR_DOWN, UI_SCR_UP,
   UI_WIFI, UI_GAMES_TOGGLE
 };
+
+// "Revogar acesso" button on the Dispositivos page (bottom, inside the circle).
+constexpr int16_t REVOKE_X = 50, REVOKE_Y = 172, REVOKE_W = 140, REVOKE_H = 30;
+// "Voltar" button on the pairing overlay (bottom, inside the circle).
+constexpr int16_t PAIR_CANCEL_X = 70, PAIR_CANCEL_Y = 188;
+constexpr int16_t PAIR_CANCEL_W = 100, PAIR_CANCEL_H = 28;
+inline bool inPairCancel(int32_t tx, int32_t ty) {
+  // Forgiving 8px margin (inRect is declared further down in this header).
+  return tx >= PAIR_CANCEL_X - 8 && tx <= PAIR_CANCEL_X + PAIR_CANCEL_W + 8 &&
+         ty >= PAIR_CANCEL_Y - 8 && ty <= PAIR_CANCEL_Y + PAIR_CANCEL_H + 8;
+}
 
 constexpr int16_t HANDLE_CX = 120, HANDLE_TOP = 0, HANDLE_W = 54, HANDLE_H = 16;
 
@@ -89,6 +116,8 @@ constexpr int16_t MENU_CELL_W = 70, MENU_CELL_H = 66;
 constexpr int16_t MENU_COL_L = 43, MENU_COL_R = 127;   // column x
 constexpr int16_t MENU_ROW_1 = 48, MENU_ROW_2 = 118;   // row y (battery pill above)
 constexpr int16_t MENU_QR_CX  = MENU_COL_R + MENU_CELL_W / 2;  // QR center x
+// Sub-pages with two tiles (Conexao, Seguranca): one centered row.
+constexpr int16_t MENU_SUB_ROW = 86;
 
 // Audio sub-page: one volume stepper (centered).
 constexpr ButtonSlot MENU_VOL_MINUS = {40, 100};
@@ -131,21 +160,35 @@ inline UiHit menuHit(MenuPage page, int32_t tx, int32_t ty) {
     if (inCircle(tx, ty, MENU_SCR_PLUS, MENU_BTN_R + 8)) return UI_SCR_UP;
     return UI_NONE;
   }
+  if (page == PAGE_CONN) {  // WiFi | Portal (QR)
+    if (inRect(tx, ty, MENU_COL_L, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_WIFI;
+    if (inRect(tx, ty, MENU_COL_R, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_QR;
+    return UI_NONE;
+  }
+  if (page == PAGE_SEC) {  // Aparelhos | Parear (PIN)
+    if (inRect(tx, ty, MENU_COL_L, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_HA_INFO;
+    if (inRect(tx, ty, MENU_COL_R, MENU_SUB_ROW, MENU_CELL_W, MENU_CELL_H)) return UI_PAIR;
+    return UI_NONE;
+  }
+  if (page == PAGE_SEC_HA) {  // Dispositivos: revoke-all button
+    if (inRect(tx, ty, REVOKE_X, REVOKE_Y, REVOKE_W, REVOKE_H)) return UI_REVOKE;
+    return UI_NONE;
+  }
   if (page == PAGE_QR) return UI_NONE;
   // PAGE_MAIN: 2x2 grid.
   if (inRect(tx, ty, MENU_COL_L, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_AUDIO;
   if (inRect(tx, ty, MENU_COL_R, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_LIGHT;
-  if (inRect(tx, ty, MENU_COL_L, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_WIFI;
-  if (inRect(tx, ty, MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_QR;
+  if (inRect(tx, ty, MENU_COL_L, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_CONN;
+  if (inRect(tx, ty, MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return UI_OPEN_SEC;
   return UI_NONE;
 }
 
 // ------------------- Games menu (full screen) -------------------
-// Three square tiles: Jump! + Bolinha on top, Genius centered below.
-// Back to the pet scene via the LEFT-edge pull tab (no Voltar button).
-constexpr int16_t GAME_TILE_W = 88, GAME_TILE_H = 88;
-constexpr int16_t GAME_ROW_1 = 38, GAME_ROW_2 = 134;
-constexpr int16_t GAME_COL_L = 24, GAME_COL_R = 128;
+// Three tiles: Jump! + Bolinha on top, Genius centered below. Same tile size
+// and columns as the config menu (owner request: consistent buttons).
+constexpr int16_t GAME_TILE_W = MENU_CELL_W, GAME_TILE_H = MENU_CELL_H;
+constexpr int16_t GAME_ROW_1 = 48, GAME_ROW_2 = 124;
+constexpr int16_t GAME_COL_L = MENU_COL_L, GAME_COL_R = MENU_COL_R;
 constexpr int16_t GAME_COL_C = (SCREEN_W - GAME_TILE_W) / 2;
 
 inline bool inGameDoodle(int32_t tx, int32_t ty) {

@@ -94,6 +94,40 @@ class WebPortal {
     }
   }
 
+  // --- pairing auth (F-Sec 1) + challenge-response (F-Sec 2) ---
+  // Long-lived 16-hex credential in NVS - and it NEVER travels on the wire:
+  // on connect the device sends "challenge:<nonce>" (fresh per socket) and
+  // the client authenticates with "auth:<HMAC-SHA256(token, nonce)>[:cnonce]"
+  // (hex). With the optional client nonce the device replies
+  // "proof:<HMAC(token, cnonce)>" - MUTUAL auth: a spoofed device can't
+  // impersonate the ball, and a spoofed one can't harvest anything reusable.
+  // Until authed: no state, no commands, no mic (5s grace, then dropped).
+  // /shot.bmp does its own dance (401+nonce -> ?sig=); /info stays public.
+  // New clients get the token via PIN pairing:
+  //   "pair:start" -> a random 6-digit PIN pops on the SCREEN (90s window)
+  //   -> "pair:<pin>" -> device replies "token:<token>" (the one moment the
+  //   token is on the wire: a short, user-supervised handover) and marks the
+  //   socket authenticated. 3 wrong PINs or timeout close the window.
+  // PER-CLIENT credentials (F-Sec 3): each PIN pairing mints its OWN token in
+  // a slot (NVS table, up to MAX_CREDS). That makes revocation individual -
+  // dropping one client's credential leaves the others untouched.
+  const char* authToken() const { return _creds[0].token; }  // slot 0 (serial/test)
+  void startPairing();  // opens (or extends) the PIN window - also the menu tile
+  void cancelPairing();  // the X on the pairing overlay
+  bool pairingActive() const { return _pairUntil != 0 && millis() < _pairUntil; }
+  const char* pairingPin() const { return _pairPin; }
+  // Revoke ALL credentials + kick everyone (hardware "Revogar acesso" button
+  // and "revoke:all"). Every client must PIN-pair again.
+  void revokeAll();
+  // Revoke ONE credential slot (portal/HA "encerrar conexao"): wipes that
+  // slot and kicks any socket using it; the others keep working.
+  void revokeSlot(int slot);
+  // '\n'-separated IP list of connected clients (hardware Conexoes page).
+  void clientsInfo(char* out, size_t n);
+  // JSON array of connected clients for the portal/HA manager. Marks the
+  // recipient's own row via its socket number `selfNum`.
+  void clientsJson(char* out, size_t n, int selfNum);
+
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
   void cancelConfig();         // abort configuration (Exit button)
@@ -141,6 +175,34 @@ class WebPortal {
   volatile bool _micOn = false;  // written on render loop, read by capture task
   volatile bool _micMuted = false;  // privacy mute (NVS-persisted)
   int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
+
+  // Per-client credential table (NVS "auth", keys t<i>). Labels are NOT stored
+  // here: they're per-connection (below), set by the client on each connect,
+  // so two sockets sharing one credential still show distinct names.
+  static constexpr int MAX_CREDS = 8;
+  struct Cred { char token[17]; };  // token[0]==0 = empty slot
+  Cred _creds[MAX_CREDS] = {};
+  int _credCount() const;                // non-empty slots
+  int _freeCredSlot();                   // first empty (evicts an idle one if full)
+  void _saveCred(int slot);
+  void _clearCred(int slot);
+  bool _wsAuthed[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};
+  int _wsSlot[WEBSOCKETS_SERVER_CLIENT_MAX];             // cred slot each socket used
+  char _wsLabel[WEBSOCKETS_SERVER_CLIENT_MAX][25] = {};  // per-connection name
+  bool _wsPairing[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};  // exempt from sweep
+  unsigned long _wsConnAt[WEBSOCKETS_SERVER_CLIENT_MAX] = {0};  // 0 = free slot
+  char _wsNonce[WEBSOCKETS_SERVER_CLIENT_MAX][33] = {};  // per-socket challenge
+  bool _clientsDirty = false;    // push an updated clients: list next handle()
+  char _pairPin[7] = {0};        // current 6-digit PIN ("" = none)
+  unsigned long _pairUntil = 0;  // window deadline (0 = closed)
+  uint8_t _pairAttempts = 0;     // wrong PINs this window (3 = close)
+  int _pairSlot = -1;            // slot minted for the current pairing
+  char _shotNonce[33] = {0};     // one-shot /shot.bmp challenge
+  unsigned long _shotNonceAt = 0;
+  void endPairing();
+  void sendAuthedTXT(const char* msg);  // broadcast to authed clients only
+  static void randHex(char* out, size_t hexChars);   // esp_random -> hex
+  static void hmacHex(const char* key, const char* msg, char out65[65]);
   const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   bool _fullSleep = false;           // actual mode, reported by main

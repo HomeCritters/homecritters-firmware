@@ -73,18 +73,53 @@ And it's a show:
 
 - 🪩 **Party mode** when music plays: forced night theme, mirrored disco
   ball, random laser pulses, a color-shifting dance floor, smoke machines,
-  thumping speaker cabinets — and Leon dancing through all of it while the
-  LED cycles a rainbow.
-- 🔵 **Voice ring** when the assistant speaks (TTS): an Alexa-style cyan
-  ring sweeps the round bezel, with the LED pulsing in sync.
+  thumping speaker cabinets — Leon dancing through all of it while the RGB
+  LED **flashes to the actual beat** (live PCM envelope analysis).
+- 🔵 **Voice rings** for the assistant (below).
+
+### 🎙️ Voice assistant
+
+**Hold the BOOT button and talk.** The mic (ES8311 ADC, 16 kHz) streams to
+Home Assistant's Assist pipeline — STT, your conversation agent, and the
+spoken reply plays back through the speaker. Every phase gets its own ring
+around the round bezel, plus matching iOS-style earcons.
+
+A **quick BOOT tap mutes the microphone** (Echo-style privacy: nothing
+leaves the device, PTT is denied at the source) — a crossed-mic icon shows
+on screen so the LED stays on mood duty.
+
+| Listening | Thinking | Speaking | Mic muted |
+|---|---|---|---|
+| ![listen](docs/screenshots/voice-listen.png) | ![think](docs/screenshots/voice-think.png) | ![speak](docs/screenshots/voice-ring.png) | ![mute](docs/screenshots/mute-mic.png) |
+
+Always-on **"Alexa" wake word** (openWakeWord running on HA) is next on the
+roadmap.
+
+### 🔒 Pairing & security
+
+TV-style pairing: when an app asks to connect, a **random 6-digit PIN pops
+on the screen by itself**; typing it (portal OTP boxes / HA config flow)
+hands the client a long-lived credential. Every WebSocket client must
+authenticate before *anything* — state, commands and especially the mic —
+and screenshots require the token too. The Security menu lists the devices
+connected right now and can **revoke everyone** with a two-tap confirm
+(clients re-pair by PIN; HA lands in its reauth flow automatically).
+
+| Pairing PIN | Devices + revoke |
+|---|---|
+| ![pin](docs/screenshots/pairing-pin.png) | ![devices](docs/screenshots/security-devices.png) |
 
 ### 🏠 Home Assistant
 
 With the [companion integration](https://github.com/HomeCritters/homecritters-ha-plugin)
-(HACS): auto-discovery via zeroconf, stat/mood/battery sensors, action
-buttons, sleep & clock switches, brightness sliders and a `media_player`
-entity for TTS and Music Assistant (set the player codec to **MP3 or FLAC**
-— ALAC is not supported).
+(HACS): auto-discovery via zeroconf + PIN pairing, stat/mood/battery
+sensors, action buttons, switches (sleep, **night mode** with configurable
+sleep/wake sounds — great for schedule automations —, **microphone mute**,
+idle clock), brightness sliders, every device setting (pet name, timezone,
+time/date formats, timeouts) organized in Controls / Configuration /
+Diagnostics sections, a `media_player` entity for TTS and Music Assistant
+(set the player codec to **MP3 or FLAC** — ALAC is not supported) and an
+`assist_satellite` for push-to-talk voice.
 
 ## Hardware
 

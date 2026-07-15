@@ -36,6 +36,13 @@ class Renderer {
   int screenBrightness() const { return _scrBright; }
   // Full-sleep blank: backlight hard off / restore (never persisted).
   void setDisplayOff(bool off);
+  // Active pairing PIN ("" = none): draws a full-screen overlay with the
+  // 6 digits in boxes. Driven by main from WebPortal::pairingPin().
+  void setPairingPin(const char* p) { strlcpy(_pairPin, p, sizeof(_pairPin)); }
+  // Authed clients summary for Seguranca > Aparelhos (refreshed by main).
+  void setClientsInfo(const char* s) { strlcpy(_clientsInfo, s, sizeof(_clientsInfo)); }
+  // Revoke button state: false = "Revogar acesso", true = "Confirma?" (armed).
+  void setRevokeArmed(bool a) { _revokeArmed = a; }
 
   // Full-screen WiFi setup screen (captive portal active) with Exit button.
   void drawWifiConfig(const char* apName);
@@ -71,6 +78,9 @@ class Renderer {
   unsigned long _pressedUntil = 0;
   int _scrBright = 70;  // screen backlight brightness (0..100)
   bool _displayOff = false;  // full-sleep blank (setDisplayOff)
+  char _pairPin[7] = {0};       // active pairing PIN ("" = no overlay)
+  char _clientsInfo[120] = {0}; // authed WS clients ('\n'-separated)
+  bool _revokeArmed = false;    // revoke button in "Confirma?" state
 
   uint16_t* _snap = nullptr;       // stable copy of the canvas for /shot.bmp
   volatile bool _snapReq = false;  // HTTP task -> render loop
@@ -107,13 +117,22 @@ class Renderer {
   void drawMenuMain(int batteryPct, bool wifiOn, const char* ip);
   void drawMenuAudio(int volume);
   void drawMenuLight(int ledBright);
-  void drawMenuQr(bool wifiOn, const char* ip);
+  void drawPageHeader(const char* title, const char* sub);  // bezel-safe title
+  void drawMenuConn(bool wifiOn, const char* ip);  // Conexao: WiFi | Portal
+  void drawMenuQr(bool wifiOn, const char* ip);    // Portal (QR) detail
+  void drawMenuSec();      // Seguranca: Dispositivos | Parear
+  void drawMenuSecHa();    // paired clients list ("Dispositivos")
+  void drawPairingOverlay();  // full-screen 6-digit PIN (auto-shown)
   void drawStepper(const char* label, int pct, const ui::ButtonSlot& minus,
                    const ui::ButtonSlot& plus);
   void drawGridCell(int x, int y, const char* label, char icon);
   void drawAudioIcon(int cx, int cy, uint16_t bg);
   void drawLightIcon(int cx, int cy);
   void drawWifiIcon(int cx, int cy);
+  void drawLockIcon(int cx, int cy);   // Seguranca tile (padlock)
+  void drawHouseIcon(int cx, int cy);  // HA tile
+  void drawKeyIcon(int cx, int cy);    // Senha tile
+  void drawQrGlyph(int cx, int cy);    // Portal tile (mini QR)
   void drawGameTile(int x, int y, const char* label, char icon, uint16_t iconColor);
   void drawQr(const char* text, int topY, int cx = ui::CENTER_X, int quiet = 3);
   void drawPillButton(int x, int y, int w, int h, const char* label, uint16_t bg);
