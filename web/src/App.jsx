@@ -602,7 +602,7 @@ export default function App() {
             <div>
               <Text strong>🎙️ Microfone</Text>
               <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-                Desligado = assistente não escuta (LED vermelho)
+                Desligado = assistente não escuta (ícone na tela)
               </Text>
             </div>
             <Switch
