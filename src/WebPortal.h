@@ -108,17 +108,25 @@ class WebPortal {
   //   -> "pair:<pin>" -> device replies "token:<token>" (the one moment the
   //   token is on the wire: a short, user-supervised handover) and marks the
   //   socket authenticated. 3 wrong PINs or timeout close the window.
-  const char* authToken() const { return _token; }
+  // PER-CLIENT credentials (F-Sec 3): each PIN pairing mints its OWN token in
+  // a slot (NVS table, up to MAX_CREDS). That makes revocation individual -
+  // dropping one client's credential leaves the others untouched.
+  const char* authToken() const { return _creds[0].token; }  // slot 0 (serial/test)
   void startPairing();  // opens (or extends) the PIN window - also the menu tile
   void cancelPairing();  // the X on the pairing overlay
   bool pairingActive() const { return _pairUntil != 0 && millis() < _pairUntil; }
   const char* pairingPin() const { return _pairPin; }
-  // Revoke ALL paired clients (Dispositivos > Revogar): regenerates the
-  // long-lived token (NVS) and disconnects everyone. HA falls into its
-  // reauth flow and the portal into its pairing modal - both re-pair by PIN.
+  // Revoke ALL credentials + kick everyone (hardware "Revogar acesso" button
+  // and "revoke:all"). Every client must PIN-pair again.
   void revokeAll();
-  // '\n'-separated IPs of authenticated WS clients (Seguranca > Aparelhos).
+  // Revoke ONE credential slot (portal/HA "encerrar conexao"): wipes that
+  // slot and kicks any socket using it; the others keep working.
+  void revokeSlot(int slot);
+  // '\n'-separated IP list of connected clients (hardware Conexoes page).
   void clientsInfo(char* out, size_t n);
+  // JSON array of connected clients for the portal/HA manager. Marks the
+  // recipient's own row via `selfSlot` (-1 = none).
+  void clientsJson(char* out, size_t n, int selfSlot);
 
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
@@ -168,15 +176,24 @@ class WebPortal {
   volatile bool _micMuted = false;  // privacy mute (NVS-persisted)
   int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
 
-  // Pairing auth state (see authToken()).
-  char _token[17] = {0};
+  // Per-client credential table (NVS "auth", keys t<i>/l<i>).
+  static constexpr int MAX_CREDS = 8;
+  struct Cred { char token[17]; char label[25]; };  // token[0]==0 = empty slot
+  Cred _creds[MAX_CREDS] = {};
+  int _credCount() const;                // non-empty slots
+  int _freeCredSlot();                   // first empty (evicts an idle one if full)
+  void _saveCred(int slot);
+  void _clearCred(int slot);
   bool _wsAuthed[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};
+  int _wsSlot[WEBSOCKETS_SERVER_CLIENT_MAX];             // cred slot each socket used
   bool _wsPairing[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};  // exempt from sweep
   unsigned long _wsConnAt[WEBSOCKETS_SERVER_CLIENT_MAX] = {0};  // 0 = free slot
   char _wsNonce[WEBSOCKETS_SERVER_CLIENT_MAX][33] = {};  // per-socket challenge
+  bool _clientsDirty = false;    // push an updated clients: list next handle()
   char _pairPin[7] = {0};        // current 6-digit PIN ("" = none)
   unsigned long _pairUntil = 0;  // window deadline (0 = closed)
   uint8_t _pairAttempts = 0;     // wrong PINs this window (3 = close)
+  int _pairSlot = -1;            // slot minted for the current pairing
   char _shotNonce[33] = {0};     // one-shot /shot.bmp challenge
   unsigned long _shotNonceAt = 0;
   void endPairing();
