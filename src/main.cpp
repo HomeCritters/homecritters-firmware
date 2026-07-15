@@ -14,6 +14,7 @@
 #include "BallGame.h"
 #include "SimonGame.h"
 #include "DebugConsole.h"
+#include "pins.h"  // BOOT pin (full-sleep wake check)
 
 // ============================================================
 // Desk tamagotchi (ferret) - Ball V2
@@ -98,6 +99,8 @@ static void handleUi(ui::UiHit hit) {
 
 static bool g_shotPending = false;  // serial "shot": capture after the next render
 static int g_voiceDebug = -1;       // serial "voice:N": force a voice ring (-1 = off)
+static bool g_fullSleep = false;    // night mode: screen+LED dark, pet asleep
+static unsigned long g_inputSwallowUntil = 0;  // discard input right after wake
 // Serve pending screenshots (serial console + web portal) right after a render,
 // when the canvas holds a complete frame. Both play the camera shutter.
 static void serviceShots() {
@@ -481,6 +484,34 @@ void loop() {
   }
   wasSleeping = sleeping;
 
+  // --- Full sleep (night mode, for HA schedule automations): screen + LED
+  // dark, Leon asleep. Driven by "fullsleep:on|off" (HA switch / portal
+  // button); any local touch or BOOT press wakes everything back up.
+  {
+    int req = web.consumeFullSleep();
+    if (g_fullSleep) {
+      int32_t tx, ty;
+      if (lcd.getTouch(&tx, &ty) || digitalRead(PIN_BOOT_BUTTON) == LOW) req = 0;
+    }
+    if (req == 1 && !g_fullSleep) {
+      g_fullSleep = true;
+      menuOpen = false;
+      screen = SCREEN_PET;  // leave any game
+      if (!pet.sleeping()) doAction(ACTION_TOGGLE_SLEEP);  // tuck Leon in
+      led.gameOff();               // LED dark (override until wake)
+      renderer.setDisplayOff(true);
+      web.setFullSleep(true);
+    } else if (req == 0 && g_fullSleep) {
+      g_fullSleep = false;
+      renderer.setDisplayOff(false);
+      led.endGame();               // release the LED back to mood
+      if (pet.sleeping()) doAction(ACTION_TOGGLE_SLEEP);  // wake Leon
+      web.setFullSleep(false);
+      lastInteractionMs = now;
+      g_inputSwallowUntil = now + 800;  // the wake tap must not also feed/pat
+    }
+  }
+
   if (now - lastSaveMs > game::SAVE_INTERVAL_MS) {
     pet.save();
     lastSaveMs = now;
@@ -603,6 +634,9 @@ void loop() {
                            (idleSince(now, lastInteractionMs) > (unsigned long)petClock.idleSec() * 1000);
 
   InputEvent ev = input.poll(lcd, menuOpen, menuPage);
+  // Full sleep (or just woken by a tap): discard the event - the dark screen
+  // must not react, and the wake tap must not also pet/feed Leon.
+  if (g_fullSleep || now < g_inputSwallowUntil) ev = InputEvent{};
 
   // --- Voice assistant feedback state machine (drives the on-screen ring +
   // LED + portal). listening (BOOT held) -> thinking (released, STT/intent) ->

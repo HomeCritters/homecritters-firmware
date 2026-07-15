@@ -34,6 +34,8 @@ class Renderer {
   // the display, so it owns this too. Floored so the screen never goes dark.
   void setScreenBrightness(int pct);
   int screenBrightness() const { return _scrBright; }
+  // Full-sleep blank: backlight hard off / restore (never persisted).
+  void setDisplayOff(bool off);
 
   // Full-screen WiFi setup screen (captive portal active) with Exit button.
   void drawWifiConfig(const char* apName);
@@ -68,6 +70,7 @@ class Renderer {
   int _pressedButton = -1;
   unsigned long _pressedUntil = 0;
   int _scrBright = 70;  // screen backlight brightness (0..100)
+  bool _displayOff = false;  // full-sleep blank (setDisplayOff)
 
   uint16_t* _snap = nullptr;       // stable copy of the canvas for /shot.bmp
   volatile bool _snapReq = false;  // HTTP task -> render loop

@@ -51,11 +51,19 @@ void Renderer::takeWebSnapshot() {
 // dark (which would make it impossible to turn back up on the device).
 void Renderer::setScreenBrightness(int pct) {
   _scrBright = constrain(pct, 20, 100);
-  _lcd.setBrightness(map(_scrBright, 0, 100, 0, 255));
+  if (!_displayOff) _lcd.setBrightness(map(_scrBright, 0, 100, 0, 255));
   Preferences p;
   p.begin("disp", false);
   p.putInt("scr", _scrBright);
   p.end();
+}
+
+// Full-sleep display blank: backlight hard off (bypasses the brightness
+// floor), restored to the saved brightness on wake. Not persisted - a reboot
+// always wakes the screen (so it can never get stuck dark).
+void Renderer::setDisplayOff(bool off) {
+  _displayOff = off;
+  _lcd.setBrightness(off ? 0 : map(_scrBright, 0, 100, 0, 255));
 }
 
 void Renderer::flashButton(int idx) {

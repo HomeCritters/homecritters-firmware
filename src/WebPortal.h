@@ -69,6 +69,14 @@ class WebPortal {
   }
   const char* voiceState() const { return _voiceState; }
 
+  // --- full sleep (night mode: screen + LED off, pet asleep) ---
+  // Pending "fullsleep:on|off" request from HA/portal; -1 none, 0 off, 1 on.
+  int consumeFullSleep() { const int v = _fullSleepReq; _fullSleepReq = -1; return v; }
+  // Main reports the actual mode so the portal/HA switch mirror it.
+  void setFullSleep(bool on) {
+    if (on != _fullSleep) { _fullSleep = on; _dirty = true; }
+  }
+
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
   void cancelConfig();         // abort configuration (Exit button)
@@ -116,6 +124,8 @@ class WebPortal {
   volatile bool _micOn = false;  // written on render loop, read by capture task
   int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
   const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
+  volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
+  bool _fullSleep = false;           // actual mode, reported by main
   StreamRing _micRing;      // producer = capture task, consumer = handle()
   static void micCaptureTask(void* arg);
   void micCaptureLoop();
