@@ -76,6 +76,18 @@ class WebPortal {
   void setFullSleep(bool on) {
     if (on != _fullSleep) { _fullSleep = on; _dirty = true; }
   }
+  // Night-mode sound settings ("sleepsnd:on|off" / "wakesnd:on|off"). Pending
+  // change (-1 untouched); true when either arrived. Main applies + persists.
+  bool consumeNightSnd(int& sleepSnd, int& wakeSnd) {
+    sleepSnd = _sleepSndReq; wakeSnd = _wakeSndReq;
+    _sleepSndReq = _wakeSndReq = -1;
+    return sleepSnd >= 0 || wakeSnd >= 0;
+  }
+  void setNightSnd(bool sleepSnd, bool wakeSnd) {
+    if (sleepSnd != _sleepSnd || wakeSnd != _wakeSnd) {
+      _sleepSnd = sleepSnd; _wakeSnd = wakeSnd; _dirty = true;
+    }
+  }
 
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
@@ -126,6 +138,8 @@ class WebPortal {
   const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   bool _fullSleep = false;           // actual mode, reported by main
+  volatile int _sleepSndReq = -1, _wakeSndReq = -1;  // pending sound settings
+  bool _sleepSnd = true, _wakeSnd = true;            // reported by main
   StreamRing _micRing;      // producer = capture task, consumer = handle()
   static void micCaptureTask(void* arg);
   void micCaptureLoop();

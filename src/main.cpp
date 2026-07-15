@@ -15,6 +15,7 @@
 #include "SimonGame.h"
 #include "DebugConsole.h"
 #include "pins.h"  // BOOT pin (full-sleep wake check)
+#include <Preferences.h>  // night-mode sound settings
 
 // ============================================================
 // Desk tamagotchi (ferret) - Ball V2
@@ -101,6 +102,10 @@ static bool g_shotPending = false;  // serial "shot": capture after the next ren
 static int g_voiceDebug = -1;       // serial "voice:N": force a voice ring (-1 = off)
 static bool g_fullSleep = false;    // night mode: screen+LED dark, pet asleep
 static unsigned long g_inputSwallowUntil = 0;  // discard input right after wake
+// Night-mode sound settings (NVS): play the snore/wake tune on FULL-sleep
+// transitions? The regular sleep button always keeps its sounds.
+static bool g_nightSleepSnd = true, g_nightWakeSnd = true;
+static bool g_muteNextSleepSnd = false, g_muteNextWakeSnd = false;
 // Serve pending screenshots (serial console + web portal) right after a render,
 // when the canvas holds a complete frame. Both play the camera shutter.
 static void serviceShots() {
@@ -436,6 +441,16 @@ void setup() {
   console.begin(&pet, &battery, &audio, &led, &renderer, consoleNavigate,
                 []() { lastInteractionMs = millis(); });
 
+  // Night-mode sound settings (persisted).
+  {
+    Preferences p;
+    p.begin("night", true);
+    g_nightSleepSnd = p.getBool("ssnd", true);
+    g_nightWakeSnd = p.getBool("wsnd", true);
+    p.end();
+    web.setNightSnd(g_nightSleepSnd, g_nightWakeSnd);
+  }
+
   wasSleeping = pet.sleeping();
   lastTickMs = lastSaveMs = lastInteractionMs = millis();
   Serial.printf("[homecritters] ready. battery ~%d%%\n", battery.percent());
@@ -478,9 +493,11 @@ void loop() {
 
   const bool sleeping = pet.sleeping();
   if (sleeping && !wasSleeping) {
-    audio.playSleepTune();
+    if (g_muteNextSleepSnd) g_muteNextSleepSnd = false;  // silent night mode
+    else audio.playSleepTune();
   } else if (!sleeping && wasSleeping) {
-    audio.playWake();
+    if (g_muteNextWakeSnd) g_muteNextWakeSnd = false;
+    else audio.playWake();
   }
   wasSleeping = sleeping;
 
@@ -497,7 +514,10 @@ void loop() {
       g_fullSleep = true;
       menuOpen = false;
       screen = SCREEN_PET;  // leave any game
-      if (!pet.sleeping()) doAction(ACTION_TOGGLE_SLEEP);  // tuck Leon in
+      if (!pet.sleeping()) {
+        g_muteNextSleepSnd = !g_nightSleepSnd;  // night mode may be silent
+        doAction(ACTION_TOGGLE_SLEEP);          // tuck Leon in
+      }
       led.gameOff();               // LED dark (override until wake)
       renderer.setDisplayOff(true);
       web.setFullSleep(true);
@@ -505,10 +525,25 @@ void loop() {
       g_fullSleep = false;
       renderer.setDisplayOff(false);
       led.endGame();               // release the LED back to mood
-      if (pet.sleeping()) doAction(ACTION_TOGGLE_SLEEP);  // wake Leon
+      if (pet.sleeping()) {
+        g_muteNextWakeSnd = !g_nightWakeSnd;
+        doAction(ACTION_TOGGLE_SLEEP);  // wake Leon
+      }
       web.setFullSleep(false);
       lastInteractionMs = now;
       g_inputSwallowUntil = now + 800;  // the wake tap must not also feed/pat
+    }
+    // Night sound settings changed from HA/portal: apply + persist.
+    int ss, ws;
+    if (web.consumeNightSnd(ss, ws)) {
+      if (ss >= 0) g_nightSleepSnd = ss;
+      if (ws >= 0) g_nightWakeSnd = ws;
+      web.setNightSnd(g_nightSleepSnd, g_nightWakeSnd);
+      Preferences p;
+      p.begin("night", false);
+      p.putBool("ssnd", g_nightSleepSnd);
+      p.putBool("wsnd", g_nightWakeSnd);
+      p.end();
     }
   }
 

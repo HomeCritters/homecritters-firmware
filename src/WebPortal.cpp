@@ -297,6 +297,11 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     // Full sleep (night mode): screen + LED off, pet asleep. Main applies it.
     if (msg == "fullsleep:on")  { _fullSleepReq = 1; return; }
     if (msg == "fullsleep:off") { _fullSleepReq = 0; return; }
+    // Night-mode sound settings (full-sleep transitions only).
+    if (msg == "sleepsnd:on")  { _sleepSndReq = 1; return; }
+    if (msg == "sleepsnd:off") { _sleepSndReq = 0; return; }
+    if (msg == "wakesnd:on")   { _wakeSndReq = 1; return; }
+    if (msg == "wakesnd:off")  { _wakeSndReq = 0; return; }
     if (msg.startsWith("micgain:")) {  // bring-up: tune ADC gain live
       if (_audio) _audio->setMicGain(msg.substring(8).toInt());
       return;
@@ -452,7 +457,8 @@ void WebPortal::stateJson(char* out, size_t n) const {
   jsonEscape(p.name(), name, sizeof(name));
   snprintf(out, n,
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
-           "\"fullSleep\":%s,\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
+           "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,"
+           "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
            "\"anim\":\"%s\",\"seq\":%u,\"flip\":%s,\"x\":%.3f,"
@@ -460,6 +466,8 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _screenName, _gameScore, _battery, name,
            p.sleeping() ? "true" : "false",
            _fullSleep ? "true" : "false",
+           _sleepSnd ? "true" : "false",
+           _wakeSnd ? "true" : "false",
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,
