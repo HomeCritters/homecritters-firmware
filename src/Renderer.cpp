@@ -401,21 +401,21 @@ void Renderer::drawLockIcon(int cx, int cy) {
   _canvas.drawFastVLine(cx, cy + 4, 4, dark);
 }
 
-// Connected devices (Dispositivos tile): a monitor + a phone, universal
-// "devices" glyph, in a friendly blue.
+// Connections (Conexoes tile): a monitor + a phone, universal "devices"
+// glyph. The monitor stand and base are centered UNDER the screen.
 void Renderer::drawHouseIcon(int cx, int cy) {
   const uint16_t body = rgb565(210, 218, 230), scr = rgb565(70, 160, 235),
                  dark = rgb565(70, 82, 100);
-  // Monitor (left): screen + stand + base.
-  _canvas.fillRoundRect(cx - 13, cy - 9, 18, 14, 2, body);
-  _canvas.drawRoundRect(cx - 13, cy - 9, 18, 14, 2, dark);
-  _canvas.fillRect(cx - 11, cy - 7, 14, 10, scr);
-  _canvas.fillRect(cx - 5, cy + 5, 4, 3, dark);      // stand
-  _canvas.fillRect(cx - 9, cy + 8, 12, 2, dark);     // base
-  // Phone (right, overlapping): screen with a home dot.
-  _canvas.fillRoundRect(cx + 4, cy - 5, 10, 16, 3, dark);
-  _canvas.fillRect(cx + 6, cy - 2, 6, 10, scr);
-  _canvas.fillCircle(cx + 9, cy + 9, 1, body);       // home button
+  const int mx = cx - 5;  // monitor center (leaves room for the phone at right)
+  _canvas.fillRoundRect(mx - 10, cy - 10, 20, 15, 2, body);   // bezel
+  _canvas.drawRoundRect(mx - 10, cy - 10, 20, 15, 2, dark);
+  _canvas.fillRect(mx - 8, cy - 8, 16, 11, scr);              // screen
+  _canvas.fillRect(mx - 2, cy + 5, 4, 3, dark);               // stand (centered)
+  _canvas.fillRect(mx - 6, cy + 8, 12, 2, dark);              // base (centered)
+  // Phone at the right, slightly lower.
+  _canvas.fillRoundRect(cx + 7, cy - 4, 9, 15, 2, dark);
+  _canvas.fillRect(cx + 9, cy - 1, 5, 9, scr);
+  _canvas.fillCircle(cx + 11, cy + 9, 1, body);               // home button
 }
 
 // Key (Parear tile): horizontal gold key - bow ring left, straight shaft
@@ -525,14 +525,14 @@ void Renderer::drawPageHeader(const char* title, const char* sub) {
 // Seguranca: Dispositivos (paired clients) + Parear (PIN).
 void Renderer::drawMenuSec() {
   drawPageHeader("Seguranca", "Pareamento e acesso");
-  drawGridCell(MENU_COL_L, MENU_SUB_ROW, "Dispositivos", 'd');
+  drawGridCell(MENU_COL_L, MENU_SUB_ROW, "Conexoes", 'd');
   drawGridCell(MENU_COL_R, MENU_SUB_ROW, "Parear", 'k');
   drawLeftHandle();
 }
 
 // Seguranca > Dispositivos: who is paired right now (authed clients, IP list).
 void Renderer::drawMenuSecHa() {
-  drawPageHeader("Dispositivos", "Conectados agora (HA / portal)");
+  drawPageHeader("Conexoes", "Conectados agora (HA / portal)");
 
   // One centered line per client IP ('\n'-separated summary from main).
   _canvas.setTextColor(TFT_WHITE);
