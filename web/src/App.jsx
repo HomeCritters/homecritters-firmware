@@ -599,6 +599,36 @@ export default function App() {
           <Divider />
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <Text strong>🌙 Modo noite</Text>
+              <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                Apaga tela e LED, Leon dorme
+              </Text>
+            </div>
+            <Switch
+              checked={!!state?.fullSleep}
+              onChange={(v) => send(v ? 'fullsleep:on' : 'fullsleep:off')}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingLeft: 16 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>Som ao dormir</Text>
+            <Switch
+              size="small"
+              checked={!!state?.sleepSnd}
+              onChange={(v) => send(v ? 'sleepsnd:on' : 'sleepsnd:off')}
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingLeft: 16 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>Som ao acordar</Text>
+            <Switch
+              size="small"
+              checked={!!state?.wakeSnd}
+              onChange={(v) => send(v ? 'wakesnd:on' : 'wakesnd:off')}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
             <Text strong>Relógio quando ocioso</Text>
             <Switch
               checked={!!state?.clockOn}

@@ -43,6 +43,8 @@ class AudioPlayer {
   void playClick();      // UI button/tab click
   void playSimon(int color);  // Genius tone (0=green 1=red 2=yellow 3=blue)
   void playBuzzer();     // Genius wrong answer
+  void playListen();     // voice assistant: mic opened (ascending chime)
+  void playConfirm();    // voice assistant: heard you, processing (descending)
 
   // --- media streaming (HA media player / Music Assistant / TTS) ---
   // Plays an http:// FLAC/MP3/WAV stream or file (no https). While a stream
@@ -50,6 +52,11 @@ class AudioPlayer {
   void playStream(const char* url);
   void stopStream();
   bool streaming() const { return _streaming; }
+
+  // True while any audio plays (media stream OR a PROGMEM SFX). The mic
+  // capture path is half-duplex with playback (shared I2S clock), so it must
+  // suspend capture while this is true.
+  bool busy() const { return _playing || _streaming; }
 
   // What is playing: HA TTS URLs go through /api/tts_proxy/, so speech is
   // distinguishable from music - the UI shows an Alexa-style ring for speech
@@ -60,6 +67,11 @@ class AudioPlayer {
   // Volume 0..100 (persisted to NVS, perceptual curve).
   void setVolume(int pct);
   int volume() const { return _volume; }
+
+  // Mic ADC gain step 0..7 (0/6/.../42 dB) - live tuning during bring-up.
+  void setMicGain(int step);
+  // Bring-up: read the mic for `ms` and print RMS/peak/DC (bypasses WS).
+  void micSelfTest(int ms);
 
  private:
   void play(const unsigned char* data, unsigned int len);

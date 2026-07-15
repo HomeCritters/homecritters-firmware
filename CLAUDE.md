@@ -46,7 +46,7 @@ include/
   ferret_game.h        # sprite do furão 40px p/ o mini-game (gerado)
   sounds/              # TODOS os áudios (MP3/WAV→PROGMEM, gerados): sleep_music
                        # + sfx_eat/drink/tap/wake/jump/boost/crumble/record/
-                       #   death/throw/camera/click/buzzer.h
+                       #   death/throw/camera/click/buzzer/listen/confirm.h
                        # + simon_green/red/yellow/blue.h (tons WAV gerados)
   web_index.h          # portal React (single-file, gzip) em PROGMEM (gerado)
 src/
@@ -300,10 +300,27 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
 - [ ] Animação **Death** do sheet ainda não é usada (ex.: stat zerado por
       muito tempo).
 - [~] **Home Assistant**: fases 1 (entidades) e 2 (media player) prontas via a
-      integração custom. **Fase 3 pendente: voz/Assist** — habilitar o ADC do
-      ES8311 (mic) + I2S RX 16k, push-to-talk, stream do áudio pelo WS pra
-      integração rodar o pipeline do Assist (STT→IA→TTS; resposta toca pelo
-      media player). Wake word on-device (ESP-SR) é etapa futura.
+      integração custom. **Voz/Assist EM ANDAMENTO** (branch `voice-assistant`
+      nos dois repos). Plano: `.claude/plans/snug-plotting-kazoo.md`.
+      - **F1 mic ✅**: ES8311 ADC + I2S full-duplex 16k mono (`AudioCodec`),
+        captura num ring PSRAM (task própria) → WS binário; half-duplex (pausa
+        na reprodução). Validado (99% contínuo, cliente morto não trava).
+      - **F2 push-to-talk ✅**: segurar BOOT streama o mic + `evt:ptt:start/end`;
+        HA (`assist_satellite.py`, plataforma nova) roda STT→TTS e toca a
+        resposta via `media:play`. Protocolo WS: `voice:sub` (HA vira sink),
+        `ptt:start/end` (PTT por software), campo `voice` no estado. Validado
+        ponta-a-ponta: fala → STT "Que horas são?" → Ollama responde → TTS.
+        BOOT deixou de fazer sleep/wake (só tela+portal); tap=alimentar.
+      - **F3 pendente**: wake word **"Alexa" REMOTO** (openWakeWord local no HA),
+        estados de voz na tela/LED, switch de mute.
+- [ ] **Sendspin (futuro, mídia 2.0)**: protocolo aberto de áudio multi-room
+      sincronizado da OHF (ex-"Resonate"), servidor = Music Assistant, push via
+      TCP 8928 + mDNS. ESPHome tem componente `sendspin` (experimental). O nosso
+      pipeline (pull http) é mais simples e estável, mas o sendspin traria o que
+      não temos: **capa do álbum na tela + LED/pista no ritmo REAL** ("Art on
+      every screen, lights on the beat") + sync multi-room. Não migrar agora
+      (experimental + é componente esp-idf, porte pesado pro Arduino); revisitar
+      quando o protocolo estabilizar. Não conflita com o voice assistant.
 - [ ] Outras ideias: OTA, moedas/lojinha, clima real na cena.
 - [ ] Acesso remoto (fora de casa): plano discutido = Tailscale num aparelho
       ajudante + Funnel (exigiria mover o WS pra porta 80 via HTTP Upgrade).

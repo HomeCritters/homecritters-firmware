@@ -9,6 +9,7 @@
 #include "StatusLed.h"
 #include "FerretActor.h"
 #include "Clock.h"
+#include "audio/StreamRing.h"
 
 class Renderer;  // for the /shot.bmp screenshot endpoint
 
@@ -53,6 +54,41 @@ class WebPortal {
   // Pending Genius color press from the phone (0..3). True once.
   bool consumeSimonPress(int& color);
 
+  // --- voice assistant (push-to-talk) ---
+  // The device drives a voice turn: on BOOT hold it streams mic audio to the
+  // subscribed voice client (HA sent "voice:sub") and pushes "evt:ptt:start";
+  // on release it stops and pushes "evt:ptt:end". HA runs STT->TTS and plays
+  // the reply back via "media:play:" (the existing TTS voice-ring path).
+  void voicePttStart();
+  void voicePttEnd();
+  // Voice UI state, driven by the main loop's state machine (idle|listening|
+  // thinking|speaking). Reflected in the WS state so the portal/HA can mirror
+  // the on-screen ring. Coalesced: only nudges a broadcast on change.
+  void setVoiceState(const char* s) {
+    if (strcmp(_voiceState, s) != 0) { _voiceState = s; _dirty = true; }
+  }
+  const char* voiceState() const { return _voiceState; }
+
+  // --- full sleep (night mode: screen + LED off, pet asleep) ---
+  // Pending "fullsleep:on|off" request from HA/portal; -1 none, 0 off, 1 on.
+  int consumeFullSleep() { const int v = _fullSleepReq; _fullSleepReq = -1; return v; }
+  // Main reports the actual mode so the portal/HA switch mirror it.
+  void setFullSleep(bool on) {
+    if (on != _fullSleep) { _fullSleep = on; _dirty = true; }
+  }
+  // Night-mode sound settings ("sleepsnd:on|off" / "wakesnd:on|off"). Pending
+  // change (-1 untouched); true when either arrived. Main applies + persists.
+  bool consumeNightSnd(int& sleepSnd, int& wakeSnd) {
+    sleepSnd = _sleepSndReq; wakeSnd = _wakeSndReq;
+    _sleepSndReq = _wakeSndReq = -1;
+    return sleepSnd >= 0 || wakeSnd >= 0;
+  }
+  void setNightSnd(bool sleepSnd, bool wakeSnd) {
+    if (sleepSnd != _sleepSnd || wakeSnd != _wakeSnd) {
+      _sleepSnd = sleepSnd; _wakeSnd = wakeSnd; _dirty = true;
+    }
+  }
+
   void startConfigPortal();    // opens WiFiManager (non-blocking; frees port 80)
   void process();              // pump the portal while configuring
   void cancelConfig();         // abort configuration (Exit button)
@@ -89,6 +125,25 @@ class WebPortal {
   volatile bool _throwReq = false;            // pending Bolinha throw
   volatile float _throwNx = 0, _throwNy = 0;  // normalized swipe of that throw
   volatile int _simonPress = -1;              // pending Genius color press
+
+  // Mic capture -> HA (voice assistant). Raw 16kHz mono 16-bit PCM. Hardened
+  // like ESPHome: a dedicated capture task (producer) fills a PSRAM ring off
+  // the render loop, so I2S capture never waits on the network; handle()
+  // (consumer, same thread as _ws.loop -> single-threaded WS) drains the ring
+  // and sends only when the client can take it, dropping on backpressure so a
+  // stalled client can never freeze rendering. Half-duplex: capture pauses
+  // while audio plays (playback owns the shared I2S clock).
+  volatile bool _micOn = false;  // written on render loop, read by capture task
+  int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
+  const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
+  volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
+  bool _fullSleep = false;           // actual mode, reported by main
+  volatile int _sleepSndReq = -1, _wakeSndReq = -1;  // pending sound settings
+  bool _sleepSnd = true, _wakeSnd = true;            // reported by main
+  StreamRing _micRing;      // producer = capture task, consumer = handle()
+  static void micCaptureTask(void* arg);
+  void micCaptureLoop();
+  void pumpMic();           // drain the ring -> WS (called from handle())
 
   void startServer();
   void endConfig();  // leave config mode + reclaim port 80

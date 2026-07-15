@@ -51,11 +51,19 @@ void Renderer::takeWebSnapshot() {
 // dark (which would make it impossible to turn back up on the device).
 void Renderer::setScreenBrightness(int pct) {
   _scrBright = constrain(pct, 20, 100);
-  _lcd.setBrightness(map(_scrBright, 0, 100, 0, 255));
+  if (!_displayOff) _lcd.setBrightness(map(_scrBright, 0, 100, 0, 255));
   Preferences p;
   p.begin("disp", false);
   p.putInt("scr", _scrBright);
   p.end();
+}
+
+// Full-sleep display blank: backlight hard off (bypasses the brightness
+// floor), restored to the saved brightness on wake. Not persisted - a reboot
+// always wakes the screen (so it can never get stuck dark).
+void Renderer::setDisplayOff(bool off) {
+  _displayOff = off;
+  _lcd.setBrightness(off ? 0 : map(_scrBright, 0, 100, 0, 255));
 }
 
 void Renderer::flashButton(int idx) {
@@ -919,7 +927,7 @@ void Renderer::drawBatteryPill(int topY, int pct, uint16_t outline, uint16_t txt
 void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
                     bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
                     bool wifiOn, const char* ip, bool clockActive, Clock& clock,
-                    uint8_t mediaFx) {
+                    uint8_t mediaFx, uint8_t voiceState) {
   // Theme follows the real time of day (06-16 day, 16-18 afternoon, else
   // night). Without a synced clock, fall back to the pet's sleep state.
   enum { TOD_DAY, TOD_AFTERNOON, TOD_NIGHT } tod;
@@ -976,9 +984,14 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     }
   }
 
-  // Media overlay on top of everything (skip while the config menu covers
-  // the screen): party show for music, voice ring for TTS.
-  if (mediaFx && !menuOpen) drawMediaFx(mediaFx);
+  // Media/voice overlay on top of everything (skip while the config menu
+  // covers the screen). Music gets the party show; the assistant voice states
+  // (listening/thinking/speaking) get their own ring so there's never a gap in
+  // feedback between releasing the button and hearing the reply.
+  if (!menuOpen) {
+    if (mediaFx == 1) drawMediaFx(1);           // music party show
+    else if (voiceState) drawVoiceRing(voiceState);
+  }
 
   _canvas.pushSprite(0, 0);
 }
@@ -1146,21 +1159,78 @@ void Renderer::drawMediaFx(uint8_t kind) {
         _canvas.drawPixel(tx + 1, ty, LASER[k % 4]);
       }
     }
-  } else if (kind == 2) {
-    // --- voice ring (Alexa style) ---
-    // Pulled 2px in from the panel edge: the glass is centered on 119.5, so a
-    // ring hugging r=119 from integer (120,120) reads visibly off-center.
-    const int cx = 120, cy = 120;
-    // Dim navy base ring.
-    _canvas.fillArc(cx, cy, 108, 117, 0, 360, _canvas.color565(0, 24, 56));
-    // Bright cyan sweep + a hot leading edge, rotating steadily.
-    const int a = (int)((t / 4) % 360);
-    _canvas.fillArc(cx, cy, 108, 117, a, (a + 70) % 360, _canvas.color565(0, 150, 220));
-    _canvas.fillArc(cx, cy, 109, 116, (a + 40) % 360, (a + 70) % 360,
-                    _canvas.color565(120, 230, 255));
-    // Gentle breathing pulse on the opposite side for the "listening" feel.
-    const uint8_t pulse = (uint8_t)(90 + 70 * sinf(t / 300.0f));
-    _canvas.fillArc(cx, cy, 110, 115, (a + 180) % 360, (a + 220) % 360,
-                    _canvas.color565(0, pulse / 2, pulse));
+  }
+}
+
+// Assistant voice feedback ring, flush with the round glass edge (outer radius
+// 120). Three distinct looks so each phase reads at a glance:
+//   1 listening - breathing cyan ring + a comet with a long gradient tail
+//   2 thinking  - two amber comets chasing each other with fading tails
+//   3 speaking  - organic equalizer: bars with per-bar rhythm + hot tips
+void Renderer::drawVoiceRing(uint8_t state) {
+  const uint32_t t = millis();
+  const int cx = 120, cy = 120;
+  // The glass is centered on 119.5, so a band ending exactly at r=120 from
+  // integer (120,120) leaves a half-pixel sliver of scene visible on one side.
+  // Overdraw well past the edge (clipped by the canvas): guaranteed flush.
+  const int r1 = 126;       // past the glass edge (clipped)
+  const int r0 = 106;       // band thickness ~14px visible
+  if (state == 1) {
+    // LISTENING: the whole ring breathes softly (I'm open), while a bright
+    // comet sweeps around with an 8-step gradient tail melting into the base.
+    const float br = 0.5f + 0.5f * sinf(t / 480.0f);
+    const uint8_t bg = (uint8_t)(30 + 45 * br), bb = (uint8_t)(55 + 70 * br);
+    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(0, bg, bb));
+    const int a = (int)((t / 6) % 360);  // comet head angle
+    for (int i = 7; i >= 0; i--) {       // tail: oldest (dim) -> head (hot)
+      const float f = 1.0f - i / 8.0f;
+      const int s0 = (a - (i + 1) * 13 + 720) % 360;
+      _canvas.fillArc(cx, cy, r0, r1, s0, (s0 + 14) % 360,
+                      _canvas.color565((uint8_t)(20 * f),
+                                       (uint8_t)(bg + (200 - bg) * f),
+                                       (uint8_t)(bb + (255 - bb) * f)));
+    }
+    _canvas.fillArc(cx, cy, r0 + 2, r1 - 2, a, (a + 8) % 360, 0xFFFF);  // hot core
+  } else if (state == 2) {
+    // THINKING: two amber comets 180 degrees apart orbiting fast over a warm
+    // breathing amber base (bright base like listening - no dark background).
+    const float br = 0.5f + 0.5f * sinf(t / 420.0f);
+    const uint8_t bgr = (uint8_t)(85 + 55 * br), bgg = (uint8_t)(46 + 32 * br);
+    _canvas.fillArc(cx, cy, r0, r1, 0, 360, _canvas.color565(bgr, bgg, 0));
+    const int a = (int)((t / 3) % 360);
+    for (int c = 0; c < 2; c++) {
+      const int head = (a + c * 180) % 360;
+      for (int i = 5; i >= 0; i--) {
+        const float f = 1.0f - i / 6.0f;
+        const int s0 = (head - (i + 1) * 11 + 720) % 360;
+        _canvas.fillArc(cx, cy, r0, r1, s0, (s0 + 12) % 360,
+                        _canvas.color565((uint8_t)(bgr + (255 - bgr) * f),
+                                         (uint8_t)(bgg + (205 - bgg) * f),
+                                         (uint8_t)(110 * f * f)));
+      }
+      _canvas.fillArc(cx, cy, r0 + 2, r1, head, (head + 7) % 360,
+                      _canvas.color565(255, 248, 210));  // hot core
+    }
+  } else {
+    // SPEAKING: smooth waves of light flowing around the ring - two wave
+    // trains traveling in opposite directions (3 crests one way, 5 the other)
+    // whose interference makes the ring shimmer organically, like sound
+    // rippling along the rim. Crests go white-hot. No bars, no hard edges.
+    const int SEG = 8;  // degrees per slice (45 slices, smooth gradient)
+    for (int s = 0; s < 360; s += SEG) {
+      const float rad = (s + SEG * 0.5f) * 0.017453f;
+      float w = 0.62f
+              + 0.26f * sinf(rad * 3.0f - t / 150.0f)   // 3 crests, clockwise
+              + 0.22f * sinf(rad * 5.0f + t / 95.0f);   // 5 crests, counter
+      // High floor: troughs stay clearly cyan (bright base, no dark patches).
+      if (w < 0.34f) w = 0.34f;
+      if (w > 1.0f) w = 1.0f;
+      // Cyan body; crests (w>0.78) blend toward white-hot.
+      const float hot = w > 0.78f ? (w - 0.78f) * 4.5f : 0.0f;
+      const uint8_t rr = (uint8_t)(190 * hot);
+      const uint8_t g  = (uint8_t)(60 + 195 * w);
+      const uint8_t b  = (uint8_t)(90 + 165 * w);
+      _canvas.fillArc(cx, cy, r0, r1, s, s + SEG, _canvas.color565(rr, g, b));
+    }
   }
 }

@@ -3,6 +3,7 @@
 #include <ESPmDNS.h>
 #include <cstring>
 #include "Renderer.h"
+#include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
 #include "web_index.h"  // gzipped single-file React portal
 
 static constexpr const char* HOSTNAME = "critter";  // -> critter.local
@@ -21,10 +22,12 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor*
   _onAction = onAction;
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOSTNAME);
-  // Modem power save (the default) makes the radio nap between AP beacons:
-  // multi-second latency spikes and packet loss under load - fatal for media
-  // streaming and the HA WebSocket. Always-on RX costs ~50mA; worth it here.
-  WiFi.setSleep(false);
+  // Modem power save ON by default: the radio naps between AP beacons, which
+  // cuts ~50mA and real heat (the S3 ran hot with PS off 24/7). The old
+  // "always on" rule here predates the MCLK/GPIO0 fix - the latency spikes
+  // blamed on modem sleep were really EMI desense. AudioPlayer escalates to
+  // full radio power while a media stream plays and restores sleep after.
+  WiFi.setSleep(true);
   WiFi.begin();  // reconnect using previously saved credentials
 }
 
@@ -104,6 +107,66 @@ void WebPortal::handle() {
     broadcastState();
     _lastBroadcast = now;
   }
+  pumpMic();
+}
+
+// --- Mic PRODUCER: dedicated capture task (core 0) ---------------------------
+// Continuously reads 20ms frames from the ES8311 ADC into the PSRAM ring, so
+// I2S capture never waits on the network. Half-duplex: while audio plays the
+// codec runs at 44.1/48k for the DAC, so we pause capture and restore the 16kHz
+// mono clock (+ discard the partial-rate tail) when playback ends.
+void WebPortal::micCaptureTask(void* arg) { static_cast<WebPortal*>(arg)->micCaptureLoop(); }
+
+void WebPortal::micCaptureLoop() {
+  bool wasBusy = true;  // force a 16kHz clock restore on the first real capture
+  int16_t frame[320];   // 20ms @ 16kHz mono
+  for (;;) {
+    if (!_micOn) { wasBusy = true; _micRing.reset(); vTaskDelay(pdMS_TO_TICKS(20)); continue; }
+    if (_audio && _audio->busy()) { wasBusy = true; vTaskDelay(pdMS_TO_TICKS(10)); continue; }
+    if (wasBusy) {
+      AudioCodec::setCaptureRate();            // playback left it at 44.1/48k
+      AudioCodec::readMicMono(frame, 320, 0);  // discard the partial-rate tail
+      wasBusy = false;
+    }
+    // Block up to ~20ms for a full frame; the ring absorbs any consumer stall.
+    const size_t got = AudioCodec::readMicMono(frame, 320, 25);
+    if (got > 0) _micRing.write(frame, got * sizeof(int16_t));  // drops newest if full
+  }
+}
+
+// --- Mic CONSUMER: drain the ring -> WS (render loop, same thread as _ws.loop
+// so no locking). Sends only what's buffered; a slow/dead client can back up
+// the ring (producer drops on overflow) but never blocks rendering here.
+void WebPortal::pumpMic() {
+  if (!_micOn || _micClient < 0) return;
+  uint8_t buf[640];  // one 20ms frame per send (320 samples * 2 bytes)
+  for (int i = 0; i < 8; i++) {   // cap the work per loop iteration
+    if (_micRing.fill() < sizeof(buf)) break;
+    _micRing.readAvail(buf, sizeof(buf));
+    if (!_ws.sendBIN((uint8_t)_micClient, buf, sizeof(buf))) {
+      _micOn = false; _micClient = -1;  // write failed/timed out: client is gone
+      break;
+    }
+  }
+}
+
+// --- Voice push-to-talk (called from the render loop, same thread as _ws) ---
+// These only handle the mic + the ptt event; the voice UI state (listening/
+// thinking/speaking) is driven by the main loop via setVoiceState().
+void WebPortal::voicePttStart() {
+  // Ascending chime: "mic is open, go ahead". Half-duplex: capture starts
+  // right after the chime finishes (the capture task waits out audio.busy()).
+  if (_audio) _audio->playListen();
+  _micOn = true;  // capture task streams to _micClient (HA, via voice:sub)
+  if (_serverUp) _ws.broadcastTXT("evt:ptt:start");
+  _dirty = true;
+}
+
+void WebPortal::voicePttEnd() {
+  _micOn = false;
+  if (_audio) _audio->playConfirm();  // descending chime: got it, processing
+  if (_serverUp) _ws.broadcastTXT("evt:ptt:end");
+  _dirty = true;
 }
 
 void WebPortal::startServer() {
@@ -129,6 +192,10 @@ void WebPortal::startServer() {
   _serverUp = true;
   // Serve HTTP on core 0 so a big page load can't stall the render loop.
   xTaskCreatePinnedToCore(httpTask, "http", 8192, this, 1, nullptr, 0);
+  // Mic capture ring + producer task (core 0): fills the ring off the render
+  // loop; handle() drains it to the WS. 48KB = ~1.5s of 16kHz mono cushion.
+  if (!_micRing.capacity()) _micRing.alloc(48 * 1024);
+  xTaskCreatePinnedToCore(micCaptureTask, "miccap", 4096, this, 3, nullptr, 0);
   Serial.printf("[web] portal at http://%s.local/  (ip %s, ws :81)\n", HOSTNAME, ip().c_str());
 }
 
@@ -211,10 +278,34 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     _ws.sendTXT(num, buf);  // send the current state on connect
   } else if (type == WStype_DISCONNECTED) {
     Serial.printf("[ws] client %u disconnected\n", num);
+    if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
   } else if (type == WStype_TEXT) {
     String msg;
     msg.reserve(len);
     for (size_t i = 0; i < len; i++) msg += (char)payload[i];
+    // Mic control needs the client num (audio is streamed back to it).
+    if (msg == "mic:on")  { _micClient = num; _micOn = true;  _dirty = true; return; }
+    if (msg == "mic:off") { _micOn = false; _micClient = -1;  _dirty = true; return; }
+    // HA registers as the voice audio sink WITHOUT starting the stream; the
+    // device gates streaming by the BOOT button (push-to-talk, Phase 2).
+    if (msg == "voice:sub") { _micClient = num; return; }
+    // Software push-to-talk (portal/phone button, and test harness): same path
+    // as holding BOOT. If nobody subscribed, target the sender so it can also
+    // consume the audio directly.
+    if (msg == "ptt:start") { if (_micClient < 0) _micClient = num; voicePttStart(); return; }
+    if (msg == "ptt:end")   { voicePttEnd(); return; }
+    // Full sleep (night mode): screen + LED off, pet asleep. Main applies it.
+    if (msg == "fullsleep:on")  { _fullSleepReq = 1; return; }
+    if (msg == "fullsleep:off") { _fullSleepReq = 0; return; }
+    // Night-mode sound settings (full-sleep transitions only).
+    if (msg == "sleepsnd:on")  { _sleepSndReq = 1; return; }
+    if (msg == "sleepsnd:off") { _sleepSndReq = 0; return; }
+    if (msg == "wakesnd:on")   { _wakeSndReq = 1; return; }
+    if (msg == "wakesnd:off")  { _wakeSndReq = 0; return; }
+    if (msg.startsWith("micgain:")) {  // bring-up: tune ADC gain live
+      if (_audio) _audio->setMicGain(msg.substring(8).toInt());
+      return;
+    }
     applyCommand(msg);
     // Don't broadcast from here: just mark dirty and let handle() send one
     // coalesced frame. Joystick input ("game:x:...") never marks dirty.
@@ -366,15 +457,20 @@ void WebPortal::stateJson(char* out, size_t n) const {
   jsonEscape(p.name(), name, sizeof(name));
   snprintf(out, n,
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
-           "\"mood\":\"%s\",\"media\":\"%s\","
+           "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,"
+           "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
            "\"anim\":\"%s\",\"seq\":%u,\"flip\":%s,\"x\":%.3f,"
            "\"hunger\":%.1f,\"energy\":%.1f,\"joy\":%.1f,\"hygiene\":%.1f}",
            _screenName, _gameScore, _battery, name,
            p.sleeping() ? "true" : "false",
+           _fullSleep ? "true" : "false",
+           _sleepSnd ? "true" : "false",
+           _wakeSnd ? "true" : "false",
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
+           _voiceState,
            _audio ? _audio->volume() : 0,
            _led ? _led->brightness() : 50,
            _renderer ? _renderer->screenBrightness() : 70,

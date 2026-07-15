@@ -23,15 +23,19 @@ class Renderer {
   void begin();
   // mediaFx: 0 none, 1 music (party notes), 2 TTS (Alexa-style voice ring) -
   // mirrors AudioPlayer::MediaKind.
+  // voiceState: 0 none, 1 listening, 2 thinking, 3 speaking - assistant voice
+  // feedback ring (driven by the push-to-talk state machine in main).
   void draw(const Pet& pet, Battery& battery, FerretActor& ferret,
             bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
             bool wifiOn, const char* ip, bool clockActive, Clock& clock,
-            uint8_t mediaFx = 0);
+            uint8_t mediaFx = 0, uint8_t voiceState = 0);
 
   // Screen (backlight) brightness 0..100, persisted to NVS. The Renderer owns
   // the display, so it owns this too. Floored so the screen never goes dark.
   void setScreenBrightness(int pct);
   int screenBrightness() const { return _scrBright; }
+  // Full-sleep blank: backlight hard off / restore (never persisted).
+  void setDisplayOff(bool off);
 
   // Full-screen WiFi setup screen (captive portal active) with Exit button.
   void drawWifiConfig(const char* apName);
@@ -66,6 +70,7 @@ class Renderer {
   int _pressedButton = -1;
   unsigned long _pressedUntil = 0;
   int _scrBright = 70;  // screen backlight brightness (0..100)
+  bool _displayOff = false;  // full-sleep blank (setDisplayOff)
 
   uint16_t* _snap = nullptr;       // stable copy of the canvas for /shot.bmp
   volatile bool _snapReq = false;  // HTTP task -> render loop
@@ -89,7 +94,8 @@ class Renderer {
   void drawRightHandle();
   void drawLeftHandle();  // "back" tab (config, games menu, Bolinha)
   void drawClock(Clock& clock);
-  void drawMediaFx(uint8_t kind);  // 1 = disco ball + lasers, 2 = voice ring
+  void drawMediaFx(uint8_t kind);     // 1 = disco ball + lasers (music party)
+  void drawVoiceRing(uint8_t state);  // 1 listening, 2 thinking, 3 speaking
   void drawDiscoFloor();           // checkered dance floor (under the pet)
   void drawDoodleFerret(int cx, int cy, bool faceLeft);
   // mode: 0 = idle, 1 = walking, 2 = jumping (celebration). zoom scales the

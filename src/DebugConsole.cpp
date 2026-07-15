@@ -47,6 +47,8 @@ void DebugConsole::dispatch(const String& c) {
   if (c == "slp") { netbench::wifiPsReport(); return; }
   if (c.startsWith("nb2:")) { netbench::runIdf(c.c_str() + 4); return; }
   if (c.startsWith("nb:")) { netbench::runRaw(c.c_str() + 3); return; }
+  if (c == "mictest") { _audio->micSelfTest(1500); return; }
+  if (c.startsWith("micgain:")) { _audio->setMicGain(c.substring(8).toInt()); return; }
 
   if (_onInteraction) _onInteraction();  // wakes the idle clock, like a touch
 

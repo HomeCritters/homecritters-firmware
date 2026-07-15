@@ -14,6 +14,8 @@
 #include "BallGame.h"
 #include "SimonGame.h"
 #include "DebugConsole.h"
+#include "pins.h"  // BOOT pin (full-sleep wake check)
+#include <Preferences.h>  // night-mode sound settings
 
 // ============================================================
 // Desk tamagotchi (ferret) - Ball V2
@@ -97,6 +99,13 @@ static void handleUi(ui::UiHit hit) {
 }
 
 static bool g_shotPending = false;  // serial "shot": capture after the next render
+static int g_voiceDebug = -1;       // serial "voice:N": force a voice ring (-1 = off)
+static bool g_fullSleep = false;    // night mode: screen+LED dark, pet asleep
+static unsigned long g_inputSwallowUntil = 0;  // discard input right after wake
+// Night-mode sound settings (NVS): play the snore/wake tune on FULL-sleep
+// transitions? The regular sleep button always keeps its sounds.
+static bool g_nightSleepSnd = true, g_nightWakeSnd = true;
+static bool g_muteNextSleepSnd = false, g_muteNextWakeSnd = false;
 // Serve pending screenshots (serial console + web portal) right after a render,
 // when the canvas holds a complete frame. Both play the camera shutter.
 static void serviceShots() {
@@ -388,6 +397,7 @@ static void loopGamesMenu(unsigned long now) {
 static bool consoleNavigate(const String& c) {
   const unsigned long now = millis();
   if (c == "shot")   { g_shotPending = true; return true; }  // captured post-render
+  if (c.startsWith("voice:")) { g_voiceDebug = c.substring(6).toInt(); return true; }  // force voice ring
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
@@ -431,6 +441,16 @@ void setup() {
   console.begin(&pet, &battery, &audio, &led, &renderer, consoleNavigate,
                 []() { lastInteractionMs = millis(); });
 
+  // Night-mode sound settings (persisted).
+  {
+    Preferences p;
+    p.begin("night", true);
+    g_nightSleepSnd = p.getBool("ssnd", true);
+    g_nightWakeSnd = p.getBool("wsnd", true);
+    p.end();
+    web.setNightSnd(g_nightSleepSnd, g_nightWakeSnd);
+  }
+
   wasSleeping = pet.sleeping();
   lastTickMs = lastSaveMs = lastInteractionMs = millis();
   Serial.printf("[homecritters] ready. battery ~%d%%\n", battery.percent());
@@ -473,11 +493,59 @@ void loop() {
 
   const bool sleeping = pet.sleeping();
   if (sleeping && !wasSleeping) {
-    audio.playSleepTune();
+    if (g_muteNextSleepSnd) g_muteNextSleepSnd = false;  // silent night mode
+    else audio.playSleepTune();
   } else if (!sleeping && wasSleeping) {
-    audio.playWake();
+    if (g_muteNextWakeSnd) g_muteNextWakeSnd = false;
+    else audio.playWake();
   }
   wasSleeping = sleeping;
+
+  // --- Full sleep (night mode, for HA schedule automations): screen + LED
+  // dark, Leon asleep. Driven by "fullsleep:on|off" (HA switch / portal
+  // button); any local touch or BOOT press wakes everything back up.
+  {
+    int req = web.consumeFullSleep();
+    if (g_fullSleep) {
+      int32_t tx, ty;
+      if (lcd.getTouch(&tx, &ty) || digitalRead(PIN_BOOT_BUTTON) == LOW) req = 0;
+    }
+    if (req == 1 && !g_fullSleep) {
+      g_fullSleep = true;
+      menuOpen = false;
+      screen = SCREEN_PET;  // leave any game
+      if (!pet.sleeping()) {
+        g_muteNextSleepSnd = !g_nightSleepSnd;  // night mode may be silent
+        doAction(ACTION_TOGGLE_SLEEP);          // tuck Leon in
+      }
+      led.gameOff();               // LED dark (override until wake)
+      renderer.setDisplayOff(true);
+      web.setFullSleep(true);
+    } else if (req == 0 && g_fullSleep) {
+      g_fullSleep = false;
+      renderer.setDisplayOff(false);
+      led.endGame();               // release the LED back to mood
+      if (pet.sleeping()) {
+        g_muteNextWakeSnd = !g_nightWakeSnd;
+        doAction(ACTION_TOGGLE_SLEEP);  // wake Leon
+      }
+      web.setFullSleep(false);
+      lastInteractionMs = now;
+      g_inputSwallowUntil = now + 800;  // the wake tap must not also feed/pat
+    }
+    // Night sound settings changed from HA/portal: apply + persist.
+    int ss, ws;
+    if (web.consumeNightSnd(ss, ws)) {
+      if (ss >= 0) g_nightSleepSnd = ss;
+      if (ws >= 0) g_nightWakeSnd = ws;
+      web.setNightSnd(g_nightSleepSnd, g_nightWakeSnd);
+      Preferences p;
+      p.begin("night", false);
+      p.putBool("ssnd", g_nightSleepSnd);
+      p.putBool("wsnd", g_nightWakeSnd);
+      p.end();
+    }
+  }
 
   if (now - lastSaveMs > game::SAVE_INTERVAL_MS) {
     pet.save();
@@ -601,6 +669,42 @@ void loop() {
                            (idleSince(now, lastInteractionMs) > (unsigned long)petClock.idleSec() * 1000);
 
   InputEvent ev = input.poll(lcd, menuOpen, menuPage);
+  // Full sleep (or just woken by a tap): discard the event - the dark screen
+  // must not react, and the wake tap must not also pet/feed Leon.
+  if (g_fullSleep || now < g_inputSwallowUntil) ev = InputEvent{};
+
+  // --- Voice assistant feedback state machine (drives the on-screen ring +
+  // LED + portal). listening (BOOT held) -> thinking (released, STT/intent) ->
+  // speaking (TTS plays) -> idle. The thinking phase closes the feedback gap
+  // between releasing the button and hearing the reply; a timeout clears it if
+  // no answer comes (e.g. STT heard nothing). 0 idle,1 listen,2 think,3 speak.
+  static uint8_t g_voice = 0, g_voiceLast = 0;
+  static unsigned long g_voiceSince = 0;
+  if (ev.voice == InputEvent::V_PTT_START) {
+    lastInteractionMs = now; web.voicePttStart(); g_voice = 1; g_voiceSince = now;
+  } else if (ev.voice == InputEvent::V_PTT_END) {
+    web.voicePttEnd(); g_voice = 2; g_voiceSince = now;  // -> thinking
+  }
+  if (audio.mediaKind() == AudioPlayer::MEDIA_TTS) {
+    g_voice = 3; g_voiceSince = now;                     // reply is speaking
+  } else if (g_voice == 3) {
+    g_voice = 0;                                         // TTS finished
+  } else if (g_voice == 2 && now - g_voiceSince > 12000) {
+    g_voice = 0;                                         // no reply: give up
+  }
+  if (g_voiceDebug >= 0) g_voice = (uint8_t)g_voiceDebug;  // debug: force a ring
+  if (g_voice != g_voiceLast) {
+    static const char* const NAMES[] = {"idle", "listening", "thinking", "speaking"};
+    web.setVoiceState(NAMES[g_voice]);
+    switch (g_voice) {
+      case 1: led.gameColor(0, 200, 255); break;   // cyan
+      case 2: led.gameColor(255, 150, 0); break;   // amber
+      case 3: led.gameColor(0, 200, 255); break;   // cyan
+      default: led.endGame(); break;               // release to mood
+    }
+    g_voiceLast = g_voice;
+  }
+
   if (ev.ui != ui::UI_NONE || ev.action != ACTION_NONE) {
     lastInteractionMs = now;
     if (clockActive) {
@@ -644,7 +748,7 @@ void loop() {
   if (menuOpen && web.connected()) ip = web.ip();
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
-                (uint8_t)audio.mediaKind());
+                (uint8_t)audio.mediaKind(), g_voice);
   serviceShots();
 
   delay(30);
