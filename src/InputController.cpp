@@ -67,10 +67,10 @@ InputEvent InputController::poll(LGFX_BallV2& lcd, bool menuOpen, ui::MenuPage p
     if (ev.action != ACTION_NONE || ev.ui != ui::UI_NONE) return ev;
   }
 
-  // --- BOOT button: hold = push-to-talk, quick tap = feed ---
+  // --- BOOT button: hold = push-to-talk, quick tap = mic mute toggle ---
   // Held past PTT_HOLD_MS starts a voice turn (mic streams to HA); a quick
-  // press-release is a feed. The threshold keeps taps from firing bogus STT
-  // runs. (Sleep/wake stays on the on-screen button + portal.)
+  // press-release toggles the mic mute (privacy, like an Echo's mute button).
+  // Feeding lives on the on-screen button + portal + HA.
   const bool bootDown = (digitalRead(PIN_BOOT_BUTTON) == LOW);
   if (bootDown && !_bootWasDown) {
     _bootPressMs = now;
@@ -81,7 +81,7 @@ InputEvent InputController::poll(LGFX_BallV2& lcd, bool menuOpen, ui::MenuPage p
   }
   if (!bootDown && _bootWasDown) {
     if (_pttActive) { _pttActive = false; ev.voice = InputEvent::V_PTT_END; }
-    else            { ev.action = ACTION_FEED; }  // quick tap = feed
+    else            { ev.voice = InputEvent::V_MUTE_TOGGLE; }  // quick tap
   }
   _bootWasDown = bootDown;
 

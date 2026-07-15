@@ -104,8 +104,12 @@ portal/tools ficam aqui.
   `Animator` só avança os quadros; ações "uma vez" são time-boxed. Expõe
   `animName()`/`animSeq()`/`faceLeft()`/`xNorm()` pro portal espelhar.
 - **Interação**: toque nos botões da base (hit-test por distância); toque no
-  bichinho/cena = carinho; BOOT curto = alimentar; BOOT longo (1.5s+) =
-  dormir/acordar. Gestos resolvidos no SOLTAR do toque (swipe vs tap).
+  bichinho/cena = carinho; **BOOT tap = mute do mic** (privacidade, LED
+  vermelho fixo; NVS); **BOOT segurado (300ms+) = push-to-talk** (voz).
+  Alimentar/dormir só pela tela/portal/HA. Gestos resolvidos no SOLTAR do
+  toque (swipe vs tap). **Modo noite** (`fullsleep:on|off`, switch no HA +
+  portal): tela+LED apagados e pet dormindo; sons de dormir/acordar do modo
+  noite configuráveis (`sleepsnd`/`wakesnd`, NVS); toque/BOOT acorda.
 - **Áudio** (`AudioPlayer`, ES8311 + I2S porta 0): efeitos por ação — comer,
   banho/água, carinho (tap), acordar — e ronco ao dormir. Um som por vez (um
   novo `play()` interrompe o anterior); SFX suprimidos enquanto mídia toca.

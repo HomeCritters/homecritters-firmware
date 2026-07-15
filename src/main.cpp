@@ -681,9 +681,19 @@ void loop() {
   static uint8_t g_voice = 0, g_voiceLast = 0;
   static unsigned long g_voiceSince = 0;
   if (ev.voice == InputEvent::V_PTT_START) {
-    lastInteractionMs = now; web.voicePttStart(); g_voice = 1; g_voiceSince = now;
+    lastInteractionMs = now;
+    if (!web.micMuted()) {  // muted: PTT is denied (red LED already says why)
+      web.voicePttStart(); g_voice = 1; g_voiceSince = now;
+    }
   } else if (ev.voice == InputEvent::V_PTT_END) {
-    web.voicePttEnd(); g_voice = 2; g_voiceSince = now;  // -> thinking
+    if (g_voice == 1) { web.voicePttEnd(); g_voice = 2; g_voiceSince = now; }
+  } else if (ev.voice == InputEvent::V_MUTE_TOGGLE) {
+    // Quick BOOT tap: privacy mute, Echo-style. Down chime = mic closed,
+    // up chime = mic open; the LED stays red while muted (below).
+    lastInteractionMs = now;
+    const bool muted = !web.micMuted();
+    web.setMicMuted(muted);
+    if (muted) audio.playConfirm(); else audio.playListen();
   }
   if (audio.mediaKind() == AudioPlayer::MEDIA_TTS) {
     g_voice = 3; g_voiceSince = now;                     // reply is speaking
@@ -693,6 +703,23 @@ void loop() {
     g_voice = 0;                                         // no reply: give up
   }
   if (g_voiceDebug >= 0) g_voice = (uint8_t)g_voiceDebug;  // debug: force a ring
+
+  // Muted = solid red LED (Echo-style), whenever nothing else owns the LED.
+  // Re-asserted on a slow timer so games/voice states can borrow the LED and
+  // the red reliably comes back afterwards.
+  static bool muteLedOn = false;
+  static unsigned long muteLedAt = 0;
+  const bool wantMuteLed = web.micMuted() && g_voice == 0 && !g_fullSleep &&
+                           audio.mediaKind() == AudioPlayer::MEDIA_NONE;
+  if (wantMuteLed && (!muteLedOn || now - muteLedAt > 500)) {
+    led.gameColor(180, 0, 0);
+    muteLedOn = true;
+    muteLedAt = now;
+  } else if (!wantMuteLed && muteLedOn) {
+    led.endGame();
+    muteLedOn = false;
+  }
+
   if (g_voice != g_voiceLast) {
     static const char* const NAMES[] = {"idle", "listening", "thinking", "speaking"};
     web.setVoiceState(NAMES[g_voice]);

@@ -1,6 +1,7 @@
 #include "WebPortal.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
+#include <Preferences.h>
 #include <cstring>
 #include "Renderer.h"
 #include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
@@ -29,6 +30,22 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor*
   // full radio power while a media stream plays and restores sleep after.
   WiFi.setSleep(true);
   WiFi.begin();  // reconnect using previously saved credentials
+
+  Preferences prefs;
+  prefs.begin("voice", true);
+  _micMuted = prefs.getBool("muted", false);
+  prefs.end();
+}
+
+void WebPortal::setMicMuted(bool muted) {
+  if (muted == _micMuted) return;
+  _micMuted = muted;
+  if (muted && _micOn) { _micOn = false; }  // cut a live stream immediately
+  _dirty = true;
+  Preferences prefs;
+  prefs.begin("voice", false);
+  prefs.putBool("muted", muted);
+  prefs.end();
 }
 
 bool WebPortal::connected() const { return WiFi.status() == WL_CONNECTED; }
@@ -138,7 +155,7 @@ void WebPortal::micCaptureLoop() {
 // so no locking). Sends only what's buffered; a slow/dead client can back up
 // the ring (producer drops on overflow) but never blocks rendering here.
 void WebPortal::pumpMic() {
-  if (!_micOn || _micClient < 0) return;
+  if (!_micOn || _micClient < 0 || _micMuted) return;  // muted = hard gate
   uint8_t buf[640];  // one 20ms frame per send (320 samples * 2 bytes)
   for (int i = 0; i < 8; i++) {   // cap the work per loop iteration
     if (_micRing.fill() < sizeof(buf)) break;
@@ -154,6 +171,7 @@ void WebPortal::pumpMic() {
 // These only handle the mic + the ptt event; the voice UI state (listening/
 // thinking/speaking) is driven by the main loop via setVoiceState().
 void WebPortal::voicePttStart() {
+  if (_micMuted) return;  // privacy: no chime, no event, no audio
   // Ascending chime: "mic is open, go ahead". Half-duplex: capture starts
   // right after the chime finishes (the capture task waits out audio.busy()).
   if (_audio) _audio->playListen();
@@ -284,8 +302,12 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     msg.reserve(len);
     for (size_t i = 0; i < len; i++) msg += (char)payload[i];
     // Mic control needs the client num (audio is streamed back to it).
-    if (msg == "mic:on")  { _micClient = num; _micOn = true;  _dirty = true; return; }
+    // Muted = ignore any request to open the mic (privacy wins over HA).
+    if (msg == "mic:on")  { if (_micMuted) return; _micClient = num; _micOn = true; _dirty = true; return; }
     if (msg == "mic:off") { _micOn = false; _micClient = -1;  _dirty = true; return; }
+    // Privacy mute toggle (portal switch / HA switch / BOOT tap via main).
+    if (msg == "mute:on")  { setMicMuted(true);  return; }
+    if (msg == "mute:off") { setMicMuted(false); return; }
     // HA registers as the voice audio sink WITHOUT starting the stream; the
     // device gates streaming by the BOOT button (push-to-talk, Phase 2).
     if (msg == "voice:sub") { _micClient = num; return; }
@@ -457,7 +479,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
   jsonEscape(p.name(), name, sizeof(name));
   snprintf(out, n,
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
-           "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,"
+           "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,\"micMuted\":%s,"
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
@@ -468,6 +490,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _fullSleep ? "true" : "false",
            _sleepSnd ? "true" : "false",
            _wakeSnd ? "true" : "false",
+           _micMuted ? "true" : "false",
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,

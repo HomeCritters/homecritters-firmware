@@ -9,13 +9,13 @@
 //   - tap on a bottom-arc icon    -> that button's action
 //   - tap on the pet/scene        -> pet it (ACTION_PAT)
 //   - swipe down / tap top handle -> toggle the config menu
-//   - quick BOOT tap              -> feed
+//   - quick BOOT tap              -> toggle mic mute (privacy, Echo-style)
 //   - BOOT hold (>=PTT_HOLD_MS)   -> push-to-talk (voice assistant)
 // Gestures are resolved on touch RELEASE (swipe vs tap).
 // ============================================================
 
 struct InputEvent {
-  enum Voice { V_NONE, V_PTT_START, V_PTT_END };
+  enum Voice { V_NONE, V_PTT_START, V_PTT_END, V_MUTE_TOGGLE };
   Action action = ACTION_NONE;
   int buttonIdx = -1;          // -1 = no bottom-arc button
   ui::UiHit ui = ui::UI_NONE;  // menu/handle interaction
