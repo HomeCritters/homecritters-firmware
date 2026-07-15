@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include <mbedtls/md.h>  // HMAC-SHA256 (challenge-response auth)
 #include <cstring>
 #include "Renderer.h"
 #include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
@@ -269,11 +270,26 @@ void WebPortal::handleRoot() {
 // (core 0): it asks the render loop for a stable snapshot, waits briefly, then
 // streams the BMP. Serving here (not the WS) keeps the ~170KB off the render.
 void WebPortal::handleShot() {
-  // Screenshot of the live screen = privacy-sensitive: require the token.
-  if (!_server.hasArg("token") || _server.arg("token") != _token) {
+  // Screenshot = privacy-sensitive, and a ?token= URL would leak the secret
+  // into logs/history. Challenge-response instead: a bare GET answers 401
+  // with a one-shot nonce; retry with ?sig=HMAC-SHA256(token, "shot:<nonce>").
+  if (!_server.hasArg("sig")) {
+    randHex(_shotNonce, 32);
+    _shotNonceAt = millis();
+    char body[48];
+    snprintf(body, sizeof(body), "nonce:%s", _shotNonce);
+    _server.send(401, "text/plain", body);
+    return;
+  }
+  char m[48], expect[65];
+  snprintf(m, sizeof(m), "shot:%s", _shotNonce);
+  hmacHex(_token, m, expect);
+  const bool fresh = _shotNonce[0] && millis() - _shotNonceAt < 60000;
+  if (!fresh || !_server.arg("sig").equalsIgnoreCase(expect)) {
     _server.send(401, "text/plain", "unauthorized");
     return;
   }
+  _shotNonce[0] = 0;  // single-use
   if (!_renderer) { _server.send(503, "text/plain", "no renderer"); return; }
   _renderer->requestWebSnapshot();
   const unsigned long t0 = millis();
@@ -323,10 +339,16 @@ void WebPortal::handleShot() {
 
 void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
   if (type == WStype_CONNECTED) {
-    Serial.printf("[ws] client %u connected (%s) - awaiting auth\n", num,
+    Serial.printf("[ws] client %u connected (%s) - challenging\n", num,
                   _ws.remoteIP(num).toString().c_str());
     _wsAuthed[num] = false;
     _wsConnAt[num] = millis();  // unauth grace timer (swept in handle())
+    // Challenge-response: fresh nonce per socket; the client must answer
+    // with HMAC-SHA256(token, nonce) - the token itself never on the wire.
+    randHex(_wsNonce[num], 32);
+    char ch[48];
+    snprintf(ch, sizeof(ch), "challenge:%s", _wsNonce[num]);
+    _ws.sendTXT(num, ch);
   } else if (type == WStype_DISCONNECTED) {
     Serial.printf("[ws] client %u disconnected\n", num);
     _wsAuthed[num] = false;
@@ -341,12 +363,33 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     // or the PIN pairing dance (new clients). Until then the client gets
     // nothing and can do nothing. Protects commands, state, shots and the MIC.
     if (!_wsAuthed[num]) {
-      if (msg.startsWith("auth:") && msg.substring(5) == _token) {
-        _wsAuthed[num] = true;
-        Serial.printf("[ws] client %u authenticated\n", num);
-        char buf[768];
-        stateJson(buf, sizeof(buf));
-        _ws.sendTXT(num, buf);  // now it may see the state
+      if (msg.startsWith("auth:")) {
+        // "auth:<hmac>[:<client_nonce>]" - hmac = HMAC-SHA256(token, our
+        // nonce), hex. The optional client nonce requests MUTUAL auth: we
+        // answer proof:<HMAC(token, client_nonce)> so the client knows it's
+        // talking to the real device (mDNS spoof defense).
+        const String body = msg.substring(5);
+        const int sep = body.indexOf(':');
+        const String mac = sep >= 0 ? body.substring(0, sep) : body;
+        char expect[65];
+        hmacHex(_token, _wsNonce[num], expect);
+        if (_wsNonce[num][0] && mac.equalsIgnoreCase(expect)) {
+          _wsAuthed[num] = true;
+          _wsNonce[num][0] = 0;  // single-use
+          Serial.printf("[ws] client %u authenticated\n", num);
+          if (sep >= 0) {
+            char proofMac[65], proof[80];
+            hmacHex(_token, body.substring(sep + 1).c_str(), proofMac);
+            snprintf(proof, sizeof(proof), "proof:%s", proofMac);
+            _ws.sendTXT(num, proof);
+          }
+          char buf[768];
+          stateJson(buf, sizeof(buf));
+          _ws.sendTXT(num, buf);  // now it may see the state
+        } else {
+          Serial.printf("[ws] client %u rejected (bad hmac)\n", num);
+          _ws.disconnect(num);
+        }
       } else if (msg == "pair:start") {
         // New client asks to pair: pop the PIN on the screen and keep this
         // socket alive (exempt from the no-auth sweep) while the window is
@@ -528,6 +571,27 @@ void WebPortal::sendAuthedTXT(const char* msg) {
   for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) {
     if (_wsAuthed[i]) _ws.sendTXT(i, (uint8_t*)msg, strlen(msg));
   }
+}
+
+// Fill out with hexChars random hex digits (+ NUL).
+void WebPortal::randHex(char* out, size_t hexChars) {
+  static const char* H = "0123456789abcdef";
+  for (size_t i = 0; i < hexChars; i++) out[i] = H[esp_random() & 0xF];
+  out[hexChars] = 0;
+}
+
+// HMAC-SHA256(key, msg) -> lowercase hex (65 bytes incl. NUL).
+void WebPortal::hmacHex(const char* key, const char* msg, char out65[65]) {
+  uint8_t mac[32] = {0};
+  const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  mbedtls_md_hmac(info, (const uint8_t*)key, strlen(key),
+                  (const uint8_t*)msg, strlen(msg), mac);
+  static const char* H = "0123456789abcdef";
+  for (int i = 0; i < 32; i++) {
+    out65[i * 2] = H[mac[i] >> 4];
+    out65[i * 2 + 1] = H[mac[i] & 0xF];
+  }
+  out65[64] = 0;
 }
 
 // Open (or refresh) the PIN pairing window: a fresh random 6-digit code,

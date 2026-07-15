@@ -94,15 +94,20 @@ class WebPortal {
     }
   }
 
-  // --- pairing auth (F-Sec 1) ---
-  // Long-lived 16-hex credential in NVS. Clients that know it authenticate
-  // with "auth:<token>" as their FIRST message (5s grace) or are dropped:
-  // no state, no commands, no mic. /shot.bmp requires ?token=; /info stays
-  // public (identity only). New clients get the token via PIN pairing:
-  //   client sends "pair:start" -> a random 6-digit PIN pops on the SCREEN
-  //   (90s window) -> client sends "pair:<pin>" -> device replies
-  //   "token:<token>" and marks it authenticated. 3 wrong PINs or timeout
-  //   close the window. The token itself never appears on screen.
+  // --- pairing auth (F-Sec 1) + challenge-response (F-Sec 2) ---
+  // Long-lived 16-hex credential in NVS - and it NEVER travels on the wire:
+  // on connect the device sends "challenge:<nonce>" (fresh per socket) and
+  // the client authenticates with "auth:<HMAC-SHA256(token, nonce)>[:cnonce]"
+  // (hex). With the optional client nonce the device replies
+  // "proof:<HMAC(token, cnonce)>" - MUTUAL auth: a spoofed device can't
+  // impersonate the ball, and a spoofed one can't harvest anything reusable.
+  // Until authed: no state, no commands, no mic (5s grace, then dropped).
+  // /shot.bmp does its own dance (401+nonce -> ?sig=); /info stays public.
+  // New clients get the token via PIN pairing:
+  //   "pair:start" -> a random 6-digit PIN pops on the SCREEN (90s window)
+  //   -> "pair:<pin>" -> device replies "token:<token>" (the one moment the
+  //   token is on the wire: a short, user-supervised handover) and marks the
+  //   socket authenticated. 3 wrong PINs or timeout close the window.
   const char* authToken() const { return _token; }
   void startPairing();  // opens (or extends) the PIN window - also the menu tile
   void cancelPairing();  // the X on the pairing overlay
@@ -168,11 +173,16 @@ class WebPortal {
   bool _wsAuthed[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};
   bool _wsPairing[WEBSOCKETS_SERVER_CLIENT_MAX] = {false};  // exempt from sweep
   unsigned long _wsConnAt[WEBSOCKETS_SERVER_CLIENT_MAX] = {0};  // 0 = free slot
+  char _wsNonce[WEBSOCKETS_SERVER_CLIENT_MAX][33] = {};  // per-socket challenge
   char _pairPin[7] = {0};        // current 6-digit PIN ("" = none)
   unsigned long _pairUntil = 0;  // window deadline (0 = closed)
   uint8_t _pairAttempts = 0;     // wrong PINs this window (3 = close)
+  char _shotNonce[33] = {0};     // one-shot /shot.bmp challenge
+  unsigned long _shotNonceAt = 0;
   void endPairing();
   void sendAuthedTXT(const char* msg);  // broadcast to authed clients only
+  static void randHex(char* out, size_t hexChars);   // esp_random -> hex
+  static void hmacHex(const char* key, const char* msg, char out65[65]);
   const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   bool _fullSleep = false;           // actual mode, reported by main

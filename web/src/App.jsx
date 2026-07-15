@@ -21,6 +21,7 @@ import {
   Spin,
 } from 'antd';
 import ferretSheet from './ferret-sheet.png';
+import { hmacSha256Hex } from './hmac.js';
 
 const { Title, Text } = Typography;
 
@@ -338,9 +339,19 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shotSrc, setShotSrc] = useState(null);   // /shot.bmp?t=... when the modal is open
   const [shotLoading, setShotLoading] = useState(false);
-  const takeShot = () => {
+  const takeShot = async () => {
     setShotLoading(true);
-    setShotSrc(`/shot.bmp?token=${localStorage.getItem('token') || ''}&t=${Date.now()}`);
+    // Challenge-response for the screenshot (no token in the URL): a bare GET
+    // 401s with a one-shot nonce; retry signed.
+    const tok = localStorage.getItem('token') || '';
+    try {
+      const r = await fetch(`/shot.bmp?t=${Date.now()}`);
+      const nonce = (await r.text()).replace('nonce:', '').trim();
+      const sig = hmacSha256Hex(tok, 'shot:' + nonce);
+      setShotSrc(`/shot.bmp?sig=${sig}&t=${Date.now()}`);
+    } catch {
+      setShotLoading(false);
+    }
   };
   // Pairing (F-Sec 1): without a stored token we send "pair:start" - a
   // 6-digit PIN pops on the device screen by itself; the user types it here
@@ -377,14 +388,14 @@ export default function App() {
       ws = new WebSocket(`ws://${location.hostname}:81/`);
       wsRef.current = ws;
       let opened = false;
+      const cnonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map((x) => x.toString(16).padStart(2, '0')).join('');
       ws.onopen = () => {
-        // First frame MUST be the credential. With a stored token we auth
-        // straight away; without one we ask to pair (the PIN pops on the
-        // device screen automatically).
+        // The device greets with "challenge:<nonce>" (handled in onmessage).
+        // Without a stored token we ask to pair right away instead.
         opened = true;
         gotState.current = false;
-        const tok = localStorage.getItem('token');
-        ws.send(tok ? 'auth:' + tok : 'pair:start');
+        if (!localStorage.getItem('token')) ws.send('pair:start');
       };
       ws.onclose = () => {
         setOnline(false);
@@ -397,10 +408,28 @@ export default function App() {
         retry = setTimeout(connect, 1500);
       };
       ws.onmessage = (ev) => {
-        if (typeof ev.data === 'string' && ev.data.startsWith('token:')) {
-          localStorage.setItem('token', ev.data.slice(6));  // paired!
-          setNeedToken(false);
-          return;
+        if (typeof ev.data === 'string') {
+          // Challenge-response (F-Sec 2): prove we know the token without
+          // sending it, and require the device to prove itself back (mutual).
+          if (ev.data.startsWith('challenge:')) {
+            const tok = localStorage.getItem('token');
+            if (tok) {
+              ws.send('auth:' + hmacSha256Hex(tok, ev.data.slice(10)) + ':' + cnonce);
+            }
+            return;
+          }
+          if (ev.data.startsWith('proof:')) {
+            const tok = localStorage.getItem('token');
+            if (!tok || ev.data.slice(6) !== hmacSha256Hex(tok, cnonce)) {
+              ws.close();  // not the real device (mDNS spoof) - bail
+            }
+            return;
+          }
+          if (ev.data.startsWith('token:')) {
+            localStorage.setItem('token', ev.data.slice(6));  // paired!
+            setNeedToken(false);
+            return;
+          }
         }
         try {
           const j = JSON.parse(ev.data);
