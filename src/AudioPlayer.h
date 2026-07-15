@@ -63,6 +63,8 @@ class AudioPlayer {
   // and a party mode for music.
   enum MediaKind : uint8_t { MEDIA_NONE = 0, MEDIA_MUSIC, MEDIA_TTS };
   MediaKind mediaKind() const { return _streaming ? _kind : MEDIA_NONE; }
+  // Live output loudness 0..255 (post-gain PCM envelope) - party LED beat.
+  int mediaLevel() const;
 
   // Volume 0..100 (persisted to NVS, perceptual curve).
   void setVolume(int pct);

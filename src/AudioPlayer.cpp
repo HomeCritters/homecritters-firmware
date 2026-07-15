@@ -195,6 +195,8 @@ void AudioPlayer::setVolume(int pct) {
 
 void AudioPlayer::setMicGain(int step) { es8311_set_mic_gain((uint8_t)constrain(step, 0, 7)); }
 
+int AudioPlayer::mediaLevel() const { return AudioCodec::outLevel() >> 7; }  // 0..255
+
 // Bring-up self-test: read the mic directly for `ms` and print level stats
 // (RMS / peak / DC). Bypasses the WebSocket entirely. Assumes no playback.
 void AudioPlayer::micSelfTest(int ms) {

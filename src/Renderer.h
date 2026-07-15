@@ -28,7 +28,7 @@ class Renderer {
   void draw(const Pet& pet, Battery& battery, FerretActor& ferret,
             bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
             bool wifiOn, const char* ip, bool clockActive, Clock& clock,
-            uint8_t mediaFx = 0, uint8_t voiceState = 0);
+            uint8_t mediaFx = 0, uint8_t voiceState = 0, bool micMuted = false);
 
   // Screen (backlight) brightness 0..100, persisted to NVS. The Renderer owns
   // the display, so it owns this too. Floored so the screen never goes dark.
@@ -89,7 +89,7 @@ class Renderer {
   void drawCabin(int bx, int by, bool night);
   void drawPineTree(int bx, int baseY, int size);
   void drawSparkles(bool night);
-  void drawHeader(const Pet& pet, bool wifiOn);
+  void drawHeader(const Pet& pet, bool wifiOn, bool micMuted);
   void drawMenuHandle();
   void drawRightHandle();
   void drawLeftHandle();  // "back" tab (config, games menu, Bolinha)
