@@ -77,7 +77,7 @@ enum UiHit {
   UI_VOL_DOWN, UI_VOL_UP,
   UI_LED_DOWN, UI_LED_UP,
   UI_SCR_DOWN, UI_SCR_UP,
-  UI_WIFI, UI_GAMES_TOGGLE
+  UI_WIFI, UI_GAMES_TOGGLE, UI_HA_TOGGLE  // left edge: Home Assistant panel
 };
 
 // "Revogar acesso" button on the Dispositivos page (bottom, inside the circle).
@@ -100,11 +100,12 @@ inline bool inRightHandle(int32_t tx, int32_t ty) {
          ty > RHANDLE_CY - RHANDLE_H / 2 && ty < RHANDLE_CY + RHANDLE_H / 2;
 }
 
-// Left-edge handle = "back" (config menu, games menu, Bolinha). Pull it toward
-// the center (swipe right) or tap it. Same geometry, mirrored.
+// Left-edge handle = "back" (menus) / open HA panel (pet). Pull it toward the
+// center (swipe right) or tap it. Generous zone: the round panel's extreme
+// edge is hard to hit precisely.
 inline bool inLeftHandle(int32_t tx, int32_t ty) {
-  return tx < RHANDLE_W + 2 &&
-         ty > RHANDLE_CY - RHANDLE_H / 2 && ty < RHANDLE_CY + RHANDLE_H / 2;
+  return tx < RHANDLE_W + 12 &&
+         ty > RHANDLE_CY - RHANDLE_H / 2 - 8 && ty < RHANDLE_CY + RHANDLE_H / 2 + 8;
 }
 
 constexpr int16_t MENU_BTN_R = 17;  // +/- stepper button radius
@@ -226,5 +227,17 @@ inline bool inSimonExit(int32_t tx, int32_t ty) {
 // In a game: small back button in the top-left corner (rest of the screen
 // controls the character).
 inline bool inGameBack(int32_t tx, int32_t ty) { return tx < 42 && ty < 32; }
+
+// ------------------- HA panel (full screen) -------------------
+// 2x2 grid of entity tiles per page (same geometry as the config menu grid).
+// Which tile (0..3) is at (tx,ty), or -1. Order: TL, TR, BL, BR.
+inline int haTileAt(int32_t tx, int32_t ty) {
+  if (inRect(tx, ty, MENU_COL_L, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return 0;
+  if (inRect(tx, ty, MENU_COL_R, MENU_ROW_1, MENU_CELL_W, MENU_CELL_H)) return 1;
+  if (inRect(tx, ty, MENU_COL_L, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return 2;
+  if (inRect(tx, ty, MENU_COL_R, MENU_ROW_2, MENU_CELL_W, MENU_CELL_H)) return 3;
+  return -1;
+}
+constexpr int HA_PER_PAGE = 4;
 
 }  // namespace ui

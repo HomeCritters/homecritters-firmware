@@ -13,6 +13,7 @@
 #include "DoodleGame.h"
 #include "BallGame.h"
 #include "SimonGame.h"
+#include "HaPanel.h"
 #include "DebugConsole.h"
 #include "pins.h"  // BOOT pin (full-sleep wake check)
 #include <Preferences.h>  // night-mode sound settings
@@ -36,11 +37,13 @@ Clock            petClock;
 DoodleGame       doodle;
 BallGame         ball;
 SimonGame        simon;
+HaPanel          haPanel;
 DebugConsole     console;
 
 // Which screen is showing.
-enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON };
+enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON, SCREEN_HA };
 static Screen screen = SCREEN_PET;
+static int g_haPage = 0;  // HA panel current page
 
 static unsigned long lastTickMs = 0;
 static unsigned long lastSaveMs = 0;
@@ -407,6 +410,65 @@ static void loopGamesMenu(unsigned long now) {
   renderer.drawGamesMenu();
 }
 
+// HA control panel: swipe up/down = page, tap a controllable tile = toggle
+// (optimistic), left-edge pull / tab = back to the pet. Own touch handling
+// (raw), like the games menu.
+static int32_t g_haStartX = 0, g_haStartY = 0;
+// The panel opens by pulling the LEFT edge RIGHT - the exact same direction as
+// its own "back" gesture. Without this guard, the tail of the opening swipe
+// (still under the finger when we switch screens) reads as a back and slams the
+// panel shut the instant it opens. Swallow every touch until the finger lifts
+// once, so the first honored gesture starts clean. (Games escapes this because
+// its open-swipe goes the other way.)
+static bool g_haSwallow = false;
+static void loopHaPanel(unsigned long now) {
+  int32_t x, y;
+  const bool down = lcd.getTouch(&x, &y);
+  if (g_haSwallow) {
+    lastInteractionMs = now;  // don't let the idle auto-close fire while waiting
+    if (down) { renderer.drawHaPanel(haPanel, g_haPage); return; }
+    g_haSwallow = false;  // finger lifted: clean slate for real gestures
+    g_touchDown = false;
+  }
+  if (down && !g_touchDown) { g_touchDown = true; g_haStartX = x; g_haStartY = y; }
+  if (down) {
+    g_touchX = x; g_touchY = y;
+    lastInteractionMs = now;
+  } else if (g_touchDown) {  // release
+    g_touchDown = false;
+    lastInteractionMs = now;
+    const int32_t dx = g_touchX - g_haStartX, dy = g_touchY - g_haStartY;
+    const int pages = (haPanel.count() + ui::HA_PER_PAGE - 1) / ui::HA_PER_PAGE;
+    if (abs(dy) > 45 && abs(dy) > abs(dx)) {           // vertical swipe = page
+      if (dy < 0 && g_haPage < pages - 1) { g_haPage++; audio.playClick(); }
+      else if (dy > 0 && g_haPage > 0)    { g_haPage--; audio.playClick(); }
+    } else if ((dx > 45 && abs(dx) > abs(dy) && g_haStartX < 65) ||
+               ui::inLeftHandle(g_haStartX, g_haStartY)) {  // left = back
+      audio.playClick();
+      screen = SCREEN_PET;
+    } else {  // tap a tile -> toggle if controllable (optimistic)
+      const int t = ui::haTileAt(g_haStartX, g_haStartY);
+      const int idx = g_haPage * ui::HA_PER_PAGE + t;
+      if (t >= 0 && idx < haPanel.count()) {
+        HaPanel::Entity& e = haPanel.at(idx);
+        if (e.controllable) {
+          if (!strcmp(e.state, "on")) strcpy(e.state, "off");
+          else if (!strcmp(e.state, "off")) strcpy(e.state, "on");
+          e.pending = true;
+          web.sendHaCmd(e.id, "toggle");
+          audio.playClick();
+        }
+      }
+    }
+  }
+  const int timeout = petClock.menuTimeoutSec();
+  if (timeout > 0 && screen == SCREEN_HA &&
+      idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
+    screen = SCREEN_PET;
+  }
+  renderer.drawHaPanel(haPanel, g_haPage);
+}
+
 // Navigation/action commands from the DebugConsole (screen state lives here;
 // module-level commands like vol:/led:/stats: are handled inside the console).
 static bool consoleNavigate(const String& c) {
@@ -416,8 +478,26 @@ static bool consoleNavigate(const String& c) {
   if (c == "token")  { Serial.printf("[auth] pairing token: %s\n", web.authToken()); return true; }
   if (c == "pair")   { web.startPairing(); Serial.printf("[auth] pairing pin: %s\n", web.pairingPin()); return true; }
   if (c == "revoke") { web.revokeAll(); Serial.println("[auth] revoked (all clients)"); return true; }
+  if (c == "ha") {  // dump the HA panel model
+    Serial.printf("[ha] %d entities (stale %lums):\n", haPanel.count(), haPanel.staleMs());
+    for (int i = 0; i < haPanel.count(); i++) {
+      const auto& e = haPanel.at(i);
+      Serial.printf("  %-40s d=%-8s s=%-6s v=%-8s %s\n", e.id, e.domain, e.state, e.value,
+                    e.controllable ? "[ctrl]" : "");
+    }
+    return true;
+  }
+  if (c.startsWith("hatoggle:")) {  // debug: toggle entity by index
+    const int i = c.substring(9).toInt();
+    if (i >= 0 && i < haPanel.count()) {
+      web.sendHaCmd(haPanel.at(i).id, "toggle");
+      Serial.printf("[ha] toggle -> %s\n", haPanel.at(i).id);
+    }
+    return true;
+  }
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
+  if (c == "hapanel"){ menuOpen = false; g_haPage = 0; screen = SCREEN_HA; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
   if (c == "ball")   { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; return true; }
   if (c == "simon")  { startSimon(now); return true; }
@@ -457,7 +537,7 @@ void setup() {
   doodle.begin();  // load the Jump! high score
   simon.begin();   // load the Genius high score
   audio.begin();  // I2C + ES8311 + I2S + audio task
-  web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, doAction);  // WiFi + portal
+  web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, &haPanel, doAction);  // WiFi + portal
   web.setBattery(battery.percent());  // seed the portal value
   console.begin(&pet, &battery, &audio, &led, &renderer, consoleNavigate,
                 []() { lastInteractionMs = millis(); });
@@ -669,7 +749,8 @@ void loop() {
   web.setScreen(screen == SCREEN_DOODLE ? "doodle" :
                 screen == SCREEN_BALL   ? "ball"   :
                 screen == SCREEN_SIMON  ? "simon"  :
-                screen == SCREEN_GAMES  ? "games"  : "pet");
+                screen == SCREEN_GAMES  ? "games"  :
+                screen == SCREEN_HA     ? "ha"     : "pet");
   switch (web.consumeGameNav()) {
     case WebPortal::NAV_START:
       if (screen != SCREEN_DOODLE) { startDoodle(now); web.pushState(); }
@@ -712,6 +793,12 @@ void loop() {
   }
   if (screen == SCREEN_GAMES) {
     loopGamesMenu(now);
+    serviceShots();
+    delay(30);
+    return;
+  }
+  if (screen == SCREEN_HA) {
+    loopHaPanel(now);
     serviceShots();
     delay(30);
     return;
@@ -772,6 +859,9 @@ void loop() {
     lastInteractionMs = now;
     if (clockActive) {
       // in clock mode a touch only wakes the screen (doesn't run the action)
+    } else if (ev.ui == ui::UI_HA_TOGGLE) {
+      audio.playClick();
+      if (!menuOpen) { g_haPage = 0; screen = SCREEN_HA; g_haSwallow = true; web.haSubscribe(); }
     } else if (ev.ui == ui::UI_GAMES_TOGGLE) {
       audio.playClick();
       if (!menuOpen) screen = SCREEN_GAMES;

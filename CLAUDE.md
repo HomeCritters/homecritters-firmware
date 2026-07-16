@@ -153,12 +153,22 @@ portal/tools ficam aqui.
   desabilitado e sem fuso** — o navegador detecta o fuso (`Intl`) ao abrir o
   portal e habilita. Toque só "acorda" a tela. Persistido em NVS (com migração
   de versão).
+- **Painel HA "Casa"** (`SCREEN_HA`, `src/HaPanel.{h,cpp}`): na tela do pet,
+  pull da **borda esquerda** (ou tap na aba ‹) abre uma grade 2x2 paginada com
+  entidades do HA — toggles (light/switch/fan/lock/...; tap = toggle otimista
+  via `ha:cmd:<id>:toggle`, ícone por domínio, lâmpada acesa/apagada) e
+  sensores read-only (termômetro/gota + valor). Swipe vertical pagina; pull
+  esquerdo volta. Entidades escolhidas no **options flow** do plugin (HA →
+  HomeCritters → Configurar). Protocolo WS: plugin→device `ha:list:`/`ha:upd:`
+  (JSON compacto ASCII); device→plugin `ha:cmd:` + `ha:sub`. Nomes/valores
+  largos rolam com `drawScrollText` (marquee bounce com clip). Serial: `ha`,
+  `hapanel`, `hatoggle:N`.
 - **Game mode**: pull da **direita** abre o **menu de jogos** (tiles quadrados);
   pull da **esquerda** = "voltar" (menu de config, menu de jogos e Bolinha —
   todas as abas puxam pro centro). Tela dos jogos sempre no hardware; ambos
   também jogáveis **pelo celular** (portal vira controle via WS). O `main` tem a
-  máquina de telas (`SCREEN_PET`/`GAMES`/`DOODLE`/`BALL`); durante os jogos o
-  pet continua vivo em background (decaimento, som, portal).
+  máquina de telas (`SCREEN_PET`/`GAMES`/`DOODLE`/`BALL`/`SIMON`/`HA`); durante
+  os jogos o pet continua vivo em background (decaimento, som, portal).
   - **Jump!** (`DoodleGame`): furão (sprite 40px, `ferret_game.h`) pula entre
     plataformas seguindo o dedo. Tipos: normal, **mola** (boost), **móvel**
     (azul) e **quebradiça** (bege, some após 1 pulo). Dificuldade sobe com a
@@ -217,6 +227,13 @@ portal/tools ficam aqui.
   latência alta + 0% de perda + CPU livre durante playback = EMI, não software.
 - I2S **porta 0** (a porta 1 falhou o roteamento de pinos silenciosamente:
   decoder rodava, speaker mudo).
+- **Toda função de tela nova no Renderer PRECISA terminar em
+  `_canvas.pushSprite(0,0)`** — sem isso o LCD congela no frame anterior, e os
+  screenshots (serial e web leem o CANVAS, não o LCD) mostram a tela nova
+  bonitinha, escondendo o bug.
+- Texto marquee/scroll: `setTextWrap(false)` antes do `print()` com cursor
+  fora do clip — com wrap ligado (default) o LovyanGFX re-ancora o cursor e o
+  texto fica congelado mesmo com o offset animando.
 - `pio` fica fora do PATH: usar `~/.platformio/penv/bin/pio`.
 
 ## Regenerar as animações do furão
