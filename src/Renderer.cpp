@@ -621,22 +621,26 @@ void Renderer::drawHaPanel(HaPanel& ha, int page, bool loading) {
     drawHaTile(cols[i & 1], rows[i >> 1], ha.at(base + i));
   }
   if (pages > 1) {
-    // Swipe hints: bobbing chevrons - up when there's a previous page, down
-    // when there's a next one (the swipe direction that brings more tiles).
-    const int bob = (millis() / 350) % 2;  // gentle 1px nudge
+    // Vertical pager on the RIGHT of the grid (pagination is a vertical
+    // swipe, so the indicator reads vertically too): bobbing chevrons with a
+    // column of page dots between them.
+    const int px = 210;                      // column x (right of the tiles)
+    const int cy = MENU_ROW_1 + MENU_CELL_H + 2;  // vertical center (grid gap)
+    const int bob = (millis() / 350) % 2;    // gentle 1px nudge
     const uint16_t hc = rgb565(150, 155, 175);
-    if (page > 0)
-      _canvas.fillTriangle(CENTER_X - 7, 40 - bob, CENTER_X + 7, 40 - bob,
-                           CENTER_X, 33 - bob, hc);
-    if (page < pages - 1)
-      _canvas.fillTriangle(CENTER_X - 7, 202 + bob, CENTER_X + 7, 202 + bob,
-                           CENTER_X, 209 + bob, hc);
-    // Page dots.
-    const int dw = pages * 8 - 4;
-    for (int p = 0; p < pages; p++) {
-      _canvas.fillCircle(CENTER_X - dw / 2 + p * 8, 224, 2,
+    const int dh = pages * 8 - 4;            // dot column height
+    if (page > 0)                            // chevron up: previous page
+      _canvas.fillTriangle(px - 5, cy - dh / 2 - 8 - bob,
+                           px + 5, cy - dh / 2 - 8 - bob,
+                           px, cy - dh / 2 - 13 - bob, hc);
+    for (int p = 0; p < pages; p++) {        // dots, top = first page
+      _canvas.fillCircle(px, cy - dh / 2 + p * 8, 2,
                          p == page ? TFT_WHITE : menu::TEXT_DIM);
     }
+    if (page < pages - 1)                    // chevron down: more below
+      _canvas.fillTriangle(px - 5, cy + dh / 2 + 8 + bob,
+                           px + 5, cy + dh / 2 + 8 + bob,
+                           px, cy + dh / 2 + 13 + bob, hc);
   }
   drawLeftHandle();  // left tab = back to the pet
   _canvas.pushSprite(0, 0);
