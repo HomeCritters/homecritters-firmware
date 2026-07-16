@@ -13,6 +13,7 @@
 #include "DoodleGame.h"
 #include "BallGame.h"
 #include "SimonGame.h"
+#include "HaPanel.h"
 #include "DebugConsole.h"
 #include "pins.h"  // BOOT pin (full-sleep wake check)
 #include <Preferences.h>  // night-mode sound settings
@@ -36,6 +37,7 @@ Clock            petClock;
 DoodleGame       doodle;
 BallGame         ball;
 SimonGame        simon;
+HaPanel          haPanel;
 DebugConsole     console;
 
 // Which screen is showing.
@@ -416,6 +418,23 @@ static bool consoleNavigate(const String& c) {
   if (c == "token")  { Serial.printf("[auth] pairing token: %s\n", web.authToken()); return true; }
   if (c == "pair")   { web.startPairing(); Serial.printf("[auth] pairing pin: %s\n", web.pairingPin()); return true; }
   if (c == "revoke") { web.revokeAll(); Serial.println("[auth] revoked (all clients)"); return true; }
+  if (c == "ha") {  // dump the HA panel model
+    Serial.printf("[ha] %d entities (stale %lums):\n", haPanel.count(), haPanel.staleMs());
+    for (int i = 0; i < haPanel.count(); i++) {
+      const auto& e = haPanel.at(i);
+      Serial.printf("  %-40s d=%-8s s=%-6s v=%-8s %s\n", e.id, e.domain, e.state, e.value,
+                    e.controllable ? "[ctrl]" : "");
+    }
+    return true;
+  }
+  if (c.startsWith("hatoggle:")) {  // debug: toggle entity by index
+    const int i = c.substring(9).toInt();
+    if (i >= 0 && i < haPanel.count()) {
+      web.sendHaCmd(haPanel.at(i).id, "toggle");
+      Serial.printf("[ha] toggle -> %s\n", haPanel.at(i).id);
+    }
+    return true;
+  }
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
@@ -457,7 +476,7 @@ void setup() {
   doodle.begin();  // load the Jump! high score
   simon.begin();   // load the Genius high score
   audio.begin();  // I2C + ES8311 + I2S + audio task
-  web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, doAction);  // WiFi + portal
+  web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, &haPanel, doAction);  // WiFi + portal
   web.setBattery(battery.percent());  // seed the portal value
   console.begin(&pet, &battery, &audio, &led, &renderer, consoleNavigate,
                 []() { lastInteractionMs = millis(); });

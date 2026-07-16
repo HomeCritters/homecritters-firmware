@@ -9,6 +9,7 @@
 #include "StatusLed.h"
 #include "FerretActor.h"
 #include "Clock.h"
+#include "HaPanel.h"
 #include "audio/StreamRing.h"
 
 class Renderer;  // for the /shot.bmp screenshot endpoint
@@ -33,7 +34,8 @@ class WebPortal {
   enum GameNav { NAV_NONE, NAV_START, NAV_BALL, NAV_SIMON, NAV_BACK };
 
   void begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
-             Clock* clock, Renderer* renderer, std::function<void(Action)> onAction);
+             Clock* clock, Renderer* renderer, HaPanel* ha,
+             std::function<void(Action)> onAction);
   void handle();               // call every loop (when connected)
   // Request a state broadcast. Coalesced: handle() sends at most one every
   // few ms no matter how many requests pile up (spam-clicking the portal
@@ -122,6 +124,11 @@ class WebPortal {
   // Revoke ONE credential slot (portal/HA "encerrar conexao"): wipes that
   // slot and kicks any socket using it; the others keep working.
   void revokeSlot(int slot);
+  // --- HA panel (SCREEN_HA) ---
+  // Toggle a device from the panel; request a fresh entity list on open.
+  void sendHaCmd(const char* entityId, const char* action);
+  void haSubscribe();  // ask the plugin to re-push ha:list
+
   // '\n'-separated IP list of connected clients (hardware Conexoes page).
   void clientsInfo(char* out, size_t n);
   // JSON array of connected clients for the portal/HA manager. Marks the
@@ -148,6 +155,7 @@ class WebPortal {
   uint8_t* _bmp = nullptr;  // assembled BMP for /shot.bmp (lazy, PSRAM)
   FerretActor* _ferret = nullptr;
   Clock* _clock = nullptr;
+  HaPanel* _ha = nullptr;   // HA control panel model (SCREEN_HA)
   std::function<void(Action)> _onAction;
   bool _serverUp = false;
   volatile bool _configuring = false;  // written on core 1, read by the core-0 http task

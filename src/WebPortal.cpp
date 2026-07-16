@@ -14,13 +14,15 @@ static constexpr const char* FW_VERSION = "1.0.0";
 static void jsonEscape(const String& in, char* out, size_t n);  // defined below
 
 void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
-                      Clock* clock, Renderer* renderer, std::function<void(Action)> onAction) {
+                      Clock* clock, Renderer* renderer, HaPanel* ha,
+                      std::function<void(Action)> onAction) {
   _pet = pet;
   _audio = audio;
   _led = led;
   _renderer = renderer;
   _ferret = ferret;
   _clock = clock;
+  _ha = ha;
   _onAction = onAction;
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(HOSTNAME);
@@ -518,6 +520,9 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
       _clientsDirty = true;
       return;
     }
+    // HA control panel: the plugin pushes the exposed entities here.
+    if (msg.startsWith("ha:list:")) { if (_ha) _ha->setList(msg.c_str() + 8); return; }
+    if (msg.startsWith("ha:upd:"))  { if (_ha) _ha->applyUpdate(msg.c_str() + 7); return; }
     // Connections manager: request the list, or revoke a slot / everyone.
     if (msg == "clients?") { char j[512]; clientsJson(j, sizeof(j), num);
                              _ws.sendTXT(num, j); return; }
@@ -671,6 +676,16 @@ void WebPortal::broadcastState() {
   stateJson(buf, sizeof(buf));
   sendAuthedTXT(buf);
 }
+
+// HA panel control: broadcast the command to authed clients (the plugin acts,
+// the portal ignores it - same pattern as evt:).
+void WebPortal::sendHaCmd(const char* entityId, const char* action) {
+  char cmd[64];
+  snprintf(cmd, sizeof(cmd), "ha:cmd:%s:%s", entityId, action);
+  sendAuthedTXT(cmd);
+}
+
+void WebPortal::haSubscribe() { sendAuthedTXT("ha:sub"); }
 
 // Broadcast to AUTHENTICATED clients only (broadcastTXT would leak state to
 // sockets that never presented the pairing token).
