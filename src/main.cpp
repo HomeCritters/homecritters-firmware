@@ -840,12 +840,15 @@ void loop() {
     web.setMicMuted(muted);
     if (muted) audio.playConfirm(); else audio.playListen();
   }
+  // HA-driven states (wake word pipeline pushes voice:listening/thinking/...).
+  const int vc = web.consumeVoiceCmd();
+  if (vc >= 0) { g_voice = (uint8_t)vc; g_voiceSince = now; }
   if (audio.mediaKind() == AudioPlayer::MEDIA_TTS) {
     g_voice = 3; g_voiceSince = now;                     // reply is speaking
   } else if (g_voice == 3) {
     g_voice = 0;                                         // TTS finished
-  } else if (g_voice == 2 && now - g_voiceSince > 12000) {
-    g_voice = 0;                                         // no reply: give up
+  } else if (g_voice != 0 && now - g_voiceSince > 15000) {
+    g_voice = 0;  // stuck without progress (e.g. HA died mid-run): clear
   }
   if (g_voiceDebug >= 0) g_voice = (uint8_t)g_voiceDebug;  // debug: force a ring
   if (g_voice != g_voiceLast) {
