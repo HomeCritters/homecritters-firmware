@@ -54,8 +54,9 @@ class Renderer {
   void drawBall(BallGame& game);
   void drawSimon(SimonGame& game);
 
-  // Home Assistant panel: paginated 2x2 grid of entity tiles.
-  void drawHaPanel(HaPanel& ha, int page);
+  // Home Assistant panel: paginated 2x2 grid of entity tiles. `loading` shows
+  // a spinner while the first ha:list hasn't arrived yet (fresh subscribe).
+  void drawHaPanel(HaPanel& ha, int page, bool loading = false);
 
   // Visual feedback: highlight the tapped button for a few ms.
   void flashButton(int idx);

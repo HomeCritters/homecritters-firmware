@@ -421,12 +421,17 @@ static int32_t g_haStartX = 0, g_haStartY = 0;
 // once, so the first honored gesture starts clean. (Games escapes this because
 // its open-swipe goes the other way.)
 static bool g_haSwallow = false;
+static unsigned long g_haOpenedMs = 0;  // when the panel was opened (loading UI)
 static void loopHaPanel(unsigned long now) {
+  // "Loading" = first list hasn't arrived yet and we opened recently (the
+  // plugin answers ha:sub in <1s when connected; past the window it's real
+  // disconnection and the empty state says so).
+  const bool loading = !haPanel.everReceived() && now - g_haOpenedMs < 8000;
   int32_t x, y;
   const bool down = lcd.getTouch(&x, &y);
   if (g_haSwallow) {
     lastInteractionMs = now;  // don't let the idle auto-close fire while waiting
-    if (down) { renderer.drawHaPanel(haPanel, g_haPage); return; }
+    if (down) { renderer.drawHaPanel(haPanel, g_haPage, loading); return; }
     g_haSwallow = false;  // finger lifted: clean slate for real gestures
     g_touchDown = false;
   }
@@ -466,7 +471,7 @@ static void loopHaPanel(unsigned long now) {
       idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
     screen = SCREEN_PET;
   }
-  renderer.drawHaPanel(haPanel, g_haPage);
+  renderer.drawHaPanel(haPanel, g_haPage, loading);
 }
 
 // Navigation/action commands from the DebugConsole (screen state lives here;
@@ -497,7 +502,7 @@ static bool consoleNavigate(const String& c) {
   }
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
-  if (c == "hapanel"){ menuOpen = false; g_haPage = 0; screen = SCREEN_HA; return true; }
+  if (c == "hapanel"){ menuOpen = false; g_haPage = 0; g_haOpenedMs = millis(); screen = SCREEN_HA; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
   if (c == "ball")   { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; return true; }
   if (c == "simon")  { startSimon(now); return true; }
@@ -861,7 +866,10 @@ void loop() {
       // in clock mode a touch only wakes the screen (doesn't run the action)
     } else if (ev.ui == ui::UI_HA_TOGGLE) {
       audio.playClick();
-      if (!menuOpen) { g_haPage = 0; screen = SCREEN_HA; g_haSwallow = true; web.haSubscribe(); }
+      if (!menuOpen) {
+        g_haPage = 0; g_haOpenedMs = now; screen = SCREEN_HA;
+        g_haSwallow = true; web.haSubscribe();
+      }
     } else if (ev.ui == ui::UI_GAMES_TOGGLE) {
       audio.playClick();
       if (!menuOpen) screen = SCREEN_GAMES;

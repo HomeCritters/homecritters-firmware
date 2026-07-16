@@ -578,7 +578,7 @@ void Renderer::drawHaTile(int x, int y, const HaPanel::Entity& e) {
 }
 
 // Full HA panel: 2x2 tiles for the current page + dots + empty states.
-void Renderer::drawHaPanel(HaPanel& ha, int page) {
+void Renderer::drawHaPanel(HaPanel& ha, int page, bool loading) {
   _canvas.fillScreen(menu::BG);
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
@@ -588,14 +588,25 @@ void Renderer::drawHaPanel(HaPanel& ha, int page) {
 
   const int n = ha.count();
   if (n == 0) {
-    _canvas.setTextSize(1);
-    _canvas.setTextColor(menu::TEXT_DIM);
-    const char* l1 = ha.everReceived() ? "Nenhum dispositivo" : "Home Assistant";
-    const char* l2 = ha.everReceived() ? "Configure no app do HA" : "desconectado";
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 110);
-    _canvas.print(l1);
-    _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 124);
-    _canvas.print(l2);
+    if (loading && !ha.everReceived()) {
+      // First open, list not in yet: spinning arc + "Carregando..."
+      const int a0 = (int)((millis() / 2) % 360);
+      _canvas.fillArc(CENTER_X, 104, 16, 12, a0, a0 + 110, rgb565(120, 180, 255));
+      _canvas.setTextSize(1);
+      _canvas.setTextColor(menu::TEXT_DIM);
+      const char* l = "Carregando...";
+      _canvas.setCursor(CENTER_X - _canvas.textWidth(l) / 2, 132);
+      _canvas.print(l);
+    } else {
+      _canvas.setTextSize(1);
+      _canvas.setTextColor(menu::TEXT_DIM);
+      const char* l1 = ha.everReceived() ? "Nenhum dispositivo" : "Home Assistant";
+      const char* l2 = ha.everReceived() ? "Configure no app do HA" : "desconectado";
+      _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 110);
+      _canvas.print(l1);
+      _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 124);
+      _canvas.print(l2);
+    }
     drawLeftHandle();  // pull the left tab to go back
     _canvas.pushSprite(0, 0);
     return;
@@ -609,8 +620,18 @@ void Renderer::drawHaPanel(HaPanel& ha, int page) {
   for (int i = 0; i < ui::HA_PER_PAGE && base + i < n; i++) {
     drawHaTile(cols[i & 1], rows[i >> 1], ha.at(base + i));
   }
-  // Page dots.
   if (pages > 1) {
+    // Swipe hints: bobbing chevrons - up when there's a previous page, down
+    // when there's a next one (the swipe direction that brings more tiles).
+    const int bob = (millis() / 350) % 2;  // gentle 1px nudge
+    const uint16_t hc = rgb565(150, 155, 175);
+    if (page > 0)
+      _canvas.fillTriangle(CENTER_X - 7, 40 - bob, CENTER_X + 7, 40 - bob,
+                           CENTER_X, 33 - bob, hc);
+    if (page < pages - 1)
+      _canvas.fillTriangle(CENTER_X - 7, 202 + bob, CENTER_X + 7, 202 + bob,
+                           CENTER_X, 209 + bob, hc);
+    // Page dots.
     const int dw = pages * 8 - 4;
     for (int p = 0; p < pages; p++) {
       _canvas.fillCircle(CENTER_X - dw / 2 + p * 8, 224, 2,
