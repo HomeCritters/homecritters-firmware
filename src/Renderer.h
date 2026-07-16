@@ -143,6 +143,8 @@ class Renderer {
   void drawDropIcon(int cx, int cy);
   void drawSwitchIcon(int cx, int cy, bool on);
   void drawFanIcon(int cx, int cy);
+  void drawPersonIcon(int cx, int cy, bool present);  // presence/motion
+  void drawSunSmallIcon(int cx, int cy);              // illuminance
   void drawHaTile(int x, int y, const HaPanel::Entity& e);
   // Draw text inside [x, x+w]: centered if it fits, else clipped to the box and
   // scrolled horizontally (marquee) so it never overflows a button/tile.

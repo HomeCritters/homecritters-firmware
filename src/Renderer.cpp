@@ -512,6 +512,30 @@ void Renderer::drawFanIcon(int cx, int cy) {
   _canvas.fillCircle(cx, cy, 2, rgb565(80, 130, 170));
 }
 
+// Presence/motion sensor: a little person that lights up warm when detected.
+void Renderer::drawPersonIcon(int cx, int cy, bool present) {
+  const uint16_t c = present ? rgb565(255, 214, 110) : rgb565(110, 114, 132);
+  _canvas.fillCircle(cx, cy - 5, 4, c);                    // head
+  _canvas.fillRoundRect(cx - 6, cy + 1, 13, 9, 4, c);      // shoulders
+  if (present) {                                           // "detected" waves
+    const uint16_t w = rgb565(232, 190, 80);
+    _canvas.drawCircle(cx - 10, cy - 3, 3, w);
+    _canvas.drawCircle(cx + 10, cy - 3, 3, w);
+  }
+}
+
+// Illuminance sensor: small sun (amber disc + rays).
+void Renderer::drawSunSmallIcon(int cx, int cy) {
+  _canvas.fillCircle(cx, cy, 5, menu::IC_SUN);
+  _canvas.fillCircle(cx - 2, cy - 2, 2, menu::IC_SUN2);    // highlight
+  for (int a = 0; a < 8; a++) {
+    const float t = a * 3.14159f / 4.0f;
+    _canvas.drawLine(cx + (int)(7 * cosf(t)), cy + (int)(7 * sinf(t)),
+                     cx + (int)(10 * cosf(t)), cy + (int)(10 * sinf(t)),
+                     menu::IC_SUN);
+  }
+}
+
 // One HA tile: controllable tiles glow by on/off + toggle on tap; sensor tiles
 // show the value big. Icon by domain (temp/humidity inferred from the value).
 void Renderer::drawScrollText(int x, int y, int w, const char* s,
@@ -550,19 +574,42 @@ void Renderer::drawScrollText(int x, int y, int w, const char* s,
 }
 
 void Renderer::drawHaTile(int x, int y, const HaPanel::Entity& e) {
-  const bool sensor = e.value[0] != 0 && !e.controllable;
+  const bool binsensor = strcmp(e.domain, "binary_sensor") == 0;
+  const bool sensor = !binsensor && e.value[0] != 0 && !e.controllable;
   const bool on = strcmp(e.state, "on") == 0 || strcmp(e.state, "open") == 0 ||
                   strcmp(e.state, "unlocked") == 0 || strcmp(e.state, "playing") == 0;
-  // Dark tiles throughout (white text reads well); ON controls glow green.
-  const uint16_t bg = (!sensor && on) ? rgb565(58, 92, 52) : rgb565(44, 46, 58);
+  const bool presence = binsensor && (!strcmp(e.devclass, "motion") ||
+                                      !strcmp(e.devclass, "occupancy") ||
+                                      !strcmp(e.devclass, "presence"));
+  // Dark tiles throughout (white text reads well); ON controls glow green,
+  // active binary sensors (presence detected!) glow warm amber.
+  uint16_t bg = rgb565(44, 46, 58), border = BTN_BORDER;
+  if (binsensor && on)       { bg = rgb565(96, 78, 30);  border = rgb565(232, 190, 80); }
+  else if (!sensor && !binsensor && on) { bg = rgb565(58, 92, 52); border = rgb565(150, 220, 90); }
   _canvas.fillRoundRect(x, y, MENU_CELL_W, MENU_CELL_H, 12, bg);
-  _canvas.drawRoundRect(x, y, MENU_CELL_W, MENU_CELL_H, 12,
-                        on && !sensor ? rgb565(150, 220, 90) : BTN_BORDER);
+  _canvas.drawRoundRect(x, y, MENU_CELL_W, MENU_CELL_H, 12, border);
   const int cx = x + MENU_CELL_W / 2;
 
-  if (sensor) {
+  if (binsensor) {
+    // Presence/motion: a person that lights up; other binary sensors get a
+    // status dot. State word under the icon (read-only, tap does nothing).
+    if (presence) drawPersonIcon(cx, y + 18, on);
+    else {
+      _canvas.fillCircle(cx, y + 18, 6, on ? rgb565(232, 190, 80) : rgb565(90, 94, 110));
+      _canvas.drawCircle(cx, y + 18, 6, rgb565(150, 155, 175));
+    }
+    const char* w = presence ? (on ? "Presente" : "Ausente")
+                             : (on ? "Ativo" : "Inativo");
+    _canvas.setTextSize(1);
+    _canvas.setTextColor(on ? TFT_WHITE : menu::TEXT_DIM);
+    _canvas.setCursor(cx - _canvas.textWidth(w) / 2, y + 34);
+    _canvas.print(w);
+  } else if (sensor) {
+    const bool lux = strcmp(e.devclass, "illuminance") == 0;
     const bool humid = strchr(e.value, '%') != nullptr;
-    if (humid) drawDropIcon(cx, y + 16); else drawThermoIcon(cx, y + 16);
+    if (lux) drawSunSmallIcon(cx, y + 16);
+    else if (humid) drawDropIcon(cx, y + 16);
+    else drawThermoIcon(cx, y + 16);
     drawScrollText(x + 5, y + 34, MENU_CELL_W - 10, e.value, TFT_WHITE, 2);
   } else {
     const int iy = y + 24;

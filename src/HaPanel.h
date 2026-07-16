@@ -18,9 +18,10 @@ class HaPanel {
   struct Entity {
     char id[40];        // entity_id (for commands)
     char name[19];      // short friendly name
-    char domain[13];    // light/switch/sensor/...
+    char domain[16];    // light/switch/binary_sensor/... (longest + NUL)
     char state[13];     // raw state ("on"/"off"/value)
     char value[13];     // formatted value+unit (sensors)
+    char devclass[13];  // HA device_class (motion/illuminance/... -> icon)
     bool controllable;  // tappable on/off
     bool pending;       // optimistic toggle awaiting confirmation
   };

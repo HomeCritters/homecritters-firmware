@@ -43,6 +43,7 @@ bool HaPanel::parseOne(const char* obj, const char* objEnd, Entity& e) {
   jsonStr(obj, objEnd, "d", e.domain, sizeof(e.domain));
   jsonStr(obj, objEnd, "s", e.state, sizeof(e.state));
   jsonStr(obj, objEnd, "v", e.value, sizeof(e.value));
+  jsonStr(obj, objEnd, "dc", e.devclass, sizeof(e.devclass));
   e.controllable = jsonBool(obj, objEnd, "c");
   e.pending = false;
   return true;
