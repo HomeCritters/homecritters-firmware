@@ -30,12 +30,14 @@ InputEvent InputController::releaseEvent(bool menuOpen, ui::MenuPage page) {
     if (dy > 0 && _startY < 120) { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // down -> open
     if (dy < 0 && menuOpen)      { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // up   -> close
   }
-  if (adx > 45 && adx > ady) {  // horizontal
+  if (adx > 40 && adx > ady) {  // horizontal
     // Right edge, pull left -> open the games menu (pet screen only).
-    if (dx < 0 && _startX > 175 && !menuOpen) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
+    if (dx < 0 && _startX > 165 && !menuOpen) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
     // Left edge, pull right -> "back" in menus; on the pet screen, open the
-    // Home Assistant panel (mirror of the games pull on the right).
-    if (dx > 0 && _startX < 65) {
+    // Home Assistant panel (mirror of the games pull on the right). The zone
+    // is generous (<95) because the round panel's extreme-left touch is weak,
+    // so a rightward swipe often first registers a bit inward.
+    if (dx > 0 && _startX < 95) {
       ev.ui = menuOpen ? ui::UI_MENU_BACK : ui::UI_HA_TOGGLE;
       return ev;
     }

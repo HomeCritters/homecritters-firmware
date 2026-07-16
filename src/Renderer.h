@@ -131,7 +131,7 @@ class Renderer {
                    const ui::ButtonSlot& plus);
   void drawGridCell(int x, int y, const char* label, char icon);
   void drawAudioIcon(int cx, int cy, uint16_t bg);
-  void drawLightIcon(int cx, int cy);
+  void drawLightIcon(int cx, int cy, bool on = true);
   void drawWifiIcon(int cx, int cy);
   void drawLockIcon(int cx, int cy);   // Seguranca tile (padlock)
   void drawHouseIcon(int cx, int cy);  // HA tile
@@ -143,6 +143,10 @@ class Renderer {
   void drawSwitchIcon(int cx, int cy, bool on);
   void drawFanIcon(int cx, int cy);
   void drawHaTile(int x, int y, const HaPanel::Entity& e);
+  // Draw text inside [x, x+w]: centered if it fits, else clipped to the box and
+  // scrolled horizontally (marquee) so it never overflows a button/tile.
+  void drawScrollText(int x, int y, int w, const char* s, uint16_t color,
+                      uint8_t size);
   void drawGameTile(int x, int y, const char* label, char icon, uint16_t iconColor);
   void drawQr(const char* text, int topY, int cx = ui::CENTER_X, int quiet = 3);
   void drawPillButton(int x, int y, int w, int h, const char* label, uint16_t bg);

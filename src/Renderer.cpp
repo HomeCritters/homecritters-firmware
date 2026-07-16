@@ -363,10 +363,23 @@ void Renderer::drawAudioIcon(int cx, int cy, uint16_t bg) {
 }
 
 // A light bulb: amber glass with a highlight + a gray screw base, at (cx,cy).
-void Renderer::drawLightIcon(int cx, int cy) {
+void Renderer::drawLightIcon(int cx, int cy, bool on) {
   const uint16_t base = rgb565(150, 150, 160);
-  _canvas.fillCircle(cx, cy - 4, 9, menu::IC_SUN);        // glass
-  _canvas.fillCircle(cx - 3, cy - 7, 3, menu::IC_SUN2);   // highlight
+  if (on) {
+    // Lit: amber glass + highlight + short rays around it.
+    _canvas.fillCircle(cx, cy - 4, 9, menu::IC_SUN);       // glass
+    _canvas.fillCircle(cx - 3, cy - 7, 3, menu::IC_SUN2);  // highlight
+    for (int a = 0; a < 8; a++) {                          // rays
+      const float t = a * 3.14159f / 4.0f;
+      const int x0 = cx + (int)(11 * cosf(t)), y0 = cy - 4 + (int)(11 * sinf(t));
+      const int x1 = cx + (int)(14 * cosf(t)), y1 = cy - 4 + (int)(14 * sinf(t));
+      _canvas.drawLine(x0, y0, x1, y1, menu::IC_SUN);
+    }
+  } else {
+    // Off: dark gray glass, outlined, no highlight, no rays.
+    _canvas.fillCircle(cx, cy - 4, 9, rgb565(70, 72, 84));
+    _canvas.drawCircle(cx, cy - 4, 9, rgb565(120, 124, 140));
+  }
   _canvas.fillRect(cx - 5, cy + 5, 10, 3, base);          // neck
   _canvas.fillRoundRect(cx - 4, cy + 8, 8, 6, 2, base);   // screw base
   _canvas.drawFastHLine(cx - 4, cy + 10, 8, menu::CELL_LABEL);  // thread lines
@@ -501,6 +514,41 @@ void Renderer::drawFanIcon(int cx, int cy) {
 
 // One HA tile: controllable tiles glow by on/off + toggle on tap; sensor tiles
 // show the value big. Icon by domain (temp/humidity inferred from the value).
+void Renderer::drawScrollText(int x, int y, int w, const char* s,
+                              uint16_t color, uint8_t size) {
+  _canvas.setTextSize(size);
+  _canvas.setTextColor(color);
+  const int tw = _canvas.textWidth(s);
+  if (tw <= w) {  // fits: center it, no scrolling
+    _canvas.setCursor(x + (w - tw) / 2, y);
+    _canvas.print(s);
+    return;
+  }
+  // Too wide: clip to the box and BOUNCE (ping-pong). Slide left to reveal the
+  // end, hold, slide back to the start, hold - no wrap, no seam. millis()-driven
+  // so every scrolling label shares one clock and keeps moving as it redraws.
+  const int maxOff = tw - w;         // how far to travel to show the tail
+  const int msPerPx = 33;            // ~30 px/s (calm, readable glide)
+  const int pause = 900;             // dwell at each end (ms)
+  const int travel = maxOff * msPerPx;
+  const int period = 2 * (travel + pause);
+  const int t = (int)(millis() % period);
+  int off;
+  if (t < pause)                    off = 0;                          // hold start
+  else if (t < pause + travel)      off = (t - pause) / msPerPx;      // -> reveal end
+  else if (t < 2 * pause + travel)  off = maxOff;                     // hold end
+  else                              off = maxOff - (t - 2 * pause - travel) / msPerPx;
+  off = constrain(off, 0, maxOff);
+  _canvas.setClipRect(x, y, w, _canvas.fontHeight());
+  // Text wrap must be OFF: with it on, print() re-homes a cursor that starts
+  // outside the clip area, silently pinning the text at x (frozen marquee).
+  _canvas.setTextWrap(false);
+  _canvas.setCursor(x - off, y);
+  _canvas.print(s);
+  _canvas.setTextWrap(true);
+  _canvas.clearClipRect();
+}
+
 void Renderer::drawHaTile(int x, int y, const HaPanel::Entity& e) {
   const bool sensor = e.value[0] != 0 && !e.controllable;
   const bool on = strcmp(e.state, "on") == 0 || strcmp(e.state, "open") == 0 ||
@@ -515,25 +563,18 @@ void Renderer::drawHaTile(int x, int y, const HaPanel::Entity& e) {
   if (sensor) {
     const bool humid = strchr(e.value, '%') != nullptr;
     if (humid) drawDropIcon(cx, y + 16); else drawThermoIcon(cx, y + 16);
-    _canvas.setTextSize(2);
-    _canvas.setTextColor(TFT_WHITE);
-    _canvas.setCursor(cx - _canvas.textWidth(e.value) / 2, y + 34);
-    _canvas.print(e.value);
+    drawScrollText(x + 5, y + 34, MENU_CELL_W - 10, e.value, TFT_WHITE, 2);
   } else {
     const int iy = y + 24;
     const char* d = e.domain;
-    if (!strcmp(d, "light")) drawLightIcon(cx, iy);
+    if (!strcmp(d, "light")) drawLightIcon(cx, iy, on);
     else if (!strcmp(d, "fan")) drawFanIcon(cx, iy);
     else if (!strcmp(d, "lock")) drawLockIcon(cx, iy);
     else drawSwitchIcon(cx, iy, on);
   }
-  // Name (short), bottom.
-  _canvas.setTextSize(1);
-  _canvas.setTextColor(rgb565(190, 195, 210));
-  char nm[16];
-  snprintf(nm, sizeof(nm), "%.14s", e.name);
-  _canvas.setCursor(cx - _canvas.textWidth(nm) / 2, y + MENU_CELL_H - 13);
-  _canvas.print(nm);
+  // Name at the bottom - scrolls if it's wider than the tile (never overflows).
+  drawScrollText(x + 5, y + MENU_CELL_H - 13, MENU_CELL_W - 10, e.name,
+                 rgb565(190, 195, 210), 1);
 }
 
 // Full HA panel: 2x2 tiles for the current page + dots + empty states.
@@ -556,6 +597,7 @@ void Renderer::drawHaPanel(HaPanel& ha, int page) {
     _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 124);
     _canvas.print(l2);
     drawLeftHandle();  // pull the left tab to go back
+    _canvas.pushSprite(0, 0);
     return;
   }
 
@@ -576,6 +618,7 @@ void Renderer::drawHaPanel(HaPanel& ha, int page) {
     }
   }
   drawLeftHandle();  // left tab = back to the pet
+  _canvas.pushSprite(0, 0);
 }
 
 void Renderer::drawMenu(ui::MenuPage page, int volume, int ledBright,

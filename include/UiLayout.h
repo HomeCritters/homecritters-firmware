@@ -100,11 +100,12 @@ inline bool inRightHandle(int32_t tx, int32_t ty) {
          ty > RHANDLE_CY - RHANDLE_H / 2 && ty < RHANDLE_CY + RHANDLE_H / 2;
 }
 
-// Left-edge handle = "back" (config menu, games menu, Bolinha). Pull it toward
-// the center (swipe right) or tap it. Same geometry, mirrored.
+// Left-edge handle = "back" (menus) / open HA panel (pet). Pull it toward the
+// center (swipe right) or tap it. Generous zone: the round panel's extreme
+// edge is hard to hit precisely.
 inline bool inLeftHandle(int32_t tx, int32_t ty) {
-  return tx < RHANDLE_W + 2 &&
-         ty > RHANDLE_CY - RHANDLE_H / 2 && ty < RHANDLE_CY + RHANDLE_H / 2;
+  return tx < RHANDLE_W + 12 &&
+         ty > RHANDLE_CY - RHANDLE_H / 2 - 8 && ty < RHANDLE_CY + RHANDLE_H / 2 + 8;
 }
 
 constexpr int16_t MENU_BTN_R = 17;  // +/- stepper button radius

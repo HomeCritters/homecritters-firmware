@@ -414,9 +414,22 @@ static void loopGamesMenu(unsigned long now) {
 // (optimistic), left-edge pull / tab = back to the pet. Own touch handling
 // (raw), like the games menu.
 static int32_t g_haStartX = 0, g_haStartY = 0;
+// The panel opens by pulling the LEFT edge RIGHT - the exact same direction as
+// its own "back" gesture. Without this guard, the tail of the opening swipe
+// (still under the finger when we switch screens) reads as a back and slams the
+// panel shut the instant it opens. Swallow every touch until the finger lifts
+// once, so the first honored gesture starts clean. (Games escapes this because
+// its open-swipe goes the other way.)
+static bool g_haSwallow = false;
 static void loopHaPanel(unsigned long now) {
   int32_t x, y;
   const bool down = lcd.getTouch(&x, &y);
+  if (g_haSwallow) {
+    lastInteractionMs = now;  // don't let the idle auto-close fire while waiting
+    if (down) { renderer.drawHaPanel(haPanel, g_haPage); return; }
+    g_haSwallow = false;  // finger lifted: clean slate for real gestures
+    g_touchDown = false;
+  }
   if (down && !g_touchDown) { g_touchDown = true; g_haStartX = x; g_haStartY = y; }
   if (down) {
     g_touchX = x; g_touchY = y;
@@ -443,7 +456,7 @@ static void loopHaPanel(unsigned long now) {
           else if (!strcmp(e.state, "off")) strcpy(e.state, "on");
           e.pending = true;
           web.sendHaCmd(e.id, "toggle");
-          audio.playPat();
+          audio.playClick();
         }
       }
     }
@@ -848,7 +861,7 @@ void loop() {
       // in clock mode a touch only wakes the screen (doesn't run the action)
     } else if (ev.ui == ui::UI_HA_TOGGLE) {
       audio.playClick();
-      if (!menuOpen) { g_haPage = 0; screen = SCREEN_HA; web.haSubscribe(); }
+      if (!menuOpen) { g_haPage = 0; screen = SCREEN_HA; g_haSwallow = true; web.haSubscribe(); }
     } else if (ev.ui == ui::UI_GAMES_TOGGLE) {
       audio.playClick();
       if (!menuOpen) screen = SCREEN_GAMES;
