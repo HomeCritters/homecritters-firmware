@@ -33,8 +33,12 @@ InputEvent InputController::releaseEvent(bool menuOpen, ui::MenuPage page) {
   if (adx > 45 && adx > ady) {  // horizontal
     // Right edge, pull left -> open the games menu (pet screen only).
     if (dx < 0 && _startX > 175 && !menuOpen) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
-    // Left edge, pull right -> "back" one level (sub-page -> main -> closed).
-    if (dx > 0 && _startX < 65 && menuOpen) { ev.ui = ui::UI_MENU_BACK; return ev; }
+    // Left edge, pull right -> "back" in menus; on the pet screen, open the
+    // Home Assistant panel (mirror of the games pull on the right).
+    if (dx > 0 && _startX < 65) {
+      ev.ui = menuOpen ? ui::UI_MENU_BACK : ui::UI_HA_TOGGLE;
+      return ev;
+    }
   }
 
   // TAP: resolved at the touch start point.
@@ -42,6 +46,7 @@ InputEvent InputController::releaseEvent(bool menuOpen, ui::MenuPage page) {
   if (menuOpen) { ev.ui = ui::menuHit(page, px, py); return ev; }
   if (ui::inHandle(px, py)) { ev.ui = ui::UI_MENU_TOGGLE; return ev; }
   if (ui::inRightHandle(px, py)) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
+  if (ui::inLeftHandle(px, py)) { ev.ui = ui::UI_HA_TOGGLE; return ev; }
   int idx = ui::buttonAt(px, py);
   if (idx >= 0) {
     ev.action = actionForButton(idx);

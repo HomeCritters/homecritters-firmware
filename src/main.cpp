@@ -41,8 +41,9 @@ HaPanel          haPanel;
 DebugConsole     console;
 
 // Which screen is showing.
-enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON };
+enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON, SCREEN_HA };
 static Screen screen = SCREEN_PET;
+static int g_haPage = 0;  // HA panel current page
 
 static unsigned long lastTickMs = 0;
 static unsigned long lastSaveMs = 0;
@@ -409,6 +410,52 @@ static void loopGamesMenu(unsigned long now) {
   renderer.drawGamesMenu();
 }
 
+// HA control panel: swipe up/down = page, tap a controllable tile = toggle
+// (optimistic), left-edge pull / tab = back to the pet. Own touch handling
+// (raw), like the games menu.
+static int32_t g_haStartX = 0, g_haStartY = 0;
+static void loopHaPanel(unsigned long now) {
+  int32_t x, y;
+  const bool down = lcd.getTouch(&x, &y);
+  if (down && !g_touchDown) { g_touchDown = true; g_haStartX = x; g_haStartY = y; }
+  if (down) {
+    g_touchX = x; g_touchY = y;
+    lastInteractionMs = now;
+  } else if (g_touchDown) {  // release
+    g_touchDown = false;
+    lastInteractionMs = now;
+    const int32_t dx = g_touchX - g_haStartX, dy = g_touchY - g_haStartY;
+    const int pages = (haPanel.count() + ui::HA_PER_PAGE - 1) / ui::HA_PER_PAGE;
+    if (abs(dy) > 45 && abs(dy) > abs(dx)) {           // vertical swipe = page
+      if (dy < 0 && g_haPage < pages - 1) { g_haPage++; audio.playClick(); }
+      else if (dy > 0 && g_haPage > 0)    { g_haPage--; audio.playClick(); }
+    } else if ((dx > 45 && abs(dx) > abs(dy) && g_haStartX < 65) ||
+               ui::inLeftHandle(g_haStartX, g_haStartY)) {  // left = back
+      audio.playClick();
+      screen = SCREEN_PET;
+    } else {  // tap a tile -> toggle if controllable (optimistic)
+      const int t = ui::haTileAt(g_haStartX, g_haStartY);
+      const int idx = g_haPage * ui::HA_PER_PAGE + t;
+      if (t >= 0 && idx < haPanel.count()) {
+        HaPanel::Entity& e = haPanel.at(idx);
+        if (e.controllable) {
+          if (!strcmp(e.state, "on")) strcpy(e.state, "off");
+          else if (!strcmp(e.state, "off")) strcpy(e.state, "on");
+          e.pending = true;
+          web.sendHaCmd(e.id, "toggle");
+          audio.playPat();
+        }
+      }
+    }
+  }
+  const int timeout = petClock.menuTimeoutSec();
+  if (timeout > 0 && screen == SCREEN_HA &&
+      idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
+    screen = SCREEN_PET;
+  }
+  renderer.drawHaPanel(haPanel, g_haPage);
+}
+
 // Navigation/action commands from the DebugConsole (screen state lives here;
 // module-level commands like vol:/led:/stats: are handled inside the console).
 static bool consoleNavigate(const String& c) {
@@ -437,6 +484,7 @@ static bool consoleNavigate(const String& c) {
   }
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
+  if (c == "hapanel"){ menuOpen = false; g_haPage = 0; screen = SCREEN_HA; return true; }
   if (c == "doodle") { startDoodle(now); return true; }
   if (c == "ball")   { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; return true; }
   if (c == "simon")  { startSimon(now); return true; }
@@ -688,7 +736,8 @@ void loop() {
   web.setScreen(screen == SCREEN_DOODLE ? "doodle" :
                 screen == SCREEN_BALL   ? "ball"   :
                 screen == SCREEN_SIMON  ? "simon"  :
-                screen == SCREEN_GAMES  ? "games"  : "pet");
+                screen == SCREEN_GAMES  ? "games"  :
+                screen == SCREEN_HA     ? "ha"     : "pet");
   switch (web.consumeGameNav()) {
     case WebPortal::NAV_START:
       if (screen != SCREEN_DOODLE) { startDoodle(now); web.pushState(); }
@@ -731,6 +780,12 @@ void loop() {
   }
   if (screen == SCREEN_GAMES) {
     loopGamesMenu(now);
+    serviceShots();
+    delay(30);
+    return;
+  }
+  if (screen == SCREEN_HA) {
+    loopHaPanel(now);
     serviceShots();
     delay(30);
     return;
@@ -791,6 +846,9 @@ void loop() {
     lastInteractionMs = now;
     if (clockActive) {
       // in clock mode a touch only wakes the screen (doesn't run the action)
+    } else if (ev.ui == ui::UI_HA_TOGGLE) {
+      audio.playClick();
+      if (!menuOpen) { g_haPage = 0; screen = SCREEN_HA; web.haSubscribe(); }
     } else if (ev.ui == ui::UI_GAMES_TOGGLE) {
       audio.playClick();
       if (!menuOpen) screen = SCREEN_GAMES;
