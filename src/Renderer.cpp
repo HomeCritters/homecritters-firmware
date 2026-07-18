@@ -201,28 +201,71 @@ void Renderer::drawForest(bool night) {
   drawPineTree(210, GROUND_Y, 40);
   drawPineTree(178, GROUND_Y, 28);
 
-  // darker grass tufts up front
+  // --- grass detail pass -----------------------------------------------
+  // Depth: a darker strip hugging the horizon, then light patches.
+  _canvas.fillRect(0, GROUND_Y, SCREEN_W, 3, lerp565(_p.ground, _p.groundDark, 0.5f));
+  const uint16_t light = lerp565(_p.ground, rgb565(255, 255, 210), 0.12f);
+  for (int i = 0; i < 6; i++) {  // sunlit patches (hashed, static)
+    const uint32_t s = (uint32_t)i * 2654435761u + 7u;
+    _canvas.fillCircle(12 + (int)(s % 216), GROUND_Y + 8 + (int)((s >> 9) % 18),
+                       3 + (int)((s >> 5) % 3), light);
+  }
+  // Tufts: the old dark row + a second offset row of lighter blades.
   for (int x = 4; x < SCREEN_W; x += 18) {
     int gy = GROUND_Y + 6 + ((x * 5) % 7);
     _canvas.fillTriangle(x - 3, gy, x + 3, gy, x, gy - 6, _p.groundDark);
   }
+  const uint16_t blade = lerp565(_p.groundDark, _p.ground, 0.45f);
+  for (int x = 13; x < SCREEN_W; x += 22) {
+    int gy = GROUND_Y + 14 + ((x * 3) % 9);
+    _canvas.fillTriangle(x - 2, gy, x + 2, gy, x, gy - 5, blade);
+  }
+  // A few taller blades swaying gently in the breeze.
+  for (int i = 0; i < 4; i++) {
+    const int bx = 28 + i * 62;
+    const int by = GROUND_Y + 10 + ((i * 47) % 12);
+    const int lean = (int)(1.6f * sinf(millis() / 900.0f + i * 1.6f));
+    _canvas.drawLine(bx, by, bx + lean, by - 7, _p.groundDark);
+    _canvas.drawLine(bx + 1, by, bx + 1 + lean, by - 6, blade);
+  }
+  if (night) {
+    // Glowing mushrooms: two tiny caps pulsing softly (magic forest!).
+    const float pu = 0.5f + 0.5f * sinf(millis() / 1400.0f);
+    const uint16_t cap1 = lerp565(rgb565(60, 40, 90), rgb565(150, 110, 235), pu);
+    const uint16_t cap2 = lerp565(rgb565(30, 70, 80), rgb565(80, 200, 210), pu);
+    _canvas.drawFastVLine(58, GROUND_Y + 20, 3, rgb565(180, 175, 165));
+    _canvas.fillRect(56, GROUND_Y + 18, 5, 2, cap1);
+    _canvas.drawFastVLine(196, GROUND_Y + 14, 2, rgb565(180, 175, 165));
+    _canvas.fillRect(195, GROUND_Y + 13, 3, 2, cap2);
+  } else {
+    // Tiny wildflowers by day: 1px colored heads on the grass.
+    static const int16_t fl[][2] = {{40, 122}, {104, 131}, {186, 124}, {142, 119}};
+    static const uint16_t fc[] = {rgb565(255, 245, 250), rgb565(255, 220, 90),
+                                  rgb565(250, 160, 200), rgb565(255, 245, 250)};
+    for (int i = 0; i < 4; i++) {
+      _canvas.drawPixel(fl[i][0], fl[i][1] - 1, fc[i]);
+      _canvas.drawPixel(fl[i][0] - 1, fl[i][1], fc[i]);
+      _canvas.drawPixel(fl[i][0] + 1, fl[i][1], fc[i]);
+      _canvas.drawPixel(fl[i][0], fl[i][1] + 1, fc[i]);
+      _canvas.drawPixel(fl[i][0], fl[i][1], rgb565(250, 210, 60));
+    }
+  }
 }
 
 void Renderer::drawSparkles(bool night) {
-  // Magic dust 2.0: motes rise slowly from the grass with a gentle sway,
-  // each with its own speed, path and blink rhythm (all hashed from the
-  // mote index - stateless). Brightness ladder per blink slot: dark ->
-  // faint pixel -> lit dot -> white 4-point star glint.
+  // Magic dust: fixed twinkling points (the rising motes competed with the
+  // fireflies), keeping the newer look - per-dot rhythm and a brightness
+  // ladder per blink slot: dark -> faint pixel -> lit dot -> rare star glint.
+  static const int16_t pts[][2] = {
+    {60, 70}, {150, 58}, {110, 90}, {30, 95}, {200, 88},
+    {170, 120}, {75, 130}, {215, 130}, {45, 128},
+  };
   const unsigned long ms = millis();
-  const int n = night ? 7 : 5;  // night stays calm - the fireflies are the stars
+  const int n = night ? 9 : 5;
   for (int i = 0; i < n; i++) {
     const uint32_t seed = (uint32_t)i * 2246822519u + 0x9E3779B9u;
-    const int baseX = 18 + (int)((seed >> 8) % 204);
-    const int span = 34 + (int)((seed >> 3) % 46);     // rise range 34..80 px
-    const int baseY = 128 - (int)((seed >> 16) % 40);  // starts near the grass
-    const int rise = 26 + (int)(seed % 20);            // ms per px upward
-    const int y = baseY - (int)((ms / rise + (seed & 63)) % span);
-    const int x = baseX + (int)(3.0f * sinf(ms / 700.0f + i * 1.9f));
+    const int x = pts[i][0];
+    const int y = pts[i][1];
     const unsigned long ph = ms / (160 + (int)((seed >> 5) % 180));
     uint32_t h = (uint32_t)ph * 2654435761u ^ seed;
     h ^= h >> 13;
