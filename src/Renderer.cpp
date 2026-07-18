@@ -215,17 +215,40 @@ void Renderer::drawForest(bool night) {
     int gy = GROUND_Y + 15 + ((x * 3) % 8);
     _canvas.fillTriangle(x - 2, gy, x + 2, gy, x, gy - 5, blade);
   }
-  for (int i = 0; i < 3; i++) {  // swaying stalks
-    const int bx = 40 + i * 80;
-    const int by = GROUND_Y + 12 + ((i * 47) % 10);
-    const int lean = (int)(1.6f * sinf(millis() / 900.0f + i * 1.9f));
-    _canvas.drawLine(bx, by, bx + lean, by - 7, _p.groundDark);
+  // Swaying grass clumps: 3 clumps of 3 curved blades. Each blade bends
+  // from the TIP (two segments, the top one travels twice as far), with a
+  // slightly different phase per blade so the clump ripples in the breeze.
+  for (int c = 0; c < 3; c++) {
+    const int bx = 40 + c * 80;
+    const int by = GROUND_Y + 12 + ((c * 47) % 10);
+    for (int b = 0; b < 3; b++) {
+      const int x0 = bx + (b - 1) * 3;
+      const int h = 6 + ((b + c) % 3) * 2;  // 6..10 px tall
+      const float sway = sinf(millis() / 850.0f + c * 1.9f + b * 0.6f);
+      const int tip = (int)(2.5f * sway);
+      const uint16_t col = (b == 1) ? blade : _p.groundDark;
+      _canvas.drawLine(x0, by, x0 + tip / 2, by - h / 2, col);
+      _canvas.drawLine(x0 + tip / 2, by - h / 2, x0 + tip, by - h, col);
+    }
   }
   if (night) {
-    const float pu = 0.5f + 0.5f * sinf(millis() / 1400.0f);
-    const uint16_t cap = lerp565(rgb565(60, 40, 90), rgb565(150, 110, 235), pu);
-    _canvas.drawFastVLine(58, GROUND_Y + 20, 3, rgb565(180, 175, 165));
-    _canvas.fillRect(56, GROUND_Y + 18, 5, 2, cap);
+    // Three glowing mushrooms, each pulsing on its own clock (the blue
+    // glow the owner liked - now a little family of them).
+    struct M { int16_t x, y, w; uint16_t dark, bright; uint16_t period; float ph; };
+    static const M ms[3] = {
+        {56, (int16_t)(GROUND_Y + 18), 5, rgb565(60, 40, 90), rgb565(150, 110, 235), 1400, 0.0f},
+        {143, (int16_t)(GROUND_Y + 14), 3, rgb565(30, 70, 80), rgb565(80, 200, 210), 1750, 1.6f},
+        {207, (int16_t)(GROUND_Y + 21), 4, rgb565(30, 50, 100), rgb565(100, 150, 255), 1150, 3.1f},
+    };
+    for (int i = 0; i < 3; i++) {
+      const M& m = ms[i];
+      const float pu = 0.5f + 0.5f * sinf(millis() / (float)m.period + m.ph);
+      const uint16_t cap = lerp565(m.dark, m.bright, pu);
+      _canvas.drawFastVLine(m.x + m.w / 2, m.y + 2, 3, rgb565(180, 175, 165));
+      _canvas.fillRect(m.x, m.y, m.w, 2, cap);
+      if (pu > 0.75f)  // faint ground glow at the peak
+        _canvas.drawFastHLine(m.x - 1, m.y + 5, m.w + 2, lerp565(_p.ground, m.bright, 0.25f));
+    }
   } else {
     static const int16_t fl[][2] = {{40, 124}, {186, 121}};
     static const uint16_t fc[] = {rgb565(255, 245, 250), rgb565(250, 160, 200)};
