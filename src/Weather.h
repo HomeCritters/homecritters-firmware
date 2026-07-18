@@ -60,6 +60,7 @@ class Weather {
 
   WxKind kindNow() const { return fresh() ? kindFromCode(_codeNow) : WX_CLEAR; }
   int tempNow() const { return _tempNow; }
+  int humNow() const { return _humNow; }  // relative humidity % (-1 unknown)
   uint8_t codeNow() const { return _codeNow; }
   int dayCount() const { return _dayCount; }
   const Day& day(int i) const { return _days[i]; }
@@ -90,6 +91,7 @@ class Weather {
 
   // --- adopted model (main thread reads) ---
   int8_t _tempNow = 0;
+  int8_t _humNow = -1;
   uint8_t _codeNow = 0;
   Day _days[MAX_DAYS] = {};
   int _dayCount = 0;
@@ -98,6 +100,7 @@ class Weather {
   // --- staging (task writes, loop() adopts) ---
   struct Staging {
     int8_t tempNow;
+    int8_t humNow;
     uint8_t codeNow;
     Day days[MAX_DAYS];
     int dayCount;

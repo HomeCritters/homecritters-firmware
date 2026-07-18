@@ -226,6 +226,7 @@ void Weather::requestFetch(unsigned long maxAgeMs) {
 void Weather::loop() {
   if (!_stReady) return;
   _tempNow = _st.tempNow;
+  _humNow = _st.humNow;
   _codeNow = _st.codeNow;
   memcpy(_days, _st.days, sizeof(_days));
   _dayCount = _st.dayCount;
@@ -264,7 +265,7 @@ bool Weather::fetchOnce() {
   char url[256];
   snprintf(url, sizeof(url),
            "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"
-           "&current=temperature_2m,weather_code"
+           "&current=temperature_2m,relative_humidity_2m,weather_code"
            "&daily=weather_code,temperature_2m_max,temperature_2m_min,"
            "precipitation_probability_max"
            "&timezone=auto&forecast_days=%d",
@@ -311,6 +312,8 @@ bool Weather::fetchOnce() {
       f[0] = strtof(q, nullptr);
     }
     _st.tempNow = (int8_t)lroundf(f[0]);
+    const char* qh = findKey(cur, curEnd, "relative_humidity_2m");
+    _st.humNow = qh ? (int8_t)atoi(qh) : -1;
     const char* q = findKey(cur, curEnd, "weather_code");
     if (!q) break;
     _st.codeNow = (uint8_t)atoi(q);

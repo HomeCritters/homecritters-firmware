@@ -439,11 +439,11 @@ void Renderer::drawClock(Clock& clock) {
     const int textW = _canvas.textWidth(tw);
     const int total = 18 + 8 + textW + 8;      // icon + gap + temp + degree
     const int x0 = CENTER_X - total / 2;
-    drawWxIcon(x0 + 9, 212, Weather::kindFromCode(_wxCode), 1);
+    drawWxIcon(x0 + 9, 216, _wxCode, 1);
     _canvas.setTextColor(TFT_WHITE);
-    _canvas.setCursor(x0 + 26, 205);
+    _canvas.setCursor(x0 + 26, 209);
     _canvas.print(tw);
-    _canvas.drawCircle(x0 + 26 + textW + 4, 206, 2, TFT_WHITE);  // degree
+    _canvas.drawCircle(x0 + 26 + textW + 4, 210, 2, TFT_WHITE);  // degree
   }
 }
 
@@ -879,16 +879,26 @@ void Renderer::drawHaPanel(HaPanel& ha, int page, bool loading) {
 // ---- Weather forecast screen -----------------------------------------------
 
 // Small weather glyph from primitives. s=1 -> ~16px (day row), s=2 -> ~32px.
-void Renderer::drawWxIcon(int cx, int cy, WxKind k, int s) {
-  if (k == WX_CLEAR) {
-    _canvas.fillCircle(cx, cy, 5 * s, menu::IC_SUN);
-    _canvas.fillCircle(cx - 2 * s, cy - 2 * s, 2 * s, menu::IC_SUN2);
+void Renderer::drawWxIcon(int cx, int cy, uint8_t code, int s) {
+  const WxKind k = Weather::kindFromCode(code);
+  const bool partly = (code == 1 || code == 2);  // sun peeking behind a cloud
+  if (k == WX_CLEAR || partly) {
+    const int sx = partly ? cx - 3 * s : cx;   // sun shifts up-left when shared
+    const int sy = partly ? cy - 3 * s : cy;
+    _canvas.fillCircle(sx, sy, 5 * s, menu::IC_SUN);
+    _canvas.fillCircle(sx - 2 * s, sy - 2 * s, 2 * s, menu::IC_SUN2);
     for (int a = 0; a < 8; a++) {
       const float t = a * 3.14159f / 4.0f;
-      _canvas.drawLine(cx + (int)(7 * s * cosf(t)), cy + (int)(7 * s * sinf(t)),
-                       cx + (int)(9 * s * cosf(t)), cy + (int)(9 * s * sinf(t)),
+      _canvas.drawLine(sx + (int)(7 * s * cosf(t)), sy + (int)(7 * s * sinf(t)),
+                       sx + (int)(9 * s * cosf(t)), sy + (int)(9 * s * sinf(t)),
                        menu::IC_SUN);
     }
+    if (!partly) return;
+    // small cloud in front of the sun (bigger for code 2 than code 1)
+    const int cw = (code == 2) ? 3 : 2;
+    _canvas.fillCircle(cx + 2 * s, cy + 3 * s - cw * s / 2, cw * s, theme::CLOUD);
+    _canvas.fillCircle(cx + 6 * s, cy + 3 * s, cw * s, theme::CLOUD_DARK);
+    _canvas.fillRect(cx, cy + 3 * s, 8 * s, cw * s, theme::CLOUD);
     return;
   }
   if (k == WX_FOG) {
@@ -907,10 +917,13 @@ void Renderer::drawWxIcon(int cx, int cy, WxKind k, int s) {
   _canvas.fillCircle(cx, cy + oy - 2 * s, 4 * s, theme::CLOUD);
   _canvas.fillRect(cx - 6 * s, cy + oy + s, 12 * s, 3 * s, theme::CLOUD);
   if (k == WX_RAIN) {
-    for (int i = -1; i <= 1; i++) {
+    // Freezing rain gets icy pale drops; drizzle 2 drops, rain/heavy 3.
+    const uint16_t dc =
+        Weather::codeFreezing(code) ? rgb565(215, 240, 255) : theme::RAINDROP;
+    const int n = Weather::intensityFromCode(code) == 0 ? 1 : 3;
+    for (int i = -1; i <= 1; i += (n == 1 ? 2 : 1)) {
       const int rx = cx + i * 4 * s;
-      _canvas.drawLine(rx, cy + oy + 5 * s, rx - s, cy + oy + 8 * s,
-                       theme::RAINDROP);
+      _canvas.drawLine(rx, cy + oy + 5 * s, rx - s, cy + oy + 8 * s, dc);
     }
   } else if (k == WX_STORM) {
     // Two offset triangles read as a lightning bolt.
@@ -918,10 +931,21 @@ void Renderer::drawWxIcon(int cx, int cy, WxKind k, int s) {
                          cx - s, cy + oy + 9 * s, theme::BOLT);
     _canvas.fillTriangle(cx + 2 * s, cy + oy + 6 * s, cx - s, cy + oy + 9 * s,
                          cx + s, cy + oy + 12 * s, theme::BOLT);
+    if (Weather::codeHail(code)) {  // hail: white pellets beside the bolt
+      _canvas.fillCircle(cx - 4 * s, cy + oy + 7 * s, s, TFT_WHITE);
+      _canvas.fillCircle(cx + 5 * s, cy + oy + 6 * s, s, TFT_WHITE);
+    }
   } else if (k == WX_SNOW) {
-    for (int i = -1; i <= 1; i++)
-      _canvas.fillCircle(cx + i * 4 * s, cy + oy + 6 * s + (i ? s : 3 * s),
-                         s, TFT_WHITE);
+    // Grains (77) = a tight row of specks; snow = 3 falling flakes.
+    if (code == 77) {
+      for (int i = -2; i <= 2; i++)
+        _canvas.fillCircle(cx + i * 3 * s, cy + oy + 6 * s, s > 1 ? s - 1 : 1,
+                           TFT_WHITE);
+    } else {
+      for (int i = -1; i <= 1; i++)
+        _canvas.fillCircle(cx + i * 4 * s, cy + oy + 6 * s + (i ? s : 3 * s),
+                           s, TFT_WHITE);
+    }
   }
 }
 
@@ -954,8 +978,7 @@ void Renderer::drawWeather(Weather& wx) {
   }
 
   // --- today, big: icon + current temp + condition + hi/lo ---
-  const WxKind know = Weather::kindFromCode(wx.codeNow());
-  drawWxIcon(82, 96, know, 2);
+  drawWxIcon(82, 96, wx.codeNow(), 2);
   char t[8];
   snprintf(t, sizeof(t), "%d", wx.tempNow());
   _canvas.setTextSize(4);
@@ -964,16 +987,37 @@ void Renderer::drawWeather(Weather& wx) {
   _canvas.setCursor(124, 82);
   _canvas.print(t);
   _canvas.drawCircle(124 + tw + 6, 84, 3, TFT_WHITE);  // degree mark
-  char sub[40];
-  if (wx.dayCount() > 0)
-    snprintf(sub, sizeof(sub), "%s  %d / %d", Weather::labelForCode(wx.codeNow()),
-             wx.day(0).hi, wx.day(0).lo);
-  else
-    snprintf(sub, sizeof(sub), "%s", Weather::labelForCode(wx.codeNow()));
+  // Condition label, then a thermo (day hi/lo) + drop (humidity) row.
   _canvas.setTextSize(1);
   _canvas.setTextColor(menu::TEXT_DIM);
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(sub) / 2, 128);
-  _canvas.print(sub);
+  const char* lbl = Weather::labelForCode(wx.codeNow());
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(lbl) / 2, 122);
+  _canvas.print(lbl);
+  {
+    char hilo[12], hum[6];
+    if (wx.dayCount() > 0)
+      snprintf(hilo, sizeof(hilo), "%d/%d", wx.day(0).hi, wx.day(0).lo);
+    else
+      hilo[0] = 0;
+    if (wx.humNow() >= 0) snprintf(hum, sizeof(hum), "%d%%", wx.humNow());
+    else hum[0] = 0;
+    const int wHilo = hilo[0] ? 12 + _canvas.textWidth(hilo) : 0;
+    const int wHum = hum[0] ? 12 + _canvas.textWidth(hum) : 0;
+    const int gap = (wHilo && wHum) ? 14 : 0;
+    int x = CENTER_X - (wHilo + gap + wHum) / 2;
+    _canvas.setTextColor(TFT_WHITE);
+    if (hilo[0]) {
+      drawThermoIcon(x + 4, 139);
+      _canvas.setCursor(x + 12, 136);
+      _canvas.print(hilo);
+      x += wHilo + gap;
+    }
+    if (hum[0]) {
+      drawDropIcon(x + 4, 139);
+      _canvas.setCursor(x + 12, 136);
+      _canvas.print(hum);
+    }
+  }
 
   // --- next days, small columns ---
   const int n = min(wx.dayCount() - 1, 4);  // skip today (index 0)
@@ -987,7 +1031,7 @@ void Renderer::drawWeather(Weather& wx) {
       _canvas.setTextColor(TFT_WHITE);
       _canvas.setCursor(cx - _canvas.textWidth(d.day) / 2, 150);
       _canvas.print(d.day);
-      drawWxIcon(cx, 172, Weather::kindFromCode(d.code), 1);
+      drawWxIcon(cx, 172, d.code, 1);
       char hi[6], lo[6];
       snprintf(hi, sizeof(hi), "%d", d.hi);
       snprintf(lo, sizeof(lo), "%d", d.lo);
