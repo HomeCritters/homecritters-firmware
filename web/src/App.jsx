@@ -715,55 +715,6 @@ export default function App() {
 
           <Divider />
 
-          <div>
-            <Text strong>🔒 Conexões pareadas</Text>
-            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-              Aparelhos com acesso ao bichinho agora
-            </Text>
-            {clients.length === 0 && (
-              <Text type="secondary" style={{ fontSize: 13 }}>Nenhuma conexão.</Text>
-            )}
-            {clients.map((c) => (
-              <div
-                key={c.slot + '-' + c.ip}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <Text style={{ fontSize: 13 }}>
-                    {c.label || 'Aparelho'} {c.me && <Text type="secondary">(este)</Text>}
-                  </Text>
-                  <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>{c.ip}</Text>
-                </div>
-                <Popconfirm
-                  title="Encerrar esta conexão?"
-                  description={c.me ? 'Você precisará parear de novo.' : 'O aparelho precisará parear de novo.'}
-                  okText="Encerrar"
-                  cancelText="Cancelar"
-                  okButtonProps={{ danger: true }}
-                  onConfirm={() => send('revoke:' + c.slot)}
-                >
-                  <Button size="small" danger>Encerrar</Button>
-                </Popconfirm>
-              </div>
-            ))}
-            {clients.length > 1 && (
-              <Popconfirm
-                title="Encerrar TODAS as conexões?"
-                description="Todos os aparelhos (inclusive o HA) terão que parear de novo."
-                okText="Encerrar todas"
-                cancelText="Cancelar"
-                okButtonProps={{ danger: true }}
-                onConfirm={() => send('revoke:all')}
-              >
-                <Button size="small" danger block style={{ marginTop: 6 }}>
-                  Encerrar todas
-                </Button>
-              </Popconfirm>
-            )}
-          </div>
-
-          <Divider />
-
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <Text strong>🎙️ Microfone</Text>
@@ -910,6 +861,56 @@ export default function App() {
               onChange={(v) => send(v === 'DD/MM/AAAA' ? 'date:dmy' : 'date:mdy')}
             />
           </div>
+
+          <Divider />
+
+          <div>
+            <Text strong>🔒 Conexões pareadas</Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              Aparelhos com acesso ao bichinho agora
+            </Text>
+            {clients.length === 0 && (
+              <Text type="secondary" style={{ fontSize: 13 }}>Nenhuma conexão.</Text>
+            )}
+            {clients.map((c) => (
+              <div
+                key={c.slot + '-' + c.ip}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <Text style={{ fontSize: 13 }}>
+                    {c.label || 'Aparelho'} {c.me && <Text type="secondary">(este)</Text>}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>{c.ip}</Text>
+                </div>
+                <Popconfirm
+                  title="Encerrar esta conexão?"
+                  description={c.me ? 'Você precisará parear de novo.' : 'O aparelho precisará parear de novo.'}
+                  okText="Encerrar"
+                  cancelText="Cancelar"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => send('revoke:' + c.slot)}
+                >
+                  <Button size="small" danger>Encerrar</Button>
+                </Popconfirm>
+              </div>
+            ))}
+            {clients.length > 1 && (
+              <Popconfirm
+                title="Encerrar TODAS as conexões?"
+                description="Todos os aparelhos (inclusive o HA) terão que parear de novo."
+                okText="Encerrar todas"
+                cancelText="Cancelar"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => send('revoke:all')}
+              >
+                <Button size="small" danger block style={{ marginTop: 6 }}>
+                  Encerrar todas
+                </Button>
+              </Popconfirm>
+            )}
+          </div>
+
 
           <Divider />
 
