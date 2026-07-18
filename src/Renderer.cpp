@@ -251,24 +251,30 @@ void Renderer::drawFireflies() {
       {150, 82, 40, 22, 9.1f, 6.7f, 2.1f},
       {110, 118, 30, 14, 6.1f, 8.3f, 4.2f},
   };
-  const uint16_t bright = rgb565(140, 255, 110), dim = rgb565(70, 160, 60);
+  const uint16_t bright = rgb565(140, 255, 110);   // full glow
+  const uint16_t faint = rgb565(26, 64, 30);       // almost melts into the night
   for (int i = 0; i < 3; i++) {
     const F& f = fs[i];
     const int x = (int)(f.cx + f.ax * sinf(t * 6.2832f / f.px + f.ph));
     const int y = (int)(f.cy + f.ay * sinf(t * 6.2832f / f.py + f.ph * 1.7f));
+    // Continuous fade: brightness follows the sine (no on/off steps) -
+    // lerp565 walks the whole green ramp from near-dark to neon.
     const float pulse = sinf(t * 3.0f + i * 2.0f);
-    if (pulse < -0.7f) continue;  // brief dark beat
-    // short dim trail (where it was a moment ago) sells the flight path
+    const float b = (pulse + 0.7f) / 1.7f;   // -0.7..1 -> 0..1
+    if (b <= 0.02f) continue;                // fully faded out
+    const uint16_t glow = lerp565(faint, bright, b);
+    // short trail (where it was a moment ago) sells the flight path
     const float tp = t - 0.22f;
     const int px = (int)(f.cx + f.ax * sinf(tp * 6.2832f / f.px + f.ph));
     const int py = (int)(f.cy + f.ay * sinf(tp * 6.2832f / f.py + f.ph * 1.7f));
-    _canvas.drawPixel(px, py, dim);
-    _canvas.fillCircle(x, y, 1, bright);
-    if (pulse > 0.35f) {          // glow halo most of the lit time
-      _canvas.drawPixel(x - 2, y, dim);
-      _canvas.drawPixel(x + 2, y, dim);
-      _canvas.drawPixel(x, y - 2, dim);
-      _canvas.drawPixel(x, y + 2, dim);
+    _canvas.drawPixel(px, py, lerp565(faint, bright, b * 0.4f));
+    _canvas.fillCircle(x, y, 1, glow);
+    if (b > 0.65f) {  // halo fades in near the peak
+      const uint16_t halo = lerp565(faint, bright, (b - 0.65f));
+      _canvas.drawPixel(x - 2, y, halo);
+      _canvas.drawPixel(x + 2, y, halo);
+      _canvas.drawPixel(x, y - 2, halo);
+      _canvas.drawPixel(x, y + 2, halo);
     }
   }
 }
