@@ -122,6 +122,9 @@ class Renderer {
   int16_t _boltX = 120;            // where the current bolt strikes
   uint32_t _boltSeed = 1;          // jitter seed (stable during one strike)
   bool _thunderPending = false;    // flash fired -> main plays the thunder
+  unsigned long _nextShootMs = 0;  // next shooting star (clear nights)
+  unsigned long _shootT0 = 0;      // active streak start (0 = none)
+  int16_t _ssx = 0, _ssy = 0;      // streak origin
 
   void drawSky();
   void drawStars();
@@ -132,7 +135,9 @@ class Renderer {
   void drawCabin(int bx, int by, bool night);
   void drawPineTree(int bx, int baseY, int size);
   void drawSparkles(bool night);
-  void drawFireflies();  // green wanderers, clear nights only
+  void drawFireflies();     // green wanderers, clear nights only
+  void drawShootingStar();  // rare streak, clear nights
+  void drawButterflies();   // daytime counterpart, clear days
   void drawHeader(const Pet& pet, bool wifiOn, bool micMuted, bool micLive);
   void drawMenuHandle();
   void drawRightHandle();

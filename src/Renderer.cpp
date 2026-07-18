@@ -161,6 +161,20 @@ void Renderer::drawCabin(int bx, int by, bool night) {
   // roof with eaves
   _canvas.fillTriangle(bx - 5, by - wallH, bx + w + 5, by - wallH,
                        bx + w / 2, by - wallH - 15, _p.cabinRoof);
+  // chimney + cozy smoke puffs drifting up (magic forests have warm cabins)
+  const int chx = bx + 12, chTop = by - wallH - 9;
+  _canvas.fillRect(chx, chTop, 4, 8, _p.treeTrunk);
+  {
+    const unsigned long ms = millis();
+    const uint16_t smoke = lerp565(_p.skyTop, theme::CLOUD, 0.55f);
+    for (int i = 0; i < 3; i++) {
+      const int cyc = (int)((ms / 90 + i * 9) % 26);   // rises 26px then loops
+      if (cyc > 20) continue;                          // gap between puffs
+      const int sy = chTop - 3 - cyc;
+      const int sx = chx + 2 + (int)(2.0f * sinf(ms / 800.0f + i * 2.1f));
+      _canvas.fillCircle(sx, sy, cyc < 12 ? 1 : 2, smoke);  // grows as it rises
+    }
+  }
   // door
   _canvas.fillRect(bx + 5, by - 14, 10, 14, _p.cabinRoof);
   // window (lit at night, with a glow)
@@ -200,7 +214,7 @@ void Renderer::drawSparkles(bool night) {
   // mote index - stateless). Brightness ladder per blink slot: dark ->
   // faint pixel -> lit dot -> white 4-point star glint.
   const unsigned long ms = millis();
-  const int n = night ? 12 : 6;
+  const int n = night ? 7 : 5;  // night stays calm - the fireflies are the stars
   for (int i = 0; i < n; i++) {
     const uint32_t seed = (uint32_t)i * 2246822519u + 0x9E3779B9u;
     const int baseX = 18 + (int)((seed >> 8) % 204);
@@ -215,8 +229,9 @@ void Renderer::drawSparkles(bool night) {
     const uint8_t st = h & 7;
     if (st < 3) continue;                       // dark beat
     if (st < 6) { _canvas.drawPixel(x, y, _p.sparkle); continue; }  // faint
-    _canvas.fillCircle(x, y, 1, st == 7 ? TFT_WHITE : _p.sparkle);  // lit
-    if (st == 7) {                              // star glint at the peak
+    const bool glint = st == 7 && ((h >> 8) & 3) == 0;  // rare white star
+    _canvas.fillCircle(x, y, 1, glint ? TFT_WHITE : _p.sparkle);    // lit
+    if (glint) {                                // star glint at the peak
       _canvas.drawPixel(x - 2, y, _p.sparkle);
       _canvas.drawPixel(x + 2, y, _p.sparkle);
       _canvas.drawPixel(x, y - 2, _p.sparkle);
@@ -242,13 +257,71 @@ void Renderer::drawFireflies() {
     const int x = (int)(f.cx + f.ax * sinf(t * 6.2832f / f.px + f.ph));
     const int y = (int)(f.cy + f.ay * sinf(t * 6.2832f / f.py + f.ph * 1.7f));
     const float pulse = sinf(t * 3.0f + i * 2.0f);
-    if (pulse < -0.6f) continue;  // brief dark beat
-    _canvas.fillCircle(x, y, 1, pulse > 0.3f ? bright : dim);
-    if (pulse > 0.6f) {           // glow halo at the peak
+    if (pulse < -0.7f) continue;  // brief dark beat
+    // short dim trail (where it was a moment ago) sells the flight path
+    const float tp = t - 0.22f;
+    const int px = (int)(f.cx + f.ax * sinf(tp * 6.2832f / f.px + f.ph));
+    const int py = (int)(f.cy + f.ay * sinf(tp * 6.2832f / f.py + f.ph * 1.7f));
+    _canvas.drawPixel(px, py, dim);
+    _canvas.fillCircle(x, y, 1, bright);
+    if (pulse > 0.35f) {          // glow halo most of the lit time
       _canvas.drawPixel(x - 2, y, dim);
       _canvas.drawPixel(x + 2, y, dim);
       _canvas.drawPixel(x, y - 2, dim);
       _canvas.drawPixel(x, y + 2, dim);
+    }
+  }
+}
+
+// A rare shooting star streaking the upper sky (clear nights): scheduled
+// every 15-45 s, alive for ~700 ms with a fading tail.
+void Renderer::drawShootingStar() {
+  const unsigned long now = millis();
+  if (_nextShootMs == 0) _nextShootMs = now + 8000;
+  if (_shootT0 == 0 && (long)(now - _nextShootMs) >= 0) {
+    _shootT0 = now;
+    _ssx = 30 + (int)(esp_random() % 130);
+    _ssy = 16 + (int)(esp_random() % 26);
+  }
+  if (_shootT0 == 0) return;
+  const unsigned long p = now - _shootT0;
+  if (p > 700) {  // done: schedule the next one
+    _shootT0 = 0;
+    _nextShootMs = now + 15000 + (esp_random() % 30000);
+    return;
+  }
+  const int hx = _ssx + (int)(p * 0.12f);  // head position
+  const int hy = _ssy + (int)(p * 0.045f);
+  _canvas.drawPixel(hx, hy, TFT_WHITE);
+  _canvas.drawPixel(hx - 1, hy, TFT_WHITE);
+  for (int k = 2; k <= 7; k++) {           // fading tail
+    if (k % 2) continue;                   // sparse = twinkly
+    _canvas.drawPixel(hx - k * 2, hy - (int)(k * 0.75f), theme::STAR);
+  }
+}
+
+// Two butterflies fluttering over the grass on clear days - the daytime
+// counterpart of the fireflies. Wing flap = the pixels beside the body
+// alternate up/out every beat.
+void Renderer::drawButterflies() {
+  const float t = millis() / 1000.0f;
+  struct B { float cx, cy, ax, ay, px, py, ph; uint16_t c; };
+  const B bs[2] = {
+      {85, 104, 38, 12, 8.1f, 5.7f, 0.0f, rgb565(255, 200, 90)},   // amber
+      {160, 96, 32, 15, 6.7f, 7.9f, 3.0f, rgb565(240, 240, 250)},  // white
+  };
+  const bool flap = (millis() / 130) & 1;
+  for (int i = 0; i < 2; i++) {
+    const B& b = bs[i];
+    const int x = (int)(b.cx + b.ax * sinf(t * 6.2832f / b.px + b.ph));
+    const int y = (int)(b.cy + b.ay * sinf(t * 6.2832f / b.py + b.ph * 1.7f));
+    _canvas.drawPixel(x, y, b.c);                       // body
+    if (flap) {                                         // wings out
+      _canvas.drawPixel(x - 1, y, b.c);
+      _canvas.drawPixel(x + 1, y, b.c);
+    } else {                                            // wings up
+      _canvas.drawPixel(x - 1, y - 1, b.c);
+      _canvas.drawPixel(x + 1, y - 1, b.c);
     }
   }
 }
@@ -1859,9 +1932,17 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   }
   drawForest(night);
   drawSparkles(night);
-  // Green fireflies: clear nights only (weather grounds them), and the
-  // party has its own light show.
-  if (night && k == WX_CLEAR && !party) drawFireflies();
+  // Clear-sky critters: green fireflies by night, butterflies by day
+  // (weather grounds both; the party has its own light show). Clear nights
+  // also get the occasional shooting star.
+  if (k == WX_CLEAR && !party) {
+    if (night) {
+      drawFireflies();
+      drawShootingStar();
+    } else {
+      drawButterflies();
+    }
+  }
   // Disco floor goes UNDER the pet (Leon dances on it); the ball + lasers
   // overlay goes on top of everything at the end.
   if (party) drawDiscoFloor();
