@@ -229,7 +229,8 @@ void WebPortal::micCaptureLoop() {
   bool wasBusy = true;  // force a 16kHz clock restore on the first real capture
   int16_t frame[320];   // 20ms @ 16kHz mono
   for (;;) {
-    if (!_micOn) { wasBusy = true; _micRing.reset(); vTaskDelay(pdMS_TO_TICKS(20)); continue; }
+    // Night mode is a privacy gate like mute: stop capturing at the source.
+    if (!_micOn || _fullSleep) { wasBusy = true; _micRing.reset(); vTaskDelay(pdMS_TO_TICKS(20)); continue; }
     if (_audio && _audio->busy()) { wasBusy = true; vTaskDelay(pdMS_TO_TICKS(10)); continue; }
     if (wasBusy) {
       AudioCodec::setCaptureRate();            // playback left it at 44.1/48k
@@ -246,7 +247,8 @@ void WebPortal::micCaptureLoop() {
 // so no locking). Sends only what's buffered; a slow/dead client can back up
 // the ring (producer drops on overflow) but never blocks rendering here.
 void WebPortal::pumpMic() {
-  if (!_micOn || _micClient < 0 || _micMuted) return;  // muted = hard gate
+  // muted OR night mode = hard gates: nothing leaves the device
+  if (!_micOn || _micClient < 0 || _micMuted || _fullSleep) return;
   uint8_t buf[640];  // one 20ms frame per send (320 samples * 2 bytes)
   for (int i = 0; i < 8; i++) {   // cap the work per loop iteration
     if (_micRing.fill() < sizeof(buf)) break;
@@ -266,7 +268,7 @@ void WebPortal::pumpMic() {
 // These only handle the mic + the ptt event; the voice UI state (listening/
 // thinking/speaking) is driven by the main loop via setVoiceState().
 void WebPortal::voicePttStart() {
-  if (_micMuted) return;  // privacy: no chime, no event, no audio
+  if (_micMuted || _fullSleep) return;  // privacy: no chime, no event, no audio
   // Ascending chime: "mic is open, go ahead". Half-duplex: capture starts
   // right after the chime finishes (the capture task waits out audio.busy()).
   if (_audio) _audio->playListen();

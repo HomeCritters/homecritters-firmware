@@ -72,7 +72,9 @@ class WebPortal {
   // assist:off / run death / disconnect clears it). Just "streaming" wasn't
   // enough - during an openWakeWord restart the device kept streaming into a
   // dead pipeline and the icon lied. Drives the header's cyan mic.
-  bool micLive() const { return _micOn && _micClient >= 0 && !_micMuted && _assistOn; }
+  bool micLive() const {
+    return _micOn && _micClient >= 0 && !_micMuted && !_fullSleep && _assistOn;
+  }
   void setMicMuted(bool muted);
   // Voice UI state, driven by the main loop's state machine (idle|listening|
   // thinking|speaking). Reflected in the WS state so the portal/HA can mirror
@@ -226,7 +228,9 @@ class WebPortal {
   const char* _voiceState = "idle";  // idle|listening|thinking|speaking
   volatile int _voiceCmd = -1;       // pending HA-driven state (see consumeVoiceCmd)
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
-  bool _fullSleep = false;           // actual mode, reported by main
+  volatile bool _fullSleep = false;  // actual mode, reported by main (night
+                                     // mode also HARD-gates the mic: no
+                                     // capture, no frames leave the device)
   volatile int _sleepSndReq = -1, _wakeSndReq = -1;  // pending sound settings
   bool _sleepSnd = true, _wakeSnd = true;            // reported by main
   StreamRing _micRing;      // producer = capture task, consumer = handle()
