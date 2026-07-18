@@ -148,6 +148,8 @@ class Renderer {
   // Weather glyph straight from the WMO code (granular: sun-behind-cloud,
   // fog dashes, snow flakes, hail pellets...). s = scale (1 mini, 2 big).
   void drawWxIcon(int cx, int cy, uint8_t code, int s);
+  void drawMiniThermo(int x, int cy);  // 8px-scale glyphs for info rows
+  void drawMiniDrop(int x, int cy);
   void drawClock(Clock& clock);
   void drawMediaFx(uint8_t kind);     // 1 = disco ball + lasers (music party)
   void drawVoiceRing(uint8_t state);  // 1 listening, 2 thinking, 3 speaking

@@ -879,6 +879,19 @@ void Renderer::drawHaPanel(HaPanel& ha, int page, bool loading) {
 // ---- Weather forecast screen -----------------------------------------------
 
 // Small weather glyph from primitives. s=1 -> ~16px (day row), s=2 -> ~32px.
+// Tiny 8px-font-scale glyphs for inline info rows (the tile-sized thermo/
+// drop icons overwhelmed the forecast screen's text).
+void Renderer::drawMiniThermo(int x, int cy) {
+  _canvas.drawFastVLine(x, cy - 6, 7, rgb565(220, 220, 228));  // stem
+  _canvas.fillCircle(x, cy + 3, 2, rgb565(235, 80, 60));       // bulb
+}
+
+void Renderer::drawMiniDrop(int x, int cy) {
+  const uint16_t c = rgb565(90, 160, 235);
+  _canvas.fillTriangle(x - 2, cy, x + 2, cy, x, cy - 5, c);    // tip
+  _canvas.fillCircle(x, cy + 1, 2, c);                          // body
+}
+
 void Renderer::drawWxIcon(int cx, int cy, uint8_t code, int s) {
   const WxKind k = Weather::kindFromCode(code);
   const bool partly = (code == 1 || code == 2);  // sun peeking behind a cloud
@@ -987,11 +1000,12 @@ void Renderer::drawWeather(Weather& wx) {
   _canvas.setCursor(124, 82);
   _canvas.print(t);
   _canvas.drawCircle(124 + tw + 6, 84, 3, TFT_WHITE);  // degree mark
-  // Condition label, then a thermo (day hi/lo) + drop (humidity) row.
+  // Condition label, then a mini-thermo (today hi/lo) + mini-drop (humidity)
+  // row - tiny glyphs matched to the 8px font so nothing collides.
   _canvas.setTextSize(1);
   _canvas.setTextColor(menu::TEXT_DIM);
   const char* lbl = Weather::labelForCode(wx.codeNow());
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(lbl) / 2, 122);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(lbl) / 2, 118);
   _canvas.print(lbl);
   {
     char hilo[12], hum[6];
@@ -1001,25 +1015,25 @@ void Renderer::drawWeather(Weather& wx) {
       hilo[0] = 0;
     if (wx.humNow() >= 0) snprintf(hum, sizeof(hum), "%d%%", wx.humNow());
     else hum[0] = 0;
-    const int wHilo = hilo[0] ? 12 + _canvas.textWidth(hilo) : 0;
-    const int wHum = hum[0] ? 12 + _canvas.textWidth(hum) : 0;
-    const int gap = (wHilo && wHum) ? 14 : 0;
+    const int wHilo = hilo[0] ? 9 + _canvas.textWidth(hilo) : 0;
+    const int wHum = hum[0] ? 9 + _canvas.textWidth(hum) : 0;
+    const int gap = (wHilo && wHum) ? 16 : 0;
     int x = CENTER_X - (wHilo + gap + wHum) / 2;
     _canvas.setTextColor(TFT_WHITE);
     if (hilo[0]) {
-      drawThermoIcon(x + 4, 139);
-      _canvas.setCursor(x + 12, 136);
+      drawMiniThermo(x + 2, 135);
+      _canvas.setCursor(x + 9, 132);
       _canvas.print(hilo);
       x += wHilo + gap;
     }
     if (hum[0]) {
-      drawDropIcon(x + 4, 139);
-      _canvas.setCursor(x + 12, 136);
+      drawMiniDrop(x + 2, 135);
+      _canvas.setCursor(x + 9, 132);
       _canvas.print(hum);
     }
   }
 
-  // --- next days, small columns ---
+  // --- next days: same pattern as today (thermo hi/lo + drop rain%) ---
   const int n = min(wx.dayCount() - 1, 4);  // skip today (index 0)
   if (n > 0) {
     const int spacing = 50;
@@ -1032,15 +1046,22 @@ void Renderer::drawWeather(Weather& wx) {
       _canvas.setCursor(cx - _canvas.textWidth(d.day) / 2, 150);
       _canvas.print(d.day);
       drawWxIcon(cx, 172, d.code, 1);
-      char hi[6], lo[6];
-      snprintf(hi, sizeof(hi), "%d", d.hi);
-      snprintf(lo, sizeof(lo), "%d", d.lo);
+      char hilo[12];
+      snprintf(hilo, sizeof(hilo), "%d/%d", d.hi, d.lo);
+      int w = 9 + _canvas.textWidth(hilo);
       _canvas.setTextColor(TFT_WHITE);
-      _canvas.setCursor(cx - _canvas.textWidth(hi) / 2, 190);
-      _canvas.print(hi);
-      _canvas.setTextColor(menu::TEXT_DIM);
-      _canvas.setCursor(cx - _canvas.textWidth(lo) / 2, 202);
-      _canvas.print(lo);
+      drawMiniThermo(cx - w / 2 + 2, 193);
+      _canvas.setCursor(cx - w / 2 + 9, 190);
+      _canvas.print(hilo);
+      if (d.pop >= 0) {  // chance of rain, dim (same drop glyph as today)
+        char pop[6];
+        snprintf(pop, sizeof(pop), "%d%%", d.pop);
+        w = 9 + _canvas.textWidth(pop);
+        _canvas.setTextColor(menu::TEXT_DIM);
+        drawMiniDrop(cx - w / 2 + 2, 207);
+        _canvas.setCursor(cx - w / 2 + 9, 204);
+        _canvas.print(pop);
+      }
     }
   }
   if (!wx.fresh()) {  // API/WiFi down for 3h+: the data shown is old
