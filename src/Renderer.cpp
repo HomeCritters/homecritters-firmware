@@ -262,17 +262,31 @@ void Renderer::drawSnow() {
   }
 }
 
-// Fog: dithered horizontal haze bands drifting slowly over the scene. No
-// alpha on RGB565, so every-other-pixel dots read as translucency.
+// Fog: real translucent mist. RGB565 has no alpha, but the canvas is ours -
+// blend each pixel toward the fog color directly in the buffer (big-endian,
+// hence the byte swaps). Three soft bands with vertical falloff and a slow
+// horizontal waviness so the mist rolls instead of looking like stripes.
 void Renderer::drawFog() {
-  const unsigned long t = millis();
-  static const int16_t bandY[5] = {66, 82, 98, 116, 132};
-  for (int b = 0; b < 5; b++) {
-    const int shift = (int)((t / (60 + b * 25)) % 4);  // per-band crawl
-    for (int r = 0; r < 3; r++) {                      // 3 dotted rows/band
-      const int y = bandY[b] + r * 2;
-      for (int x = ((b + r) % 2) * 2 + (shift & 2); x < SCREEN_W; x += 4)
-        _canvas.drawPixel(x, y, theme::CLOUD);
+  uint16_t* buf = (uint16_t*)_canvas.getBuffer();
+  if (!buf) return;
+  const float t = millis() / 1000.0f;
+  struct Band { int16_t cy, half; float speed; };
+  static const Band bands[3] = {{92, 9, 0.9f}, {114, 11, -0.6f}, {138, 13, 0.4f}};
+  float wav[SCREEN_W];
+  for (int b = 0; b < 3; b++) {
+    // Per-column strength wave, computed once per band (sinf is pricey).
+    for (int x = 0; x < SCREEN_W; x++)
+      wav[x] = 0.7f + 0.3f * sinf(x * 0.05f + t * bands[b].speed + b * 2.1f);
+    for (int dy = -bands[b].half; dy <= bands[b].half; dy++) {
+      const int y = bands[b].cy + dy;
+      if (y < 0 || y >= SCREEN_H) continue;
+      const float fall = 1.0f - fabsf((float)dy) / (bands[b].half + 1.0f);
+      uint16_t* row = &buf[y * SCREEN_W];
+      for (int x = 0; x < SCREEN_W; x++) {
+        const float a = 0.55f * fall * wav[x];
+        const uint16_t c = __builtin_bswap16(row[x]);
+        row[x] = __builtin_bswap16(lerp565(c, theme::CLOUD, a));
+      }
     }
   }
 }
