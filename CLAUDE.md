@@ -337,20 +337,40 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
       com a tensão real da bateria em repouso.
 - [ ] Animação **Death** do sheet ainda não é usada (ex.: stat zerado por
       muito tempo).
-- [~] **Home Assistant**: fases 1 (entidades) e 2 (media player) prontas via a
-      integração custom. **Voz/Assist EM ANDAMENTO** (branch `voice-assistant`
-      nos dois repos). Plano: `.claude/plans/snug-plotting-kazoo.md`.
+- [x] **Home Assistant / Voz**: COMPLETO (F1+F2+F3, tudo na main dos 2 repos).
       - **F1 mic ✅**: ES8311 ADC + I2S full-duplex 16k mono (`AudioCodec`),
         captura num ring PSRAM (task própria) → WS binário; half-duplex (pausa
         na reprodução). Validado (99% contínuo, cliente morto não trava).
       - **F2 push-to-talk ✅**: segurar BOOT streama o mic + `evt:ptt:start/end`;
-        HA (`assist_satellite.py`, plataforma nova) roda STT→TTS e toca a
-        resposta via `media:play`. Protocolo WS: `voice:sub` (HA vira sink),
-        `ptt:start/end` (PTT por software), campo `voice` no estado. Validado
-        ponta-a-ponta: fala → STT "Que horas são?" → Ollama responde → TTS.
-        BOOT deixou de fazer sleep/wake (só tela+portal); tap=alimentar.
-      - **F3 pendente**: wake word **"Alexa" REMOTO** (openWakeWord local no HA),
-        estados de voz na tela/LED, switch de mute.
+        HA (`assist_satellite.py`) roda STT→TTS e toca a resposta via
+        `media:play`. `voice:sub` (HA vira sink), `ptt:start/end`, campo
+        `voice` no estado. BOOT: tap=mute, segurar=falar.
+      - **F3 always-on ✅**: wake word **"Alexa"** REMOTO (add-on openWakeWord
+        no HA); satélite mantém um run persistente em WAKE_WORD e **rearma**
+        após cada turno (backoff 2s — restart do add-on não gera tempestade).
+        HA→device `voice:listening|thinking|speaking|idle` (anel+LED) e
+        `assist:on|off` (pipeline vivo de verdade). **Ícone de mic no topo**:
+        ciano = ponta-a-ponta OK (streamando E pipeline consumindo — o
+        `assist:on` só vem quando o estágio wake/STT inicia), piscando =
+        pipeline instável, riscado vermelho = mutado, apagado = HA não ouve.
+        `continue_conversation`: pergunta de volta reabre o mic direto no STT.
+        PTT vence wake word. `micOn`/`micClient`/`assistOn` no estado (debug).
+        Lições duras: (1) mic PGA a 42 dB (24 dB dava ~1% FS e o openWakeWord
+        nunca disparava; STT nuvem mascarava com AGC); (2) o run persistente
+        precisa ser `async_create_background_task` (task normal TRAVA o boot
+        do HA); (3) `pumpMic` não pode matar o mic num sendBIN falho (flapping
+        deixava o openWakeWord no silêncio — debugar SEMPRE olhando o log do
+        add-on: connect→info→disconnect sem detecção = áudio não chega).
+      - **Stack**: pipeline HA "Ollama" = openWakeWord(alexa) + STT/TTS
+        ElevenLabs + **qwen3:8b** (cabe INTEIRO na GPU de 8GB do LXC 101;
+        o 14b derrama pra CPU = 30-60s. 14b fica pro Open WebUI; gemma3:12b
+        é do LLM Vision). Prompt do Leon: ignora wake word (e transcrições
+        tortas), bom senso com erros de STT, unidades por extenso ("23
+        graus", nunca "°C"). Threshold do openWakeWord: config do add-on.
+      - **Deploy do plugin**: HACS rastreia a **main** — nunca instalar
+        branch pelo HACS (gera "update" que na verdade faz downgrade);
+        integração nova em custom_components exige RESTART (reload não
+        re-escaneia).
 - [ ] **Sendspin (futuro, mídia 2.0)**: protocolo aberto de áudio multi-room
       sincronizado da OHF (ex-"Resonate"), servidor = Music Assistant, push via
       TCP 8928 + mDNS. ESPHome tem componente `sendspin` (experimental). O nosso

@@ -79,21 +79,25 @@ And it's a show:
 
 ### 🎙️ Voice assistant
 
-**Hold the BOOT button and talk.** The mic (ES8311 ADC, 16 kHz) streams to
-Home Assistant's Assist pipeline — STT, your conversation agent, and the
-spoken reply plays back through the speaker. Every phase gets its own ring
-around the round bezel, plus matching iOS-style earcons.
+**Just say "Alexa"** — always-on wake word, no button needed. The mic
+(ES8311 ADC, 16 kHz) streams continuously to Home Assistant, where
+openWakeWord (local, private) listens for the wake word; on a hit the
+Assist pipeline takes over — STT, your conversation agent, and the spoken
+reply plays back through the speaker. If the assistant answers with a
+follow-up question, the mic reopens by itself so you can just reply. Every
+phase gets its own ring around the round bezel, plus iOS-style earcons.
+**Hold BOOT to push-to-talk** at any time (the button beats the wake word).
 
 A **quick BOOT tap mutes the microphone** (Echo-style privacy: nothing
-leaves the device, PTT is denied at the source) — a crossed-mic icon shows
-on screen so the LED stays on mood duty.
+leaves the device — a hard gate at the source) — a crossed-mic icon shows
+on screen. When the assistant can actually hear you (device streaming
+*and* the HA pipeline confirmed it's consuming the audio), a small **cyan
+mic** shows at the top; if the pipeline gets unstable it blinks — honest,
+end-to-end status you can debug at a glance.
 
 | Listening | Thinking | Speaking | Mic muted |
 |---|---|---|---|
 | ![listen](docs/screenshots/voice-listen.png) | ![think](docs/screenshots/voice-think.png) | ![speak](docs/screenshots/voice-ring.png) | ![mute](docs/screenshots/mute-mic.png) |
-
-Always-on **"Alexa" wake word** (openWakeWord running on HA) is next on the
-roadmap.
 
 ### 🔒 Pairing & security
 
@@ -119,7 +123,13 @@ idle clock), brightness sliders, every device setting (pet name, timezone,
 time/date formats, timeouts) organized in Controls / Configuration /
 Diagnostics sections, a `media_player` entity for TTS and Music Assistant
 (set the player codec to **MP3 or FLAC** — ALAC is not supported) and an
-`assist_satellite` for push-to-talk voice.
+`assist_satellite` with always-on wake word + push-to-talk voice.
+
+There's also a **"Casa" panel on the device itself**: pull the left edge of
+the pet screen to open a paginated grid of your HA entities — lights,
+switches, fans and locks as one-tap toggles, temperature/humidity/
+illuminance and presence sensors read-only. Pick (and drag-order) the
+entities in the integration's Configure dialog.
 
 ## Hardware
 
