@@ -964,7 +964,18 @@ void Renderer::drawWxIcon(int cx, int cy, uint8_t code, int s) {
 
 void Renderer::drawWeather(Weather& wx) {
   _canvas.fillScreen(menu::BG);
-  drawPageHeader("Tempo", wx.hasLocation() ? wx.city() : "");
+  // Own compact header (higher than drawPageHeader): frees vertical room
+  // for the forecast ladder below.
+  _canvas.setTextColor(TFT_WHITE);
+  _canvas.setTextSize(2);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth("Tempo") / 2, 18);
+  _canvas.print("Tempo");
+  if (wx.hasLocation()) {
+    _canvas.setTextSize(1);
+    _canvas.setTextColor(menu::TEXT_DIM);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(wx.city()) / 2, 40);
+    _canvas.print(wx.city());
+  }
 
   if (!wx.hasLocation()) {
     _canvas.setTextSize(1);
@@ -991,21 +1002,21 @@ void Renderer::drawWeather(Weather& wx) {
   }
 
   // --- today, big: icon + current temp + condition + hi/lo ---
-  drawWxIcon(82, 84, wx.codeNow(), 2);
+  drawWxIcon(82, 72, wx.codeNow(), 2);
   char t[8];
   snprintf(t, sizeof(t), "%d", wx.tempNow());
   _canvas.setTextSize(4);
   _canvas.setTextColor(TFT_WHITE);
   const int tw = _canvas.textWidth(t);
-  _canvas.setCursor(124, 70);
+  _canvas.setCursor(124, 58);
   _canvas.print(t);
-  _canvas.drawCircle(124 + tw + 6, 72, 3, TFT_WHITE);  // degree mark
+  _canvas.drawCircle(124 + tw + 6, 60, 3, TFT_WHITE);  // degree mark
   // Condition label, then a mini-thermo (today hi/lo) + mini-drop (humidity)
   // row - tiny glyphs matched to the 8px font so nothing collides.
   _canvas.setTextSize(1);
   _canvas.setTextColor(menu::TEXT_DIM);
   const char* lbl = Weather::labelForCode(wx.codeNow());
-  _canvas.setCursor(CENTER_X - _canvas.textWidth(lbl) / 2, 106);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(lbl) / 2, 98);
   _canvas.print(lbl);
   {
     char hilo[12], hum[6];
@@ -1021,14 +1032,14 @@ void Renderer::drawWeather(Weather& wx) {
     int x = CENTER_X - (wHilo + gap + wHum) / 2;
     _canvas.setTextColor(TFT_WHITE);
     if (hilo[0]) {
-      drawMiniThermo(x + 2, 123);
-      _canvas.setCursor(x + 9, 120);
+      drawMiniThermo(x + 2, 115);
+      _canvas.setCursor(x + 9, 112);
       _canvas.print(hilo);
       x += wHilo + gap;
     }
     if (hum[0]) {
-      drawMiniDrop(x + 2, 123);
-      _canvas.setCursor(x + 9, 120);
+      drawMiniDrop(x + 2, 115);
+      _canvas.setCursor(x + 9, 112);
       _canvas.print(hum);
     }
   }
@@ -1043,23 +1054,23 @@ void Renderer::drawWeather(Weather& wx) {
       const int cx = x0 + i * spacing;
       _canvas.setTextSize(1);
       _canvas.setTextColor(TFT_WHITE);
-      _canvas.setCursor(cx - _canvas.textWidth(d.day) / 2, 140);
+      _canvas.setCursor(cx - _canvas.textWidth(d.day) / 2, 134);
       _canvas.print(d.day);
-      drawWxIcon(cx, 160, d.code, 1);
+      drawWxIcon(cx, 154, d.code, 1);
       char hilo[12];
       snprintf(hilo, sizeof(hilo), "%d/%d", d.hi, d.lo);
       int w = 9 + _canvas.textWidth(hilo);
       _canvas.setTextColor(TFT_WHITE);
-      drawMiniThermo(cx - w / 2 + 2, 183);
-      _canvas.setCursor(cx - w / 2 + 9, 180);
+      drawMiniThermo(cx - w / 2 + 2, 179);
+      _canvas.setCursor(cx - w / 2 + 9, 176);
       _canvas.print(hilo);
       if (d.pop >= 0) {  // chance of rain, dim (same drop glyph as today)
         char pop[6];
         snprintf(pop, sizeof(pop), "%d%%", d.pop);
         w = 9 + _canvas.textWidth(pop);
         _canvas.setTextColor(menu::TEXT_DIM);
-        drawMiniDrop(cx - w / 2 + 2, 197);
-        _canvas.setCursor(cx - w / 2 + 9, 194);
+        drawMiniDrop(cx - w / 2 + 2, 195);
+        _canvas.setCursor(cx - w / 2 + 9, 192);
         _canvas.print(pop);
       }
     }
