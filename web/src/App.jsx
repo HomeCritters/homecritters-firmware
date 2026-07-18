@@ -57,6 +57,26 @@ const MENU_TIMEOUT_OPTIONS = [
   { label: '1 minuto', value: 60 },
 ];
 
+// Dev panel: forceable weather (value = firmware wxset name; '' = real).
+const WX_FORCE_OPTIONS = [
+  { label: '🌐 Automático (clima real)', value: '' },
+  { label: '☀️ Limpo', value: 'clear' },
+  { label: '🌤️ Quase limpo', value: 'mclear' },
+  { label: '⛅ Parcial nublado', value: 'partly' },
+  { label: '☁️ Encoberto', value: 'cloudy' },
+  { label: '🌫️ Neblina', value: 'fog' },
+  { label: '🌦️ Garoa', value: 'drizzle' },
+  { label: '🧊 Garoa gelada', value: 'frizzle' },
+  { label: '🌧️ Chuva', value: 'rainy' },
+  { label: '🧊 Chuva gelada', value: 'frain' },
+  { label: '⛈️ Temporal', value: 'pouring' },
+  { label: '❄️ Neve', value: 'snow' },
+  { label: '🌨️ Grãos de neve', value: 'grains' },
+  { label: '🌨️ Pancada de neve', value: 'snowshower' },
+  { label: '🌩️ Tempestade', value: 'storm' },
+  { label: '🧊 Granizo', value: 'hail' },
+];
+
 const STATS = [
   { key: 'hunger', label: 'Fome' },
   { key: 'energy', label: 'Energia' },
@@ -391,6 +411,7 @@ export default function App() {
   const [citySearch, setCitySearch] = useState('');
   const [cityResults, setCityResults] = useState([]);
   const [citySearching, setCitySearching] = useState(false);
+  const [wxForce, setWxForce] = useState('');  // dev panel: forced weather
   const wsRef = useRef(null);
   const nameDirty = useRef(false);
   const volDirty = useRef(false);
@@ -888,6 +909,32 @@ export default function App() {
               disabled={!state?.clockOn}
               onChange={(v) => send(v === 'DD/MM/AAAA' ? 'date:dmy' : 'date:mdy')}
             />
+          </div>
+
+          <Divider />
+
+          <div>
+            <Text strong>🛠️ Desenvolvimento</Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2, marginBottom: 4 }}>
+              Força um clima na cena pra testar os visuais (não afeta a
+              previsão real).
+            </Text>
+            <Select
+              style={{ width: '100%' }}
+              value={wxForce}
+              options={WX_FORCE_OPTIONS}
+              onChange={(v) => {
+                setWxForce(v);
+                send('wxset:' + v);
+              }}
+            />
+            <Button
+              block
+              style={{ marginTop: 8 }}
+              onClick={() => send('wxbolt')}
+            >
+              ⚡ Raio agora
+            </Button>
           </div>
         </Drawer>
 

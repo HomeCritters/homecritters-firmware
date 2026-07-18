@@ -69,6 +69,20 @@ const char* Weather::labelForCode(uint8_t c) {
   return kindLabel(kindFromCode(c));
 }
 
+int Weather::codeFromName(const char* n) {
+  struct M { const char* name; uint8_t code; };
+  static const M map[] = {
+      {"clear", 0},   {"mclear", 1},     {"partly", 2},  {"cloudy", 3},
+      {"fog", 45},    {"drizzle", 53},   {"frizzle", 56}, {"rainy", 63},
+      {"frain", 66},  {"pouring", 82},   {"snow", 73},   {"grains", 77},
+      {"snowshower", 86}, {"storm", 95}, {"hail", 96},
+  };
+  for (const auto& m : map)
+    if (strcmp(n, m.name) == 0) return m.code;
+  if (n[0] >= '0' && n[0] <= '9') return atoi(n);
+  return -1;  // empty/unknown = real weather
+}
+
 const char* Weather::kindLabel(WxKind k) {
   switch (k) {
     case WX_CLEAR:  return "Limpo";

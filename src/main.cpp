@@ -554,18 +554,7 @@ static bool consoleNavigate(const String& c) {
   }
   if (c == "wxfetch") { weather.requestFetch(0); Serial.println("[wx] fetch requested"); return true; }
   if (c.startsWith("wxset:")) {  // force a scene WMO code by name or number
-    const String k = c.substring(6);
-    // Named shortcuts map to a representative WMO code; any raw code works
-    // too (wxset:82). Empty = back to the real weather.
-    g_wxDebug = k == "clear"      ? 0  : k == "mclear"  ? 1
-              : k == "partly"     ? 2  : k == "cloudy"  ? 3
-              : k == "fog"        ? 45 : k == "drizzle" ? 53
-              : k == "frizzle"    ? 56 : k == "rainy"   ? 63
-              : k == "frain"      ? 66 : k == "pouring" ? 82
-              : k == "snow"       ? 73 : k == "grains"  ? 77
-              : k == "snowshower" ? 86 : k == "storm"   ? 95
-              : k == "hail"       ? 96
-              : (k.length() && isDigit(k[0])) ? k.toInt() : -1;
+    g_wxDebug = Weather::codeFromName(c.substring(6).c_str());
     Serial.printf("[wx] forced code = %d\n", g_wxDebug);
     return true;
   }
@@ -654,6 +643,10 @@ void loop() {
   // Weather: adopt any finished fetch and keep the scene condition current
   // (debug force wins). Runs on every screen so the data never goes stale.
   weather.loop();
+  {  // dev panel (portal) can force/clear the scene weather like the serial
+    const int req = web.consumeWxSet();
+    if (req != -2) g_wxDebug = req;
+  }
   const uint8_t wxCode =
       g_wxDebug >= 0 ? (uint8_t)g_wxDebug
                      : (weather.fresh() ? weather.codeNow() : 0);

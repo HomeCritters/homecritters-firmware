@@ -71,6 +71,10 @@ class Weather {
   static bool codeFreezing(uint8_t c);          // 56/57/66/67 freezing rain
   static bool codeHail(uint8_t c);              // 96/99 thunderstorm w/ hail
   static const char* labelForCode(uint8_t c);   // PT label, granular
+  // Debug helper: "rainy"/"hail"/... or a raw number -> WMO code; ""/unknown
+  // -> -1 (= use the real weather). Shared by the serial console and the
+  // portal's dev panel.
+  static int codeFromName(const char* n);
 
  private:
   static void taskTrampoline(void* arg);

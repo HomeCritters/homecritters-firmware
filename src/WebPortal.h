@@ -79,6 +79,9 @@ class WebPortal {
   // Weather model: receives "wxloc:" (portal/HA/serial) and feeds wxCity
   // into the state JSON so clients can show the configured city.
   void setWeatherModel(Weather* w) { _weather = w; }
+  // Dev panel: pending "wxset:" from the portal (-2 = none pending; -1 =
+  // back to real weather; else a forced WMO code). Consumed by main.
+  int consumeWxSet() { const int v = _wxSetReq; _wxSetReq = -2; return v; }
   void setMicMuted(bool muted);
   // Voice UI state, driven by the main loop's state machine (idle|listening|
   // thinking|speaking). Reflected in the WS state so the portal/HA can mirror
@@ -173,6 +176,7 @@ class WebPortal {
   Clock* _clock = nullptr;
   HaPanel* _ha = nullptr;   // HA control panel model (SCREEN_HA)
   Weather* _weather = nullptr;  // real-weather model (wxloc / wxCity)
+  volatile int _wxSetReq = -2;  // pending forced weather (dev panel)
   std::function<void(Action)> _onAction;
   bool _serverUp = false;
   volatile bool _configuring = false;  // written on core 1, read by the core-0 http task

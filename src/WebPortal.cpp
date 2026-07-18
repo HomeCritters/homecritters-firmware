@@ -569,6 +569,15 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
       }
       return;
     }
+    // Dev panel (portal): force a scene weather / fire a lightning strike.
+    if (msg.startsWith("wxset:")) {
+      _wxSetReq = Weather::codeFromName(msg.substring(6).c_str());
+      return;
+    }
+    if (msg == "wxbolt") {
+      if (_renderer) _renderer->triggerBolt();
+      return;
+    }
     // Pipeline liveness from the satellite: assist:on when a wake/STT stage
     // actually starts consuming our audio, assist:off when the run dies.
     // Gates the header's "live mic" icon so it reflects END-TO-END health.
