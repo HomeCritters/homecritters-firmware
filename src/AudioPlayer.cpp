@@ -86,7 +86,9 @@ void es8311_init() {
     // the ADC output enabled. 0x0E/0x14/0x0D/0x15/0x17 (power/PGA/ADC) are
     // already written above. No DAC->ADC loopback (0x44 bit7 = 0).
     {0x0A, 0x0C},  // SDPOUT: ADC serial output on, 16-bit I2S
-    {0x16, 0x04},  // ADC/mic gain: 0..7 = 0/6/12/18/24/30/36/42 dB (24dB start)
+    {0x16, 0x07},  // ADC/mic gain: 0..7 = 0/6/12/18/24/30/36/42 dB. Max (42dB):
+                   // at 24dB, far-field speech landed ~1% FS - too quiet for
+                   // openWakeWord to fire (cloud STT/PTT still worked via AGC).
   };
   for (auto& s : seq) esWrite(s[0], s[1]);
 }

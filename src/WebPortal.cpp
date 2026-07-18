@@ -252,7 +252,11 @@ void WebPortal::pumpMic() {
     if (_micRing.fill() < sizeof(buf)) break;
     _micRing.readAvail(buf, sizeof(buf));
     if (!_ws.sendBIN((uint8_t)_micClient, buf, sizeof(buf))) {
-      _micOn = false; _micClient = -1;  // write failed/timed out: client is gone
+      // A single failed frame is usually a transient TX hiccup (HA busy for a
+      // beat). Killing the mic here made always-on wake unreliable: the stream
+      // flapped off, openWakeWord got silence and never fired. Just skip this
+      // round and keep streaming - a truly dead client fires WStype_DISCONNECTED
+      // (handled in onWsEvent), which clears _micClient/_micOn cleanly.
       break;
     }
   }
@@ -842,6 +846,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
   snprintf(out, n,
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,\"micMuted\":%s,"
+           "\"micOn\":%s,\"micClient\":%d,"
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
@@ -853,6 +858,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _sleepSnd ? "true" : "false",
            _wakeSnd ? "true" : "false",
            _micMuted ? "true" : "false",
+           _micOn ? "true" : "false", _micClient,
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,
