@@ -201,48 +201,35 @@ void Renderer::drawForest(bool night) {
   drawPineTree(210, GROUND_Y, 40);
   drawPineTree(178, GROUND_Y, 28);
 
-  // --- grass detail pass -----------------------------------------------
-  // Depth: a darker strip hugging the horizon, then light patches.
+  // --- grass detail (restrained: a 30px band can't hold much) -----------
+  // Depth strip at the horizon, the classic dark tufts, a few lighter
+  // blades between them, three swaying stalks, and ONE quiet accent:
+  // a glowing mushroom at night / two tiny wildflowers by day.
   _canvas.fillRect(0, GROUND_Y, SCREEN_W, 3, lerp565(_p.ground, _p.groundDark, 0.5f));
-  const uint16_t light = lerp565(_p.ground, rgb565(255, 255, 210), 0.12f);
-  for (int i = 0; i < 6; i++) {  // sunlit patches (hashed, static)
-    const uint32_t s = (uint32_t)i * 2654435761u + 7u;
-    _canvas.fillCircle(12 + (int)(s % 216), GROUND_Y + 8 + (int)((s >> 9) % 18),
-                       3 + (int)((s >> 5) % 3), light);
-  }
-  // Tufts: the old dark row + a second offset row of lighter blades.
   for (int x = 4; x < SCREEN_W; x += 18) {
     int gy = GROUND_Y + 6 + ((x * 5) % 7);
     _canvas.fillTriangle(x - 3, gy, x + 3, gy, x, gy - 6, _p.groundDark);
   }
   const uint16_t blade = lerp565(_p.groundDark, _p.ground, 0.45f);
-  for (int x = 13; x < SCREEN_W; x += 22) {
-    int gy = GROUND_Y + 14 + ((x * 3) % 9);
+  for (int x = 24; x < SCREEN_W; x += 44) {  // sparse lighter row
+    int gy = GROUND_Y + 15 + ((x * 3) % 8);
     _canvas.fillTriangle(x - 2, gy, x + 2, gy, x, gy - 5, blade);
   }
-  // A few taller blades swaying gently in the breeze.
-  for (int i = 0; i < 4; i++) {
-    const int bx = 28 + i * 62;
-    const int by = GROUND_Y + 10 + ((i * 47) % 12);
-    const int lean = (int)(1.6f * sinf(millis() / 900.0f + i * 1.6f));
+  for (int i = 0; i < 3; i++) {  // swaying stalks
+    const int bx = 40 + i * 80;
+    const int by = GROUND_Y + 12 + ((i * 47) % 10);
+    const int lean = (int)(1.6f * sinf(millis() / 900.0f + i * 1.9f));
     _canvas.drawLine(bx, by, bx + lean, by - 7, _p.groundDark);
-    _canvas.drawLine(bx + 1, by, bx + 1 + lean, by - 6, blade);
   }
   if (night) {
-    // Glowing mushrooms: two tiny caps pulsing softly (magic forest!).
     const float pu = 0.5f + 0.5f * sinf(millis() / 1400.0f);
-    const uint16_t cap1 = lerp565(rgb565(60, 40, 90), rgb565(150, 110, 235), pu);
-    const uint16_t cap2 = lerp565(rgb565(30, 70, 80), rgb565(80, 200, 210), pu);
+    const uint16_t cap = lerp565(rgb565(60, 40, 90), rgb565(150, 110, 235), pu);
     _canvas.drawFastVLine(58, GROUND_Y + 20, 3, rgb565(180, 175, 165));
-    _canvas.fillRect(56, GROUND_Y + 18, 5, 2, cap1);
-    _canvas.drawFastVLine(196, GROUND_Y + 14, 2, rgb565(180, 175, 165));
-    _canvas.fillRect(195, GROUND_Y + 13, 3, 2, cap2);
+    _canvas.fillRect(56, GROUND_Y + 18, 5, 2, cap);
   } else {
-    // Tiny wildflowers by day: 1px colored heads on the grass.
-    static const int16_t fl[][2] = {{40, 122}, {104, 131}, {186, 124}, {142, 119}};
-    static const uint16_t fc[] = {rgb565(255, 245, 250), rgb565(255, 220, 90),
-                                  rgb565(250, 160, 200), rgb565(255, 245, 250)};
-    for (int i = 0; i < 4; i++) {
+    static const int16_t fl[][2] = {{40, 124}, {186, 121}};
+    static const uint16_t fc[] = {rgb565(255, 245, 250), rgb565(250, 160, 200)};
+    for (int i = 0; i < 2; i++) {
       _canvas.drawPixel(fl[i][0], fl[i][1] - 1, fc[i]);
       _canvas.drawPixel(fl[i][0] - 1, fl[i][1], fc[i]);
       _canvas.drawPixel(fl[i][0] + 1, fl[i][1], fc[i]);
