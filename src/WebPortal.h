@@ -67,6 +67,9 @@ class WebPortal {
   // PTT is denied and mic:on is ignored. Toggled by a quick BOOT tap, the
   // portal switch and HA ("mute:on|off"). Persisted in NVS.
   bool micMuted() const { return _micMuted; }
+  // Mic actively streaming to a voice sink (HA satellite connected + mic:on,
+  // not muted) - drives the small "live mic" icon in the header.
+  bool micLive() const { return _micOn && _micClient >= 0 && !_micMuted; }
   void setMicMuted(bool muted);
   // Voice UI state, driven by the main loop's state machine (idle|listening|
   // thinking|speaking). Reflected in the WS state so the portal/HA can mirror

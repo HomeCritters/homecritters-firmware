@@ -209,7 +209,8 @@ void Renderer::drawSparkles(bool night) {
   }
 }
 
-void Renderer::drawHeader(const Pet& pet, bool wifiOn, bool micMuted) {
+void Renderer::drawHeader(const Pet& pet, bool wifiOn, bool micMuted,
+                          bool micLive) {
   const Mood mood = pet.mood();
   _canvas.setTextColor(_p.text);
   _canvas.setTextSize(2);
@@ -224,19 +225,25 @@ void Renderer::drawHeader(const Pet& pet, bool wifiOn, bool micMuted) {
   // glass: at (44,38) the slash corner sat at r~123 from center, past the
   // 119.5 bezel - it looked fine on the square canvas but was clipped on
   // the physical display. Worst corner now sits at r~109.
-  if (micMuted) {
+  if (micMuted || micLive) {
+    // Same little mic glyph either way: muted = white + bold red slash
+    // (privacy); live = soft cyan, no slash (the assistant can hear - HA
+    // satellite connected and the mic stream is flowing).
     const int mx = 58, my = 46;
-    const uint16_t body = _canvas.color565(232, 232, 236);
+    const uint16_t body = micMuted ? _canvas.color565(232, 232, 236)
+                                   : _canvas.color565(90, 210, 235);
     _canvas.fillRoundRect(mx - 2, my - 7, 5, 9, 2, body);  // capsule
     _canvas.drawFastVLine(mx - 4, my - 1, 5, body);        // holder U
     _canvas.drawFastVLine(mx + 4, my - 1, 5, body);
     _canvas.drawFastHLine(mx - 4, my + 4, 9, body);
     _canvas.drawFastVLine(mx, my + 5, 3, body);            // stem
     _canvas.drawFastHLine(mx - 2, my + 8, 5, body);        // base
-    const uint16_t red = _canvas.color565(235, 40, 40);    // bold red slash
-    _canvas.drawLine(mx - 6, my - 9, mx + 6, my + 9, red);
-    _canvas.drawLine(mx - 5, my - 9, mx + 7, my + 9, red);
-    _canvas.drawLine(mx - 6, my - 8, mx + 6, my + 10, red);
+    if (micMuted) {
+      const uint16_t red = _canvas.color565(235, 40, 40);  // bold red slash
+      _canvas.drawLine(mx - 6, my - 9, mx + 6, my + 9, red);
+      _canvas.drawLine(mx - 5, my - 9, mx + 7, my + 9, red);
+      _canvas.drawLine(mx - 6, my - 8, mx + 6, my + 10, red);
+    }
   }
 
   // "Dormindo" only when actually asleep; MOOD_SLEEPY while awake means tired.
@@ -1337,7 +1344,8 @@ void Renderer::drawBatteryPill(int topY, int pct, uint16_t outline, uint16_t txt
 void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
                     bool menuOpen, ui::MenuPage menuPage, int volume, int ledBright,
                     bool wifiOn, const char* ip, bool clockActive, Clock& clock,
-                    uint8_t mediaFx, uint8_t voiceState, bool micMuted) {
+                    uint8_t mediaFx, uint8_t voiceState, bool micMuted,
+                    bool micLive) {
   // An active pairing takes over the whole screen (TV-pairing style).
   if (_pairPin[0]) {
     drawPairingOverlay();
@@ -1379,7 +1387,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   // Disco floor goes UNDER the pet (Leon dances on it); the ball + lasers
   // overlay goes on top of everything at the end.
   if (mediaFx == 1 && !menuOpen) drawDiscoFloor();
-  drawHeader(pet, wifiOn, micMuted);
+  drawHeader(pet, wifiOn, micMuted, micLive);
   drawFerret(ferret);
   // battery is shown in the config menu (not the home scene)
 

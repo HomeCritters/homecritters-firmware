@@ -924,7 +924,7 @@ void loop() {
   }
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
-                (uint8_t)audio.mediaKind(), g_voice, web.micMuted());
+                (uint8_t)audio.mediaKind(), g_voice, web.micMuted(), web.micLive());
   serviceShots();
 
   delay(30);
