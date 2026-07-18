@@ -124,6 +124,8 @@ static unsigned long g_inputSwallowUntil = 0;  // discard input right after wake
 // transitions? The regular sleep button always keeps its sounds.
 static bool g_nightSleepSnd = true, g_nightWakeSnd = true;
 static bool g_muteNextSleepSnd = false, g_muteNextWakeSnd = false;
+// Was the mic already muted when night mode engaged? (wake restores this)
+static bool g_micMutedBeforeNight = false;
 // Serve pending screenshots (serial console + web portal) right after a render,
 // when the canvas holds a complete frame. Both play the camera shutter.
 static void serviceShots() {
@@ -627,6 +629,10 @@ void loop() {
       led.gameOff();               // LED dark (override until wake)
       renderer.setDisplayOff(true);
       web.setFullSleep(true);
+      // Night engages the REAL privacy mute (visible: HA switch goes off) -
+      // not just the internal gate. Waking restores whatever the user had.
+      g_micMutedBeforeNight = web.micMuted();
+      if (!g_micMutedBeforeNight) web.setMicMuted(true);
     } else if (req == 0 && g_fullSleep) {
       g_fullSleep = false;
       renderer.setDisplayOff(false);
@@ -635,6 +641,7 @@ void loop() {
         g_muteNextWakeSnd = !g_nightWakeSnd;
         doAction(ACTION_TOGGLE_SLEEP);  // wake Leon
       }
+      if (!g_micMutedBeforeNight && web.micMuted()) web.setMicMuted(false);
       web.setFullSleep(false);
       lastInteractionMs = now;
       g_inputSwallowUntil = now + 800;  // the wake tap must not also feed/pat
