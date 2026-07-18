@@ -554,6 +554,21 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     // consume the audio directly.
     if (msg == "ptt:start") { if (_micClient < 0) _micClient = num; voicePttStart(); return; }
     if (msg == "ptt:end")   { voicePttEnd(); return; }
+    // Weather location from the portal (browser did the geocoding), the HA
+    // plugin (home coords, once) or serial: "wxloc:<lat>,<lon>,<city>".
+    if (msg.startsWith("wxloc:")) {
+      const String rest = msg.substring(6);
+      const int c1 = rest.indexOf(','), c2 = rest.indexOf(',', c1 + 1);
+      if (c1 > 0 && _weather) {
+        const float lat = rest.substring(0, c1).toFloat();
+        const float lon = (c2 > 0 ? rest.substring(c1 + 1, c2)
+                                  : rest.substring(c1 + 1)).toFloat();
+        const String city = c2 > 0 ? rest.substring(c2 + 1) : String("Local");
+        _weather->setLocation(lat, lon, city.c_str());
+        _dirty = true;
+      }
+      return;
+    }
     // Pipeline liveness from the satellite: assist:on when a wake/STT stage
     // actually starts consuming our audio, assist:off when the run dies.
     // Gates the header's "live mic" icon so it reflects END-TO-END health.
@@ -855,6 +870,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,\"micMuted\":%s,"
            "\"micOn\":%s,\"micClient\":%d,\"assistOn\":%s,\"micLive\":%s,"
+           "\"wxCity\":\"%s\","
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
@@ -868,6 +884,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _micMuted ? "true" : "false",
            _micOn ? "true" : "false", _micClient, _assistOn ? "true" : "false",
            micLive() ? "true" : "false",
+           _weather ? _weather->city() : "",
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,

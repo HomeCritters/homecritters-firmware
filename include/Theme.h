@@ -94,6 +94,13 @@ constexpr uint16_t MOON_CRATER = rgb565(205, 205, 185);
 constexpr uint16_t MOON_GLOW   = rgb565(60, 70, 110);
 constexpr uint16_t STAR        = rgb565(230, 235, 255);
 
+// --- Weather (real-weather scene effects) ---
+constexpr uint16_t CLOUD       = rgb565(214, 218, 228);  // cloud body
+constexpr uint16_t CLOUD_DARK  = rgb565(168, 174, 190);  // cloud underside
+constexpr uint16_t RAINDROP    = rgb565(150, 190, 235);  // falling streaks
+constexpr uint16_t BOLT        = rgb565(255, 230, 90);   // lightning icon
+constexpr uint16_t SCENE_GRAY  = rgb565(120, 126, 140);  // overcast tint target
+
 // --- Stat bar fill (same colors day and night) ---
 constexpr uint16_t BAR_HIGH    = rgb565(70, 200, 90);
 constexpr uint16_t BAR_MID     = rgb565(240, 200, 70);

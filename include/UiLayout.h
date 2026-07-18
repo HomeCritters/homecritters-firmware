@@ -77,7 +77,8 @@ enum UiHit {
   UI_VOL_DOWN, UI_VOL_UP,
   UI_LED_DOWN, UI_LED_UP,
   UI_SCR_DOWN, UI_SCR_UP,
-  UI_WIFI, UI_GAMES_TOGGLE, UI_HA_TOGGLE  // left edge: Home Assistant panel
+  UI_WIFI, UI_GAMES_TOGGLE, UI_HA_TOGGLE,  // left edge: Home Assistant panel
+  UI_WEATHER_TOGGLE                        // bottom edge: weather forecast
 };
 
 // "Revogar acesso" button on the Dispositivos page (bottom, inside the circle).
@@ -106,6 +107,15 @@ inline bool inRightHandle(int32_t tx, int32_t ty) {
 inline bool inLeftHandle(int32_t tx, int32_t ty) {
   return tx < RHANDLE_W + 12 &&
          ty > RHANDLE_CY - RHANDLE_H / 2 - 8 && ty < RHANDLE_CY + RHANDLE_H / 2 + 8;
+}
+
+// Bottom-center handle = weather forecast (swipe up from the bottom, or tap).
+// Narrow on purpose: the action-button arc lives nearby (PAT/SLEEP at
+// cy=205 r=22 end ~y227; center-bottom stays >22px from both).
+constexpr int16_t BHANDLE_W = 44, BHANDLE_H = 14;
+inline bool inBottomHandle(int32_t tx, int32_t ty) {
+  return ty > SCREEN_H - BHANDLE_H - 4 &&
+         tx > CENTER_X - BHANDLE_W / 2 && tx < CENTER_X + BHANDLE_W / 2;
 }
 
 constexpr int16_t MENU_BTN_R = 17;  // +/- stepper button radius

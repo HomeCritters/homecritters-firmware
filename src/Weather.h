@@ -1,0 +1,99 @@
+#pragma once
+#include <Arduino.h>
+
+// ============================================================
+// Weather: standalone real-weather client (NO Home Assistant).
+//
+// Fetches current conditions + a 5-day daily forecast from the
+// free Open-Meteo API (verified TLS via the IDF cert bundle) on
+// its own core-0 task, on a fixed cadence:
+//   - boot (once WiFi + a location exist): fetch now
+//   - normal: every 30 min; on failure retry in 5 min
+//   - setLocation() / requestFetch(): fetch now
+// The task parses into a staging copy; the render loop adopts it
+// via loop() (same handoff pattern as the screenshot flags).
+//
+// Location (lat/lon/city) persists in NVS ("wx"). It is set from
+// the portal (browser does the geocoding), serial, or - as an
+// optional convenience - pushed once by the HA plugin when the
+// device reports no city. No location = feature dormant.
+// ============================================================
+
+// Coarse condition for the scene renderer (from WMO weather codes).
+enum WxKind : uint8_t { WX_CLEAR = 0, WX_CLOUDY, WX_RAIN, WX_STORM };
+
+class Weather {
+ public:
+  static constexpr int MAX_DAYS = 5;
+  struct Day {
+    char day[5];    // "Seg", "Ter", ... (ASCII, from the ISO date)
+    uint8_t code;   // WMO weather code
+    int8_t hi, lo;  // daily max/min, rounded
+    int8_t pop;     // precipitation probability %
+  };
+
+  // busy() gate: fetches are skipped while it returns true (media streaming
+  // owns the radio); the retry cadence picks the fetch up later.
+  void begin(bool (*busy)() = nullptr);
+
+  // Set/replace the location (NVS) and fetch right away. city is stored
+  // ASCII-only (the display font); pass "" to clear the location entirely.
+  void setLocation(float lat, float lon, const char* city);
+  bool hasLocation() const { return _hasLoc; }
+  const char* city() const { return _city; }
+
+  // Fetch now if the current data is older than maxAgeMs (0 = always).
+  void requestFetch(unsigned long maxAgeMs = 0);
+
+  // Main-thread pump: adopts a finished fetch from the task's staging copy.
+  void loop();
+
+  bool everFetched() const { return _lastOkMs != 0; }
+  // ms since the last successful fetch (max value if never).
+  unsigned long staleMs() const {
+    return _lastOkMs ? millis() - _lastOkMs : 0xFFFFFFFF;
+  }
+  // Data older than 3h = degrade the scene back to CLEAR (API/WiFi down).
+  bool fresh() const { return staleMs() < 3UL * 60 * 60 * 1000; }
+
+  WxKind kindNow() const { return fresh() ? kindFromCode(_codeNow) : WX_CLEAR; }
+  int tempNow() const { return _tempNow; }
+  uint8_t codeNow() const { return _codeNow; }
+  int dayCount() const { return _dayCount; }
+  const Day& day(int i) const { return _days[i]; }
+
+  static WxKind kindFromCode(uint8_t code);
+  static const char* kindLabel(WxKind k);  // PT label for the screen
+
+ private:
+  static void taskTrampoline(void* arg);
+  void taskLoop();
+  bool fetchOnce();  // blocking HTTPS GET + parse into staging (task only)
+  void loadNvs();
+  void saveNvs();
+
+  // --- location (NVS) ---
+  bool _hasLoc = false;
+  float _lat = 0, _lon = 0;
+  char _city[25] = {0};
+
+  // --- adopted model (main thread reads) ---
+  int8_t _tempNow = 0;
+  uint8_t _codeNow = 0;
+  Day _days[MAX_DAYS] = {};
+  int _dayCount = 0;
+  unsigned long _lastOkMs = 0;
+
+  // --- staging (task writes, loop() adopts) ---
+  struct Staging {
+    int8_t tempNow;
+    uint8_t codeNow;
+    Day days[MAX_DAYS];
+    int dayCount;
+  };
+  Staging _st = {};
+  volatile bool _stReady = false;   // task -> main handoff
+  volatile bool _fetchNow = false;  // main -> task "fetch asap"
+  bool (*_busy)() = nullptr;
+  TaskHandle_t _task = nullptr;
+};

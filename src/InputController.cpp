@@ -26,9 +26,11 @@ InputEvent InputController::releaseEvent(bool menuOpen, ui::MenuPage page) {
   const int32_t adx = abs(dx), ady = abs(dy);
 
   // GESTURE: dominant, long swipe.
-  if (ady > 45 && ady > adx) {  // vertical -> config menu
+  if (ady > 45 && ady > adx) {  // vertical -> config menu / weather
     if (dy > 0 && _startY < 120) { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // down -> open
     if (dy < 0 && menuOpen)      { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // up   -> close
+    // Swipe up starting on the bottom half (menu closed) -> weather forecast.
+    if (dy < 0 && !menuOpen && _startY > 140) { ev.ui = ui::UI_WEATHER_TOGGLE; return ev; }
   }
   if (adx > 40 && adx > ady) {  // horizontal
     // Right edge, pull left -> open the games menu (pet screen only).
@@ -49,6 +51,7 @@ InputEvent InputController::releaseEvent(bool menuOpen, ui::MenuPage page) {
   if (ui::inHandle(px, py)) { ev.ui = ui::UI_MENU_TOGGLE; return ev; }
   if (ui::inRightHandle(px, py)) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
   if (ui::inLeftHandle(px, py)) { ev.ui = ui::UI_HA_TOGGLE; return ev; }
+  if (ui::inBottomHandle(px, py)) { ev.ui = ui::UI_WEATHER_TOGGLE; return ev; }
   int idx = ui::buttonAt(px, py);
   if (idx >= 0) {
     ev.action = actionForButton(idx);

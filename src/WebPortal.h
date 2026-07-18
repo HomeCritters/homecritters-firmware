@@ -10,6 +10,7 @@
 #include "FerretActor.h"
 #include "Clock.h"
 #include "HaPanel.h"
+#include "Weather.h"
 #include "audio/StreamRing.h"
 
 class Renderer;  // for the /shot.bmp screenshot endpoint
@@ -75,6 +76,9 @@ class WebPortal {
   bool micLive() const {
     return _micOn && _micClient >= 0 && !_micMuted && !_fullSleep && _assistOn;
   }
+  // Weather model: receives "wxloc:" (portal/HA/serial) and feeds wxCity
+  // into the state JSON so clients can show the configured city.
+  void setWeatherModel(Weather* w) { _weather = w; }
   void setMicMuted(bool muted);
   // Voice UI state, driven by the main loop's state machine (idle|listening|
   // thinking|speaking). Reflected in the WS state so the portal/HA can mirror
@@ -168,6 +172,7 @@ class WebPortal {
   FerretActor* _ferret = nullptr;
   Clock* _clock = nullptr;
   HaPanel* _ha = nullptr;   // HA control panel model (SCREEN_HA)
+  Weather* _weather = nullptr;  // real-weather model (wxloc / wxCity)
   std::function<void(Action)> _onAction;
   bool _serverUp = false;
   volatile bool _configuring = false;  // written on core 1, read by the core-0 http task

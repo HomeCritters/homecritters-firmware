@@ -14,6 +14,7 @@
 #include "BallGame.h"
 #include "SimonGame.h"
 #include "HaPanel.h"
+#include "Weather.h"
 #include "DebugConsole.h"
 #include "pins.h"  // BOOT pin (full-sleep wake check)
 #include <Preferences.h>  // night-mode sound settings
@@ -38,10 +39,11 @@ DoodleGame       doodle;
 BallGame         ball;
 SimonGame        simon;
 HaPanel          haPanel;
+Weather          weather;
 DebugConsole     console;
 
 // Which screen is showing.
-enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON, SCREEN_HA };
+enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON, SCREEN_HA, SCREEN_WEATHER };
 static Screen screen = SCREEN_PET;
 static int g_haPage = 0;  // HA panel current page
 
@@ -118,6 +120,7 @@ static void handleUi(ui::UiHit hit) {
 
 static bool g_shotPending = false;  // serial "shot": capture after the next render
 static int g_voiceDebug = -1;       // serial "voice:N": force a voice ring (-1 = off)
+static int g_wxDebug = -1;          // serial "wxset:X": force a scene weather (-1 = off)
 static bool g_fullSleep = false;    // night mode: screen+LED dark, pet asleep
 static unsigned long g_inputSwallowUntil = 0;  // discard input right after wake
 // Night-mode sound settings (NVS): play the snore/wake tune on FULL-sleep
@@ -476,6 +479,38 @@ static void loopHaPanel(unsigned long now) {
   renderer.drawHaPanel(haPanel, g_haPage, loading);
 }
 
+// Weather forecast screen: opened by swiping UP from the bottom of the pet
+// screen. Back = left-edge pull / left tab, or swipe DOWN (mirror of the
+// opening gesture). Raw touch, same template as the other custom screens.
+static int32_t g_wxStartX = 0, g_wxStartY = 0;
+static void loopWeather(unsigned long now) {
+  int32_t x, y;
+  const bool down = lcd.getTouch(&x, &y);
+  if (down && !g_touchDown) { g_touchDown = true; g_wxStartX = x; g_wxStartY = y; }
+  if (down) {
+    g_touchX = x; g_touchY = y;
+    lastInteractionMs = now;
+  } else if (g_touchDown) {  // release
+    g_touchDown = false;
+    lastInteractionMs = now;
+    const int32_t dx = g_touchX - g_wxStartX, dy = g_touchY - g_wxStartY;
+    const bool backSwipeDown = dy > 45 && abs(dy) > abs(dx);
+    const bool backPullLeft =
+        (dx > 45 && abs(dx) > abs(dy) && g_wxStartX < 65) ||
+        ui::inLeftHandle(g_wxStartX, g_wxStartY);
+    if (backSwipeDown || backPullLeft) {
+      audio.playClick();
+      screen = SCREEN_PET;
+    }
+  }
+  const int timeout = petClock.menuTimeoutSec();
+  if (timeout > 0 && screen == SCREEN_WEATHER &&
+      idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
+    screen = SCREEN_PET;
+  }
+  renderer.drawWeather(weather);
+}
+
 // Navigation/action commands from the DebugConsole (screen state lives here;
 // module-level commands like vol:/led:/stats: are handled inside the console).
 static bool consoleNavigate(const String& c) {
@@ -505,6 +540,37 @@ static bool consoleNavigate(const String& c) {
   if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
   if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
   if (c == "hapanel"){ menuOpen = false; g_haPage = 0; g_haOpenedMs = millis(); screen = SCREEN_HA; return true; }
+  if (c == "weather"){ menuOpen = false; screen = SCREEN_WEATHER; weather.requestFetch(15UL * 60 * 1000); return true; }
+  if (c == "wx") {  // dump the weather model
+    Serial.printf("[wx] city='%s' loc=%d fetched=%d stale=%lums now=%dC code=%d kind=%d\n",
+                  weather.city(), weather.hasLocation(), weather.everFetched(),
+                  weather.staleMs(), weather.tempNow(), weather.codeNow(),
+                  (int)weather.kindNow());
+    for (int i = 0; i < weather.dayCount(); i++) {
+      const auto& d = weather.day(i);
+      Serial.printf("  %s code=%d hi=%d lo=%d pop=%d\n", d.day, d.code, d.hi, d.lo, d.pop);
+    }
+    return true;
+  }
+  if (c == "wxfetch") { weather.requestFetch(0); Serial.println("[wx] fetch requested"); return true; }
+  if (c.startsWith("wxset:")) {  // force a scene condition: clear|cloudy|rainy|storm ('' = off)
+    const String k = c.substring(6);
+    g_wxDebug = k == "clear" ? 0 : k == "cloudy" ? 1 : k == "rainy" ? 2 : k == "storm" ? 3 : -1;
+    Serial.printf("[wx] forced kind = %d\n", g_wxDebug);
+    return true;
+  }
+  if (c.startsWith("wxloc:")) {  // wxloc:<lat>,<lon>[,<city>]
+    const String rest = c.substring(6);
+    const int c1 = rest.indexOf(','), c2 = rest.indexOf(',', c1 + 1);
+    if (c1 > 0) {
+      const float lat = rest.substring(0, c1).toFloat();
+      const float lon = (c2 > 0 ? rest.substring(c1 + 1, c2) : rest.substring(c1 + 1)).toFloat();
+      const String city = c2 > 0 ? rest.substring(c2 + 1) : String("Local");
+      weather.setLocation(lat, lon, city.c_str());
+      Serial.printf("[wx] location set: %.4f,%.4f '%s'\n", lat, lon, weather.city());
+    }
+    return true;
+  }
   if (c == "doodle") { startDoodle(now); return true; }
   if (c == "ball")   { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; return true; }
   if (c == "simon")  { startSimon(now); return true; }
@@ -546,6 +612,9 @@ void setup() {
   audio.begin();  // I2C + ES8311 + I2S + audio task
   web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, &haPanel, doAction);  // WiFi + portal
   web.setBattery(battery.percent());  // seed the portal value
+  web.setWeatherModel(&weather);      // wxloc command + wxCity in the state
+  // Weather fetch task (core 0); skips fetches while media streams.
+  weather.begin([]() { return audio.streaming(); });
   console.begin(&pet, &battery, &audio, &led, &renderer, consoleNavigate,
                 []() { lastInteractionMs = millis(); });
 
@@ -568,6 +637,11 @@ void loop() {
   const unsigned long now = millis();
 
   console.poll();  // debug console (screenshots + navigation)
+  // Weather: adopt any finished fetch and keep the scene condition current
+  // (debug force wins). Runs on every screen so the data never goes stale.
+  weather.loop();
+  renderer.setWeather(g_wxDebug >= 0 ? (WxKind)g_wxDebug : weather.kindNow());
+  if (renderer.consumeThunder()) audio.playThunder();  // storm flash clap
 
   // --- WiFi setup mode (captive portal active): own screen; back tab exits ---
   if (web.configuring()) {
@@ -762,7 +836,8 @@ void loop() {
                 screen == SCREEN_BALL   ? "ball"   :
                 screen == SCREEN_SIMON  ? "simon"  :
                 screen == SCREEN_GAMES  ? "games"  :
-                screen == SCREEN_HA     ? "ha"     : "pet");
+                screen == SCREEN_HA     ? "ha"     :
+                screen == SCREEN_WEATHER ? "weather" : "pet");
   switch (web.consumeGameNav()) {
     case WebPortal::NAV_START:
       if (screen != SCREEN_DOODLE) { startDoodle(now); web.pushState(); }
@@ -811,6 +886,12 @@ void loop() {
   }
   if (screen == SCREEN_HA) {
     loopHaPanel(now);
+    serviceShots();
+    delay(30);
+    return;
+  }
+  if (screen == SCREEN_WEATHER) {
+    loopWeather(now);
     serviceShots();
     delay(30);
     return;
@@ -883,6 +964,12 @@ void loop() {
     } else if (ev.ui == ui::UI_GAMES_TOGGLE) {
       audio.playClick();
       if (!menuOpen) screen = SCREEN_GAMES;
+    } else if (ev.ui == ui::UI_WEATHER_TOGGLE) {
+      audio.playClick();
+      if (!menuOpen) {
+        screen = SCREEN_WEATHER;
+        weather.requestFetch(15UL * 60 * 1000);  // refresh if >15 min old
+      }
     } else if (ev.ui != ui::UI_NONE) {
       audio.playClick();  // every menu button/handle clicks
       handleUi(ev.ui);

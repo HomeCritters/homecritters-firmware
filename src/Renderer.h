@@ -10,6 +10,7 @@
 #include "BallGame.h"
 #include "SimonGame.h"
 #include "HaPanel.h"
+#include "Weather.h"
 
 // ============================================================
 // Renderer: owns the display and the canvas (double buffer) and
@@ -59,6 +60,17 @@ class Renderer {
   // a spinner while the first ha:list hasn't arrived yet (fresh subscribe).
   void drawHaPanel(HaPanel& ha, int page, bool loading = false);
 
+  // Weather: the current condition tints/animates the pet scene (set each
+  // frame by main); drawWeather is the forecast screen (swipe up from bottom).
+  void setWeather(WxKind k) { _wx = k; }
+  void drawWeather(Weather& wx);
+  // A storm flash queued a thunder clap - main consumes it and plays the SFX.
+  bool consumeThunder() {
+    const bool t = _thunderPending;
+    _thunderPending = false;
+    return t;
+  }
+
   // Visual feedback: highlight the tapped button for a few ms.
   void flashButton(int idx);
 
@@ -96,6 +108,12 @@ class Renderer {
   // of draw() and read by the helpers, instead of threading a parameter.
   theme::ScenePalette _p = theme::NIGHT;
 
+  // Real-weather scene state (set by main from the Weather model).
+  WxKind _wx = WX_CLEAR;
+  unsigned long _nextFlashMs = 0;  // next lightning flash (storm)
+  uint8_t _flashFrames = 0;        // frames left of the current flash
+  bool _thunderPending = false;    // flash fired -> main plays the thunder
+
   void drawSky();
   void drawStars();
   void drawMoon();
@@ -108,7 +126,13 @@ class Renderer {
   void drawHeader(const Pet& pet, bool wifiOn, bool micMuted, bool micLive);
   void drawMenuHandle();
   void drawRightHandle();
-  void drawLeftHandle();  // "back" tab (config, games menu, Bolinha)
+  void drawLeftHandle();    // "back" tab (config, games menu, Bolinha)
+  void drawBottomHandle();  // weather forecast tab (pet screen)
+  // Weather scene FX + forecast-screen helpers.
+  theme::ScenePalette tintPalette(const theme::ScenePalette& p, uint8_t t);
+  void drawClouds();
+  void drawRain();
+  void drawWxIcon(int cx, int cy, WxKind k, int s);  // s = scale (1 mini, 2 big)
   void drawClock(Clock& clock);
   void drawMediaFx(uint8_t kind);     // 1 = disco ball + lasers (music party)
   void drawVoiceRing(uint8_t state);  // 1 listening, 2 thinking, 3 speaking

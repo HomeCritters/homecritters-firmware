@@ -209,6 +209,48 @@ void Renderer::drawSparkles(bool night) {
   }
 }
 
+// ---- Real-weather scene effects --------------------------------------------
+
+// Blend every palette field toward an overcast gray. t = 0..255.
+theme::ScenePalette Renderer::tintPalette(const theme::ScenePalette& p,
+                                          uint8_t t) {
+  auto mix = [&](uint16_t c) { return lerp565(c, theme::SCENE_GRAY, t / 255.0f); };
+  theme::ScenePalette o = p;
+  o.skyTop = mix(p.skyTop);       o.skyBottom = mix(p.skyBottom);
+  o.treeFar = mix(p.treeFar);     o.ground = mix(p.ground);
+  o.groundDark = mix(p.groundDark); o.treeNear = mix(p.treeNear);
+  o.treeTrunk = mix(p.treeTrunk); o.cabinWall = mix(p.cabinWall);
+  o.cabinRoof = mix(p.cabinRoof); o.sparkle = mix(p.sparkle);
+  // cabinWindow/text/textDim/barBg keep their contrast (readability).
+  return o;
+}
+
+// Three puffy clouds drifting slowly across the sky (millis-driven, stateless).
+void Renderer::drawClouds() {
+  struct C { int16_t y; int16_t w; uint16_t speedMs; };  // per-cloud params
+  static const C cs[3] = {{30, 46, 240}, {52, 60, 340}, {22, 38, 180}};
+  for (int i = 0; i < 3; i++) {
+    const int span = SCREEN_W + cs[i].w * 2;
+    const int x = (int)((millis() / cs[i].speedMs + i * 97) % span) - cs[i].w;
+    const int y = cs[i].y;
+    const int r = cs[i].w / 4;
+    _canvas.fillCircle(x - r - 2, y + 2, r, theme::CLOUD_DARK);   // shaded side
+    _canvas.fillCircle(x + r + 2, y + 2, r, theme::CLOUD);
+    _canvas.fillCircle(x, y - r / 2, r + 3, theme::CLOUD);        // top puff
+    _canvas.fillRect(x - r - 2, y + 2, (r + 2) * 2, r, theme::CLOUD);  // base
+  }
+}
+
+// Falling rain streaks - same stateless millis pattern as drawSparkles.
+void Renderer::drawRain() {
+  const unsigned long t = millis();
+  for (int i = 0; i < 16; i++) {
+    const int x = (i * 61 + 13) % SCREEN_W;
+    const int y = (int)((t / 5 + i * 977) % (GROUND_Y + 40));
+    _canvas.drawLine(x, y, x - 1, y + 5, theme::RAINDROP);
+  }
+}
+
 void Renderer::drawHeader(const Pet& pet, bool wifiOn, bool micMuted,
                           bool micLive) {
   const Mood mood = pet.mood();
@@ -303,6 +345,16 @@ void Renderer::drawLeftHandle() {
   _canvas.fillRoundRect(-6, ry, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BG);
   _canvas.drawRoundRect(-6, ry, RHANDLE_W + 6, RHANDLE_H, 6, BTN_BORDER);
   _canvas.fillTriangle(4, RHANDLE_CY - 7, 4, RHANDLE_CY + 7, RHANDLE_W - 3, RHANDLE_CY, BTN_BORDER);
+}
+
+void Renderer::drawBottomHandle() {
+  // Tab at the bottom center with a "^" chevron: swipe up = weather forecast.
+  // Sits below the action-button arc (their touch circles end ~y 227).
+  const int by = SCREEN_H - BHANDLE_H;
+  _canvas.fillRoundRect(CENTER_X - BHANDLE_W / 2, by, BHANDLE_W, BHANDLE_H + 6, 6, BTN_BG);
+  _canvas.drawRoundRect(CENTER_X - BHANDLE_W / 2, by, BHANDLE_W, BHANDLE_H + 6, 6, BTN_BORDER);
+  _canvas.fillTriangle(CENTER_X - 7, SCREEN_H - 4, CENTER_X + 7, SCREEN_H - 4,
+                       CENTER_X, SCREEN_H - 11, BTN_BORDER);
 }
 
 // Draws a QR code (version 3, byte mode) centered horizontally at cx.
@@ -697,6 +749,127 @@ void Renderer::drawHaPanel(HaPanel& ha, int page, bool loading) {
                            px, cy + dh / 2 + 13 + bob, hc);
   }
   drawLeftHandle();  // left tab = back to the pet
+  _canvas.pushSprite(0, 0);
+}
+
+// ---- Weather forecast screen -----------------------------------------------
+
+// Small weather glyph from primitives. s=1 -> ~16px (day row), s=2 -> ~32px.
+void Renderer::drawWxIcon(int cx, int cy, WxKind k, int s) {
+  if (k == WX_CLEAR) {
+    _canvas.fillCircle(cx, cy, 5 * s, menu::IC_SUN);
+    _canvas.fillCircle(cx - 2 * s, cy - 2 * s, 2 * s, menu::IC_SUN2);
+    for (int a = 0; a < 8; a++) {
+      const float t = a * 3.14159f / 4.0f;
+      _canvas.drawLine(cx + (int)(7 * s * cosf(t)), cy + (int)(7 * s * sinf(t)),
+                       cx + (int)(9 * s * cosf(t)), cy + (int)(9 * s * sinf(t)),
+                       menu::IC_SUN);
+    }
+    return;
+  }
+  // Cloud body (shared by CLOUDY/RAIN/STORM; rain/storm lift it to make room).
+  const int oy = (k == WX_CLOUDY) ? 0 : -3 * s;
+  _canvas.fillCircle(cx - 4 * s, cy + oy + s, 3 * s, theme::CLOUD_DARK);
+  _canvas.fillCircle(cx + 4 * s, cy + oy + s, 3 * s, theme::CLOUD);
+  _canvas.fillCircle(cx, cy + oy - 2 * s, 4 * s, theme::CLOUD);
+  _canvas.fillRect(cx - 6 * s, cy + oy + s, 12 * s, 3 * s, theme::CLOUD);
+  if (k == WX_RAIN) {
+    for (int i = -1; i <= 1; i++) {
+      const int rx = cx + i * 4 * s;
+      _canvas.drawLine(rx, cy + oy + 5 * s, rx - s, cy + oy + 8 * s,
+                       theme::RAINDROP);
+    }
+  } else if (k == WX_STORM) {
+    // Two offset triangles read as a lightning bolt.
+    _canvas.fillTriangle(cx, cy + oy + 4 * s, cx + 3 * s, cy + oy + 4 * s,
+                         cx - s, cy + oy + 9 * s, theme::BOLT);
+    _canvas.fillTriangle(cx + 2 * s, cy + oy + 6 * s, cx - s, cy + oy + 9 * s,
+                         cx + s, cy + oy + 12 * s, theme::BOLT);
+  }
+}
+
+void Renderer::drawWeather(Weather& wx) {
+  _canvas.fillScreen(menu::BG);
+  drawPageHeader("Tempo", wx.hasLocation() ? wx.city() : "");
+
+  if (!wx.hasLocation()) {
+    _canvas.setTextSize(1);
+    _canvas.setTextColor(menu::TEXT_DIM);
+    const char* l1 = "Sem cidade configurada";
+    const char* l2 = "Configure no portal";
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 110);
+    _canvas.print(l1);
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 124);
+    _canvas.print(l2);
+    drawLeftHandle();
+    _canvas.pushSprite(0, 0);
+    return;
+  }
+  if (!wx.everFetched()) {
+    _canvas.setTextSize(1);
+    _canvas.setTextColor(menu::TEXT_DIM);
+    const char* l1 = "Buscando previsao...";
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 116);
+    _canvas.print(l1);
+    drawLeftHandle();
+    _canvas.pushSprite(0, 0);
+    return;
+  }
+
+  // --- today, big: icon + current temp + condition + hi/lo ---
+  const WxKind know = Weather::kindFromCode(wx.codeNow());
+  drawWxIcon(82, 96, know, 2);
+  char t[8];
+  snprintf(t, sizeof(t), "%d", wx.tempNow());
+  _canvas.setTextSize(4);
+  _canvas.setTextColor(TFT_WHITE);
+  const int tw = _canvas.textWidth(t);
+  _canvas.setCursor(124, 82);
+  _canvas.print(t);
+  _canvas.drawCircle(124 + tw + 6, 84, 3, TFT_WHITE);  // degree mark
+  char sub[40];
+  if (wx.dayCount() > 0)
+    snprintf(sub, sizeof(sub), "%s  %d / %d", Weather::kindLabel(know),
+             wx.day(0).hi, wx.day(0).lo);
+  else
+    snprintf(sub, sizeof(sub), "%s", Weather::kindLabel(know));
+  _canvas.setTextSize(1);
+  _canvas.setTextColor(menu::TEXT_DIM);
+  _canvas.setCursor(CENTER_X - _canvas.textWidth(sub) / 2, 128);
+  _canvas.print(sub);
+
+  // --- next days, small columns ---
+  const int n = min(wx.dayCount() - 1, 4);  // skip today (index 0)
+  if (n > 0) {
+    const int spacing = 50;
+    const int x0 = CENTER_X - ((n - 1) * spacing) / 2;
+    for (int i = 0; i < n; i++) {
+      const Weather::Day& d = wx.day(i + 1);
+      const int cx = x0 + i * spacing;
+      _canvas.setTextSize(1);
+      _canvas.setTextColor(TFT_WHITE);
+      _canvas.setCursor(cx - _canvas.textWidth(d.day) / 2, 150);
+      _canvas.print(d.day);
+      drawWxIcon(cx, 172, Weather::kindFromCode(d.code), 1);
+      char hi[6], lo[6];
+      snprintf(hi, sizeof(hi), "%d", d.hi);
+      snprintf(lo, sizeof(lo), "%d", d.lo);
+      _canvas.setTextColor(TFT_WHITE);
+      _canvas.setCursor(cx - _canvas.textWidth(hi) / 2, 190);
+      _canvas.print(hi);
+      _canvas.setTextColor(menu::TEXT_DIM);
+      _canvas.setCursor(cx - _canvas.textWidth(lo) / 2, 202);
+      _canvas.print(lo);
+    }
+  }
+  if (!wx.fresh()) {  // API/WiFi down for 3h+: the data shown is old
+    _canvas.setTextSize(1);
+    _canvas.setTextColor(menu::TEXT_DIM);
+    const char* w = "dados antigos";
+    _canvas.setCursor(CENTER_X - _canvas.textWidth(w) / 2, 216);
+    _canvas.print(w);
+  }
+  drawLeftHandle();
   _canvas.pushSprite(0, 0);
 }
 
@@ -1373,8 +1546,31 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   const bool night = (tod == TOD_NIGHT);
   _p = (tod == TOD_NIGHT) ? NIGHT : (tod == TOD_AFTERNOON ? AFTERNOON : DAY);
 
+  // Real weather paints on top of the time-of-day theme: overcast/rain/storm
+  // tint the whole palette toward gray (heavier for rain) and hide the sun -
+  // clouds take its place. Party mode keeps its own show untouched.
+  const bool overcast =
+      _wx != WX_CLEAR && !(mediaFx == 1 && !menuOpen);
+  if (overcast) _p = tintPalette(_p, _wx == WX_CLOUDY ? 80 : 130);
+
   drawSky();
-  if (tod == TOD_NIGHT) {
+  if (overcast) {
+    // Storm flash: whole sky whites out for 2 frames, thunder follows.
+    if (_wx == WX_STORM) {
+      const unsigned long nowMs = millis();
+      if (_nextFlashMs == 0) _nextFlashMs = nowMs + 4000;
+      if ((long)(nowMs - _nextFlashMs) >= 0) {
+        _flashFrames = 2;
+        _thunderPending = true;
+        _nextFlashMs = nowMs + 8000 + (esp_random() % 12000);
+      }
+      if (_flashFrames > 0) {
+        _flashFrames--;
+        _canvas.fillRect(0, 0, SCREEN_W, GROUND_Y, rgb565(235, 240, 250));
+      }
+    }
+    drawClouds();
+  } else if (tod == TOD_NIGHT) {
     drawStars();
     drawMoon();
   } else if (tod == TOD_AFTERNOON) {
@@ -1389,6 +1585,8 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   if (mediaFx == 1 && !menuOpen) drawDiscoFloor();
   drawHeader(pet, wifiOn, micMuted, micLive);
   drawFerret(ferret);
+  // Rain falls IN FRONT of the pet (livelier), still under the HUD.
+  if (overcast && (_wx == WX_RAIN || _wx == WX_STORM)) drawRain();
   // battery is shown in the config menu (not the home scene)
 
   if (clockActive) {
@@ -1406,6 +1604,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
       drawMenuHandle();   // config menu (top)
       drawRightHandle();  // games menu (right)
       drawLeftHandle();   // Home Assistant panel (left)
+      drawBottomHandle(); // weather forecast (bottom)
     }
   }
 
