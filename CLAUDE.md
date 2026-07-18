@@ -315,7 +315,13 @@ pio device monitor       # log serial, 115200 baud
 ## Debug tools (tirar "print" da tela + navegar por serial)
 
 **REGRA: após QUALQUER mudança visual ou feature nova, SEMPRE valide com a
-ferramenta de screenshot antes de reportar ao dono** — `tools/hwshot.py` para
+ferramenta de screenshot antes de reportar ao dono — e SEMPRE com o círculo
+do bezel desenhado no print** (a tela física é redonda, o canvas é quadrado:
+o que fica fora do anel r≈119,5 do centro (120,120) é invisível/clipado no
+aparelho; as quinas de layouts "quadrados" são as vítimas usuais). O
+`tools/hwshot.py` já desenha o anel por padrão (`--no-circle` desliga);
+capturas via `/shot.bmp` em scripts próprios devem adicionar
+`ImageDraw.ellipse([0,0,239,239])` antes de inspecionar — `tools/hwshot.py` para
 telas navegadas (menus/jogos) ou `curl 'http://ferret.local/shot.bmp?token=<token>'` para
 estado vivo (token: comando serial `token` ou tela Seguranca > Senha) (relógio/tema). Nunca assuma que a UI ficou certa sem ver o print.
 

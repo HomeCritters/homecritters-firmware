@@ -44,7 +44,7 @@ def fill_until(ser, buf: bytearray, cond, timeout: float):
             buf.extend(chunk)
 
 
-def rgb565_to_png(data: bytes, w: int, h: int, path: str):
+def rgb565_to_png(data: bytes, w: int, h: int, path: str, circle: bool = True):
     img = Image.new("RGB", (w, h))
     px = img.load()
     for i in range(w * h):
@@ -54,12 +54,21 @@ def rgb565_to_png(data: bytes, w: int, h: int, path: str):
         g = ((v >> 5) & 0x3F) << 2
         b = (v & 0x1F) << 3
         px[i % w, i // w] = (r | (r >> 5), g | (g >> 6), b | (b >> 5))
+    if circle and w == h:
+        # Bezel overlay (ON BY DEFAULT): the physical display is round, the
+        # canvas is square - anything outside this ring is invisible/clipped
+        # on the device. Validate layouts against the ring, not the square.
+        from PIL import ImageDraw
+        ImageDraw.Draw(img).ellipse([0, 0, w - 1, h - 1],
+                                    outline=(255, 60, 60), width=2)
     img.save(path)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", "--out", default="hwshot.png")
+    ap.add_argument("--no-circle", action="store_true",
+                    help="skip the round-bezel overlay (default: drawn)")
     ap.add_argument("-p", "--port", default=None)
     ap.add_argument("--cmd", action="append", default=[],
                     help="console command to send before the shot (repeatable)")
@@ -108,7 +117,7 @@ def main() -> int:
     data = bytes(buf[start:need])
     ser.close()
 
-    rgb565_to_png(data, w, h, args.out)
+    rgb565_to_png(data, w, h, args.out, circle=not args.no_circle)
     print(f"saved {args.out} ({w}x{h}) from {port}")
     return 0
 
