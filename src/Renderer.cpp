@@ -251,6 +251,32 @@ void Renderer::drawRain() {
   }
 }
 
+// Snow: slow white flakes with a gentle side-to-side wobble.
+void Renderer::drawSnow() {
+  const unsigned long t = millis();
+  for (int i = 0; i < 14; i++) {
+    const int y = (int)((t / 18 + i * 977) % (GROUND_Y + 40));
+    const int wob = (int)(3.0f * sinf(t / 900.0f + i * 1.7f));  // drift
+    const int x = ((i * 67 + 21) % SCREEN_W) + wob;
+    _canvas.fillCircle(x, y, i % 3 == 0 ? 2 : 1, TFT_WHITE);
+  }
+}
+
+// Fog: dithered horizontal haze bands drifting slowly over the scene. No
+// alpha on RGB565, so every-other-pixel dots read as translucency.
+void Renderer::drawFog() {
+  const unsigned long t = millis();
+  static const int16_t bandY[5] = {66, 82, 98, 116, 132};
+  for (int b = 0; b < 5; b++) {
+    const int shift = (int)((t / (60 + b * 25)) % 4);  // per-band crawl
+    for (int r = 0; r < 3; r++) {                      // 3 dotted rows/band
+      const int y = bandY[b] + r * 2;
+      for (int x = ((b + r) % 2) * 2 + (shift & 2); x < SCREEN_W; x += 4)
+        _canvas.drawPixel(x, y, theme::CLOUD);
+    }
+  }
+}
+
 void Renderer::drawHeader(const Pet& pet, bool wifiOn, bool micMuted,
                           bool micLive) {
   const Mood mood = pet.mood();
@@ -349,10 +375,11 @@ void Renderer::drawLeftHandle() {
 
 void Renderer::drawBottomHandle() {
   // Tab at the bottom center with a "^" chevron: swipe up = weather forecast.
-  // Sits below the action-button arc (their touch circles end ~y 227).
-  const int by = SCREEN_H - BHANDLE_H;
-  _canvas.fillRoundRect(CENTER_X - BHANDLE_W / 2, by, BHANDLE_W, BHANDLE_H + 6, 6, BTN_BG);
-  _canvas.drawRoundRect(CENTER_X - BHANDLE_W / 2, by, BHANDLE_W, BHANDLE_H + 6, 6, BTN_BORDER);
+  // Exact mirror of the top handle (54 long, 14 visible, chevron 7px) so all
+  // four pull tabs look identical.
+  const int by = SCREEN_H - 14;
+  _canvas.fillRoundRect(CENTER_X - BHANDLE_W / 2, by, BHANDLE_W, 20, 6, BTN_BG);
+  _canvas.drawRoundRect(CENTER_X - BHANDLE_W / 2, by, BHANDLE_W, 20, 6, BTN_BORDER);
   _canvas.fillTriangle(CENTER_X - 7, SCREEN_H - 4, CENTER_X + 7, SCREEN_H - 4,
                        CENTER_X, SCREEN_H - 11, BTN_BORDER);
 }
@@ -767,7 +794,16 @@ void Renderer::drawWxIcon(int cx, int cy, WxKind k, int s) {
     }
     return;
   }
-  // Cloud body (shared by CLOUDY/RAIN/STORM; rain/storm lift it to make room).
+  if (k == WX_FOG) {
+    // Classic fog glyph: stacked horizontal bars.
+    for (int i = 0; i < 4; i++) {
+      const int w = (i == 1 || i == 2) ? 14 * s : 10 * s;
+      _canvas.fillRect(cx - w / 2, cy - 5 * s + i * 3 * s, w, s,
+                       i % 2 ? theme::CLOUD : theme::CLOUD_DARK);
+    }
+    return;
+  }
+  // Cloud body (shared by CLOUDY/RAIN/STORM/SNOW; wet kinds lift it up).
   const int oy = (k == WX_CLOUDY) ? 0 : -3 * s;
   _canvas.fillCircle(cx - 4 * s, cy + oy + s, 3 * s, theme::CLOUD_DARK);
   _canvas.fillCircle(cx + 4 * s, cy + oy + s, 3 * s, theme::CLOUD);
@@ -785,6 +821,10 @@ void Renderer::drawWxIcon(int cx, int cy, WxKind k, int s) {
                          cx - s, cy + oy + 9 * s, theme::BOLT);
     _canvas.fillTriangle(cx + 2 * s, cy + oy + 6 * s, cx - s, cy + oy + 9 * s,
                          cx + s, cy + oy + 12 * s, theme::BOLT);
+  } else if (k == WX_SNOW) {
+    for (int i = -1; i <= 1; i++)
+      _canvas.fillCircle(cx + i * 4 * s, cy + oy + 6 * s + (i ? s : 3 * s),
+                         s, TFT_WHITE);
   }
 }
 
@@ -1551,7 +1591,13 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   // clouds take its place. Party mode keeps its own show untouched.
   const bool overcast =
       _wx != WX_CLEAR && !(mediaFx == 1 && !menuOpen);
-  if (overcast) _p = tintPalette(_p, _wx == WX_CLOUDY ? 80 : 130);
+  if (overcast) {
+    const uint8_t tint = _wx == WX_CLOUDY ? 80
+                         : _wx == WX_FOG  ? 95
+                         : _wx == WX_SNOW ? 105
+                                          : 130;  // rain/storm heaviest
+    _p = tintPalette(_p, tint);
+  }
 
   drawSky();
   if (overcast) {
@@ -1585,8 +1631,10 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   if (mediaFx == 1 && !menuOpen) drawDiscoFloor();
   drawHeader(pet, wifiOn, micMuted, micLive);
   drawFerret(ferret);
-  // Rain falls IN FRONT of the pet (livelier), still under the HUD.
+  // Precipitation/haze falls IN FRONT of the pet (livelier), under the HUD.
   if (overcast && (_wx == WX_RAIN || _wx == WX_STORM)) drawRain();
+  if (overcast && _wx == WX_SNOW) drawSnow();
+  if (overcast && _wx == WX_FOG) drawFog();
   // battery is shown in the config menu (not the home scene)
 
   if (clockActive) {

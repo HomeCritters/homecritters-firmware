@@ -132,6 +132,8 @@ class Renderer {
   theme::ScenePalette tintPalette(const theme::ScenePalette& p, uint8_t t);
   void drawClouds();
   void drawRain();
+  void drawSnow();
+  void drawFog();
   void drawWxIcon(int cx, int cy, WxKind k, int s);  // s = scale (1 mini, 2 big)
   void drawClock(Clock& clock);
   void drawMediaFx(uint8_t kind);     // 1 = disco ball + lasers (music party)

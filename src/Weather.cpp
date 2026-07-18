@@ -14,11 +14,14 @@ static constexpr size_t BODY_MAX = 4096;  // Open-Meteo reply is ~1KB
 
 // ---------- WMO code mapping ----------
 WxKind Weather::kindFromCode(uint8_t c) {
-  if (c <= 1) return WX_CLEAR;                    // clear / mainly clear
-  if (c <= 3 || (c >= 45 && c <= 48)) return WX_CLOUDY;  // clouds / fog
-  if (c >= 95) return WX_STORM;                   // thunderstorm
-  if (c >= 51) return WX_RAIN;                    // drizzle/rain/snow/showers
-  return WX_CLOUDY;
+  if (c <= 1) return WX_CLEAR;                     // 0-1 clear / mainly clear
+  if (c <= 3) return WX_CLOUDY;                    // 2-3 partly / overcast
+  if (c >= 45 && c <= 48) return WX_FOG;           // fog / rime fog
+  if (c >= 95) return WX_STORM;                    // 95-99 thunderstorm
+  if ((c >= 71 && c <= 77) || c == 85 || c == 86)
+    return WX_SNOW;                                // snowfall / snow showers
+  if (c >= 51) return WX_RAIN;                     // drizzle/rain/showers
+  return WX_CLOUDY;                                // anything odd: overcast
 }
 
 const char* Weather::kindLabel(WxKind k) {
@@ -27,6 +30,8 @@ const char* Weather::kindLabel(WxKind k) {
     case WX_CLOUDY: return "Nublado";
     case WX_RAIN:   return "Chuva";
     case WX_STORM:  return "Tempestade";
+    case WX_FOG:    return "Neblina";
+    case WX_SNOW:   return "Neve";
   }
   return "";
 }
@@ -188,7 +193,11 @@ void Weather::taskLoop() {
     }
     _fetchNow = false;
     const bool ok = fetchOnce();
-    nextAt = millis() + (ok ? FETCH_OK_MS : FETCH_FAIL_MS);
+    // Failure backoff: 5 min normally, but only 30 s while we've NEVER had
+    // data (a boot fetch that races WiFi settling shouldn't leave the
+    // forecast screen empty for 5 minutes).
+    nextAt = millis() + (ok ? FETCH_OK_MS
+                            : (_lastOkMs ? FETCH_FAIL_MS : 30000UL));
   }
 }
 

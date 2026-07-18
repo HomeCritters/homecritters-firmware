@@ -110,9 +110,9 @@ inline bool inLeftHandle(int32_t tx, int32_t ty) {
 }
 
 // Bottom-center handle = weather forecast (swipe up from the bottom, or tap).
-// Narrow on purpose: the action-button arc lives nearby (PAT/SLEEP at
-// cy=205 r=22 end ~y227; center-bottom stays >22px from both).
-constexpr int16_t BHANDLE_W = 44, BHANDLE_H = 14;
+// Same footprint as the top handle (54x16-ish) so all four tabs match; the
+// action buttons (PAT/SLEEP cy=205 r=22) stay clear of its touch zone.
+constexpr int16_t BHANDLE_W = 54, BHANDLE_H = 16;
 inline bool inBottomHandle(int32_t tx, int32_t ty) {
   return ty > SCREEN_H - BHANDLE_H - 4 &&
          tx > CENTER_X - BHANDLE_W / 2 && tx < CENTER_X + BHANDLE_W / 2;

@@ -553,9 +553,10 @@ static bool consoleNavigate(const String& c) {
     return true;
   }
   if (c == "wxfetch") { weather.requestFetch(0); Serial.println("[wx] fetch requested"); return true; }
-  if (c.startsWith("wxset:")) {  // force a scene condition: clear|cloudy|rainy|storm ('' = off)
+  if (c.startsWith("wxset:")) {  // force: clear|cloudy|rainy|storm|fog|snow ('' = off)
     const String k = c.substring(6);
-    g_wxDebug = k == "clear" ? 0 : k == "cloudy" ? 1 : k == "rainy" ? 2 : k == "storm" ? 3 : -1;
+    g_wxDebug = k == "clear" ? 0 : k == "cloudy" ? 1 : k == "rainy" ? 2
+              : k == "storm" ? 3 : k == "fog" ? 4 : k == "snow" ? 5 : -1;
     Serial.printf("[wx] forced kind = %d\n", g_wxDebug);
     return true;
   }

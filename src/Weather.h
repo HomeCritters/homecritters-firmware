@@ -20,7 +20,9 @@
 // ============================================================
 
 // Coarse condition for the scene renderer (from WMO weather codes).
-enum WxKind : uint8_t { WX_CLEAR = 0, WX_CLOUDY, WX_RAIN, WX_STORM };
+enum WxKind : uint8_t {
+  WX_CLEAR = 0, WX_CLOUDY, WX_RAIN, WX_STORM, WX_FOG, WX_SNOW
+};
 
 class Weather {
  public:
