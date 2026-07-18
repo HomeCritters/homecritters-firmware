@@ -231,25 +231,32 @@ void Renderer::drawForest(bool night) {
       _canvas.drawLine(x0 + tip / 2, by - h / 2, x0 + tip, by - h, col);
     }
   }
-  if (night) {
-    // Three glowing mushrooms, each pulsing on its own clock (the blue
-    // glow the owner liked - now a little family of them).
+  {
+    // The mushroom family lives here around the clock: classic RED toadstools
+    // by day (static, with a white speck), glowing blue-family caps pulsing
+    // on their own clocks after dark.
     struct M { int16_t x, y, w; uint16_t dark, bright; uint16_t period; float ph; };
     static const M ms[3] = {
         {56, (int16_t)(GROUND_Y + 18), 5, rgb565(60, 40, 90), rgb565(150, 110, 235), 1400, 0.0f},
         {143, (int16_t)(GROUND_Y + 14), 3, rgb565(30, 70, 80), rgb565(80, 200, 210), 1750, 1.6f},
         {207, (int16_t)(GROUND_Y + 21), 4, rgb565(30, 50, 100), rgb565(100, 150, 255), 1150, 3.1f},
     };
+    const uint16_t red = rgb565(205, 45, 40);
     for (int i = 0; i < 3; i++) {
       const M& m = ms[i];
-      const float pu = 0.5f + 0.5f * sinf(millis() / (float)m.period + m.ph);
-      const uint16_t cap = lerp565(m.dark, m.bright, pu);
       _canvas.drawFastVLine(m.x + m.w / 2, m.y + 2, 3, rgb565(180, 175, 165));
-      _canvas.fillRect(m.x, m.y, m.w, 2, cap);
-      if (pu > 0.75f)  // faint ground glow at the peak
-        _canvas.drawFastHLine(m.x - 1, m.y + 5, m.w + 2, lerp565(_p.ground, m.bright, 0.25f));
+      if (night) {
+        const float pu = 0.5f + 0.5f * sinf(millis() / (float)m.period + m.ph);
+        _canvas.fillRect(m.x, m.y, m.w, 2, lerp565(m.dark, m.bright, pu));
+        if (pu > 0.75f)  // faint ground glow at the peak
+          _canvas.drawFastHLine(m.x - 1, m.y + 5, m.w + 2, lerp565(_p.ground, m.bright, 0.25f));
+      } else {
+        _canvas.fillRect(m.x, m.y, m.w, 2, red);           // still red cap
+        _canvas.drawPixel(m.x + m.w / 2 - 1, m.y, TFT_WHITE);  // white speck
+      }
     }
-  } else {
+  }
+  if (!night) {
     static const int16_t fl[][2] = {{40, 124}, {186, 121}};
     static const uint16_t fc[] = {rgb565(255, 245, 250), rgb565(250, 160, 200)};
     for (int i = 0; i < 2; i++) {

@@ -70,7 +70,7 @@ it gifts the home location automatically.
 <td align="center"><img src="docs/screenshots/wx-snowshower.png" width="150"/><br><sub>Snow showers (85/86)</sub></td>
 <td align="center"><img src="docs/screenshots/wx-storm.png" width="150"/><br><sub>Thunderstorm (95)</sub></td>
 <td align="center"><img src="docs/screenshots/wx-hail.png" width="150"/><br><sub>Hail (96/99)</sub></td>
-<td></td>
+<td align="center"><img src="docs/screenshots/wx-clear-night.png" width="150"/><br><sub>Clear, at night ✨</sub></td>
 </tr>
 </table>
 
