@@ -29,9 +29,9 @@ ground and sleeps — animated from an original Aseprite sprite sheet. The
 forest follows the **real time of day** (NTP): sunny day, golden sunset, and
 a starry night with a lit cabin window and fireflies.
 
-| Day | Night + idle clock | Config menu |
-|---|---|---|
-| ![day](docs/screenshots/pet-day.png) | ![night](docs/screenshots/night-clock.png) | ![menu](docs/screenshots/config-menu.png) |
+| Day | Golden hour | Night + idle clock | Config menu |
+|---|---|---|---|
+| ![day](docs/screenshots/pet-day.png) | ![sunset](docs/screenshots/pet-sunset.png) | ![night](docs/screenshots/night-clock.png) | ![menu](docs/screenshots/config-menu.png) |
 
 Leave him alone for a while and the HUD gives way to an **idle clock**
 (NTP-synced, 12/24h, timezone auto-detected by the web portal).
