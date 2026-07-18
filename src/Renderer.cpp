@@ -195,20 +195,33 @@ void Renderer::drawForest(bool night) {
 }
 
 void Renderer::drawSparkles(bool night) {
-  // Magic dust: tiny dots twinkling RANDOMLY - each dot has its own blink
-  // period and a hashed on/off per slot, so there's no marching pattern.
-  static const int16_t pts[][2] = {
-    {60, 70}, {150, 58}, {110, 90}, {30, 95}, {200, 88},
-    {170, 120}, {75, 130}, {130, 140}, {215, 130}, {45, 128},
-  };
+  // Magic dust 2.0: motes rise slowly from the grass with a gentle sway,
+  // each with its own speed, path and blink rhythm (all hashed from the
+  // mote index - stateless). Brightness ladder per blink slot: dark ->
+  // faint pixel -> lit dot -> white 4-point star glint.
   const unsigned long ms = millis();
-  for (size_t i = 0; i < sizeof(pts) / sizeof(pts[0]); i++) {
-    const unsigned long ph = ms / (180 + ((i * 53) % 140));  // per-dot rate
-    uint32_t h = (uint32_t)ph * 2654435761u ^ (uint32_t)(i * 2246822519u);
+  const int n = night ? 12 : 6;
+  for (int i = 0; i < n; i++) {
+    const uint32_t seed = (uint32_t)i * 2246822519u + 0x9E3779B9u;
+    const int baseX = 18 + (int)((seed >> 8) % 204);
+    const int span = 34 + (int)((seed >> 3) % 46);     // rise range 34..80 px
+    const int baseY = 128 - (int)((seed >> 16) % 40);  // starts near the grass
+    const int rise = 26 + (int)(seed % 20);            // ms per px upward
+    const int y = baseY - (int)((ms / rise + (seed & 63)) % span);
+    const int x = baseX + (int)(3.0f * sinf(ms / 700.0f + i * 1.9f));
+    const unsigned long ph = ms / (160 + (int)((seed >> 5) % 180));
+    uint32_t h = (uint32_t)ph * 2654435761u ^ seed;
     h ^= h >> 13;
-    if ((h & 7) < 3) continue;      // ~37% of slots dark, pseudo-random
-    if (!night && i % 2) continue;  // fewer sparkles by day
-    _canvas.fillCircle(pts[i][0], pts[i][1], 1, _p.sparkle);
+    const uint8_t st = h & 7;
+    if (st < 3) continue;                       // dark beat
+    if (st < 6) { _canvas.drawPixel(x, y, _p.sparkle); continue; }  // faint
+    _canvas.fillCircle(x, y, 1, st == 7 ? TFT_WHITE : _p.sparkle);  // lit
+    if (st == 7) {                              // star glint at the peak
+      _canvas.drawPixel(x - 2, y, _p.sparkle);
+      _canvas.drawPixel(x + 2, y, _p.sparkle);
+      _canvas.drawPixel(x, y - 2, _p.sparkle);
+      _canvas.drawPixel(x, y + 2, _p.sparkle);
+    }
   }
 }
 
