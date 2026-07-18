@@ -195,17 +195,48 @@ void Renderer::drawForest(bool night) {
 }
 
 void Renderer::drawSparkles(bool night) {
-  // Magic dust / fireflies: tiny dots that slowly twinkle.
+  // Magic dust: tiny dots twinkling RANDOMLY - each dot has its own blink
+  // period and a hashed on/off per slot, so there's no marching pattern.
   static const int16_t pts[][2] = {
     {60, 70}, {150, 58}, {110, 90}, {30, 95}, {200, 88},
     {170, 120}, {75, 130}, {130, 140}, {215, 130}, {45, 128},
   };
-  unsigned long ph = millis() / 250;
+  const unsigned long ms = millis();
   for (size_t i = 0; i < sizeof(pts) / sizeof(pts[0]); i++) {
-    // light only part of them at a time (twinkle)
-    if (((ph + i) % 3) == 0) continue;
+    const unsigned long ph = ms / (180 + ((i * 53) % 140));  // per-dot rate
+    uint32_t h = (uint32_t)ph * 2654435761u ^ (uint32_t)(i * 2246822519u);
+    h ^= h >> 13;
+    if ((h & 7) < 3) continue;      // ~37% of slots dark, pseudo-random
     if (!night && i % 2) continue;  // fewer sparkles by day
     _canvas.fillCircle(pts[i][0], pts[i][1], 1, _p.sparkle);
+  }
+}
+
+// Three green fireflies wandering the night scene on Lissajous paths with a
+// soft pulse (bright at the peak, brief dark beats). Clear nights only -
+// rain/clouds ground them (called gated from draw()).
+void Renderer::drawFireflies() {
+  const float t = millis() / 1000.0f;
+  struct F { float cx, cy, ax, ay, px, py, ph; };
+  static const F fs[3] = {
+      {70, 95, 34, 18, 7.3f, 5.1f, 0.0f},
+      {150, 82, 40, 22, 9.1f, 6.7f, 2.1f},
+      {110, 118, 30, 14, 6.1f, 8.3f, 4.2f},
+  };
+  const uint16_t bright = rgb565(140, 255, 110), dim = rgb565(70, 160, 60);
+  for (int i = 0; i < 3; i++) {
+    const F& f = fs[i];
+    const int x = (int)(f.cx + f.ax * sinf(t * 6.2832f / f.px + f.ph));
+    const int y = (int)(f.cy + f.ay * sinf(t * 6.2832f / f.py + f.ph * 1.7f));
+    const float pulse = sinf(t * 3.0f + i * 2.0f);
+    if (pulse < -0.6f) continue;  // brief dark beat
+    _canvas.fillCircle(x, y, 1, pulse > 0.3f ? bright : dim);
+    if (pulse > 0.6f) {           // glow halo at the peak
+      _canvas.drawPixel(x - 2, y, dim);
+      _canvas.drawPixel(x + 2, y, dim);
+      _canvas.drawPixel(x, y - 2, dim);
+      _canvas.drawPixel(x, y + 2, dim);
+    }
   }
 }
 
@@ -1815,6 +1846,9 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   }
   drawForest(night);
   drawSparkles(night);
+  // Green fireflies: clear nights only (weather grounds them), and the
+  // party has its own light show.
+  if (night && k == WX_CLEAR && !party) drawFireflies();
   // Disco floor goes UNDER the pet (Leon dances on it); the ball + lasers
   // overlay goes on top of everything at the end.
   if (party) drawDiscoFloor();

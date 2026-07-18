@@ -132,6 +132,7 @@ class Renderer {
   void drawCabin(int bx, int by, bool night);
   void drawPineTree(int bx, int baseY, int size);
   void drawSparkles(bool night);
+  void drawFireflies();  // green wanderers, clear nights only
   void drawHeader(const Pet& pet, bool wifiOn, bool micMuted, bool micLive);
   void drawMenuHandle();
   void drawRightHandle();
