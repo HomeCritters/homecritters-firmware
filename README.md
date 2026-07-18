@@ -36,6 +36,17 @@ a starry night with a lit cabin window and fireflies.
 Leave him alone for a while and the HUD gives way to an **idle clock**
 (NTP-synced, 12/24h, timezone auto-detected by the web portal).
 
+### 🌦️ Real weather
+
+The scene follows the **actual weather** at your place (free Open-Meteo API,
+fetched by the firmware itself over verified TLS — no Home Assistant, no API
+key): overcast skies turn gray with drifting clouds, rain falls in front of
+Leon, and storms flash the sky with a thunder clap. **Swipe up from the
+bottom** for the forecast screen — today big (icon, current temp, condition,
+hi/lo) plus the next four days. Set your city once in the web portal (the
+browser does the geocoding search); if the HA integration is connected it
+gifts the home location automatically.
+
 ### 🎮 Three mini-games
 
 Playable on the touch screen — or from your phone, with the web portal

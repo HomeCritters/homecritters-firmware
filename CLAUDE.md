@@ -163,6 +163,22 @@ portal/tools ficam aqui.
   (JSON compacto ASCII); device→plugin `ha:cmd:` + `ha:sub`. Nomes/valores
   largos rolam com `drawScrollText` (marquee bounce com clip). Serial: `ha`,
   `hapanel`, `hatoggle:N`.
+- **Clima real** (`src/Weather.{h,cpp}`, SEM Home Assistant): cliente próprio
+  da **Open-Meteo** (grátis, sem chave) com TLS verificado (cert bundle do
+  IDF via `esp_crt_bundle_attach` — declarar `extern "C"`, o header não está
+  no include path do Arduino). Task core 0; cadência 30 min (retry 5 min),
+  fetch imediato no boot/troca de local/abrir a tela (>15 min). A condição
+  atual **pinta a cena**: nublado/chuva/tempestade tingem a paleta de cinza
+  (`tintPalette`+`lerp565`), nuvens derivam no céu, gotas caem NA FRENTE do
+  Leon, tempestade dá flash no céu + **trovão** (`sfx_thunder`, só se nada
+  tocando). **Tela Tempo** (`SCREEN_WEATHER`): swipe pra CIMA da metade de
+  baixo (ou tap na aba ˄ da base) — hoje grande (ícone+temp+condição+max/min)
+  + 4 próximos dias; volta = swipe pra baixo/pull esquerdo. Local (lat/lon/
+  cidade ASCII) em NVS "wx", configurado pelo **portal** (busca de cidade —
+  geocoding roda no NAVEGADOR), serial (`wxloc:`) ou — conveniência — o
+  plugin HA manda a localização da casa 1x se `wxCity` estiver vazio (nunca
+  sobrescreve manual). Serial: `weather`, `wx`, `wxfetch`, `wxset:<cond>`
+  (força visual), `wxloc:`. Dado >3h sem sucesso → cena volta a CLEAR.
 - **Game mode**: pull da **direita** abre o **menu de jogos** (tiles quadrados);
   pull da **esquerda** = "voltar" (menu de config, menu de jogos e Bolinha —
   todas as abas puxam pro centro). Tela dos jogos sempre no hardware; ambos
@@ -379,7 +395,7 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
       every screen, lights on the beat") + sync multi-room. Não migrar agora
       (experimental + é componente esp-idf, porte pesado pro Arduino); revisitar
       quando o protocolo estabilizar. Não conflita com o voice assistant.
-- [ ] Outras ideias: OTA, moedas/lojinha, clima real na cena.
+- [ ] Outras ideias: OTA, moedas/lojinha.
 - [ ] Acesso remoto (fora de casa): plano discutido = Tailscale num aparelho
       ajudante + Funnel (exigiria mover o WS pra porta 80 via HTTP Upgrade).
 
