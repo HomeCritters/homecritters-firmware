@@ -429,6 +429,7 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     _wsPairing[num] = false;
     _wsConnAt[num] = 0;
     if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
+    if ((int)num == _assistClient) { _assistOn = false; _assistClient = -1; }
     if (was) _clientsDirty = true;  // refresh the connections list
   } else if (type == WStype_TEXT) {
     String msg;
@@ -551,6 +552,11 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     // consume the audio directly.
     if (msg == "ptt:start") { if (_micClient < 0) _micClient = num; voicePttStart(); return; }
     if (msg == "ptt:end")   { voicePttEnd(); return; }
+    // Pipeline liveness from the satellite: assist:on when a wake/STT stage
+    // actually starts consuming our audio, assist:off when the run dies.
+    // Gates the header's "live mic" icon so it reflects END-TO-END health.
+    if (msg == "assist:on")  { _assistOn = true;  _assistClient = num; _dirty = true; return; }
+    if (msg == "assist:off") { _assistOn = false; _assistClient = -1;  _dirty = true; return; }
     // Voice pipeline state pushed by HA (wake word runs): drives the ring/LED.
     // (after "voice:sub" above, which must match first)
     if (msg.startsWith("voice:")) {
@@ -846,7 +852,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
   snprintf(out, n,
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,\"micMuted\":%s,"
-           "\"micOn\":%s,\"micClient\":%d,"
+           "\"micOn\":%s,\"micClient\":%d,\"assistOn\":%s,"
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
@@ -858,7 +864,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _sleepSnd ? "true" : "false",
            _wakeSnd ? "true" : "false",
            _micMuted ? "true" : "false",
-           _micOn ? "true" : "false", _micClient,
+           _micOn ? "true" : "false", _micClient, _assistOn ? "true" : "false",
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,

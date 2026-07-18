@@ -67,9 +67,12 @@ class WebPortal {
   // PTT is denied and mic:on is ignored. Toggled by a quick BOOT tap, the
   // portal switch and HA ("mute:on|off"). Persisted in NVS.
   bool micMuted() const { return _micMuted; }
-  // Mic actively streaming to a voice sink (HA satellite connected + mic:on,
-  // not muted) - drives the small "live mic" icon in the header.
-  bool micLive() const { return _micOn && _micClient >= 0 && !_micMuted; }
+  // Mic truly live END-TO-END: we're streaming AND the HA pipeline confirmed
+  // it's consuming (assist:on arrives when the wake/STT stage actually starts;
+  // assist:off / run death / disconnect clears it). Just "streaming" wasn't
+  // enough - during an openWakeWord restart the device kept streaming into a
+  // dead pipeline and the icon lied. Drives the header's cyan mic.
+  bool micLive() const { return _micOn && _micClient >= 0 && !_micMuted && _assistOn; }
   void setMicMuted(bool muted);
   // Voice UI state, driven by the main loop's state machine (idle|listening|
   // thinking|speaking). Reflected in the WS state so the portal/HA can mirror
@@ -190,6 +193,8 @@ class WebPortal {
   volatile bool _micOn = false;  // written on render loop, read by capture task
   volatile bool _micMuted = false;  // privacy mute (NVS-persisted)
   int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
+  bool _assistOn = false;   // HA confirmed a live pipeline stage (assist:on/off)
+  int _assistClient = -1;   // socket that confirmed (cleared on its disconnect)
 
   // Per-client credential table (NVS "auth", keys t<i>). Labels are NOT stored
   // here: they're per-connection (below), set by the client on each connect,
