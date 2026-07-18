@@ -40,12 +40,39 @@ Leave him alone for a while and the HUD gives way to an **idle clock**
 
 The scene follows the **actual weather** at your place (free Open-Meteo API,
 fetched by the firmware itself over verified TLS — no Home Assistant, no API
-key): overcast skies turn gray with drifting clouds, rain falls in front of
-Leon, and storms flash the sky with a thunder clap. **Swipe up from the
-bottom** for the forecast screen — today big (icon, current temp, condition,
-hi/lo) plus the next four days. Set your city once in the web portal (the
-browser does the geocoding search); if the HA integration is connected it
-gifts the home location automatically.
+key). **Every WMO condition has its own look** — palette tint, cloud cover,
+precipitation density and speed, and effects like visible lightning bolts
+with a thunder clap, hail pellets and icy freezing-rain crystals. Ambient
+sounds too: rain patter and forest wind, played sparsely and never over
+other audio. **Swipe up from the bottom** for the forecast screen — today
+big (icon, current temp, condition, hi/lo + humidity) plus the next four
+days (icon, hi/lo, chance of rain). Set your city once in the web portal
+(the browser does the geocoding search); if the HA integration is connected
+it gifts the home location automatically.
+
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/wx-clear.png" width="150"/><br><sub>Clear (0)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-mclear.png" width="150"/><br><sub>Mainly clear (1)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-partly.png" width="150"/><br><sub>Partly cloudy (2)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-cloudy.png" width="150"/><br><sub>Overcast (3)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-fog.png" width="150"/><br><sub>Fog (45/48)</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/wx-drizzle.png" width="150"/><br><sub>Drizzle (51–55)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-rainy.png" width="150"/><br><sub>Rain (61–65)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-pouring.png" width="150"/><br><sub>Showers (80–82)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-frain.png" width="150"/><br><sub>Freezing rain (56/57/66/67)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-snow.png" width="150"/><br><sub>Snow (71–75)</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/wx-grains.png" width="150"/><br><sub>Snow grains (77)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-snowshower.png" width="150"/><br><sub>Snow showers (85/86)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-storm.png" width="150"/><br><sub>Thunderstorm (95)</sub></td>
+<td align="center"><img src="docs/screenshots/wx-hail.png" width="150"/><br><sub>Hail (96/99)</sub></td>
+<td></td>
+</tr>
+</table>
 
 ### 🎮 Three mini-games
 
