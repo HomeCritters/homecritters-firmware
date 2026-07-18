@@ -60,10 +60,12 @@ class Renderer {
   // a spinner while the first ha:list hasn't arrived yet (fresh subscribe).
   void drawHaPanel(HaPanel& ha, int page, bool loading = false);
 
-  // Weather: the current condition tints/animates the pet scene (set each
-  // frame by main); drawWeather is the forecast screen (swipe up from bottom).
-  void setWeather(WxKind k) { _wx = k; }
+  // Weather: the current WMO code tints/animates the pet scene (set each
+  // frame by main; 0 = clear); drawWeather is the forecast screen.
+  void setWeather(uint8_t wmoCode) { _wxCode = wmoCode; }
   void drawWeather(Weather& wx);
+  // Debug/console: fire a lightning strike right now (validates bolt+thunder).
+  void triggerBolt() { _flashFrames = 6; _thunderPending = true; }
   // A storm flash queued a thunder clap - main consumes it and plays the SFX.
   bool consumeThunder() {
     const bool t = _thunderPending;
@@ -109,9 +111,11 @@ class Renderer {
   theme::ScenePalette _p = theme::NIGHT;
 
   // Real-weather scene state (set by main from the Weather model).
-  WxKind _wx = WX_CLEAR;
+  uint8_t _wxCode = 0;             // current WMO code (0 = clear)
   unsigned long _nextFlashMs = 0;  // next lightning flash (storm)
   uint8_t _flashFrames = 0;        // frames left of the current flash
+  int16_t _boltX = 120;            // where the current bolt strikes
+  uint32_t _boltSeed = 1;          // jitter seed (stable during one strike)
   bool _thunderPending = false;    // flash fired -> main plays the thunder
 
   void drawSky();
@@ -130,9 +134,11 @@ class Renderer {
   void drawBottomHandle();  // weather forecast tab (pet screen)
   // Weather scene FX + forecast-screen helpers.
   theme::ScenePalette tintPalette(const theme::ScenePalette& p, uint8_t t);
-  void drawClouds();
-  void drawRain();
-  void drawSnow();
+  void drawClouds(uint8_t n);
+  void drawRain(uint8_t intensity, bool freezing);
+  void drawSnow(uint8_t intensity, bool grains, bool fast);
+  void drawHail();
+  void drawLightning();
   void drawFog();
   void drawWxIcon(int cx, int cy, WxKind k, int s);  // s = scale (1 mini, 2 big)
   void drawClock(Clock& clock);

@@ -24,6 +24,51 @@ WxKind Weather::kindFromCode(uint8_t c) {
   return WX_CLOUDY;                                // anything odd: overcast
 }
 
+uint8_t Weather::intensityFromCode(uint8_t c) {
+  switch (c) {
+    case 51: case 56: case 61: case 66: case 71: case 77: case 80: case 85:
+      return 0;  // light: drizzle, slight rain/snow/showers, grains
+    case 55: case 57: case 65: case 67: case 75: case 82: case 86: case 99:
+      return 2;  // heavy: dense drizzle, heavy rain/snow, violent showers
+    default:
+      return 1;  // moderate
+  }
+}
+
+bool Weather::codeFreezing(uint8_t c) {
+  return c == 56 || c == 57 || c == 66 || c == 67;
+}
+
+bool Weather::codeHail(uint8_t c) { return c == 96 || c == 99; }
+
+// Granular PT label for the forecast screen (ASCII for the device font).
+const char* Weather::labelForCode(uint8_t c) {
+  switch (c) {
+    case 0:  return "Limpo";
+    case 1:  return "Quase limpo";
+    case 2:  return "Parcial nublado";
+    case 3:  return "Encoberto";
+    case 45: case 48: return "Neblina";
+    case 51: case 53: return "Garoa";
+    case 55: return "Garoa densa";
+    case 56: case 57: return "Garoa gelada";
+    case 61: return "Chuva fraca";
+    case 63: return "Chuva";
+    case 65: return "Chuva forte";
+    case 66: case 67: return "Chuva gelada";
+    case 71: return "Neve fraca";
+    case 73: return "Neve";
+    case 75: return "Neve forte";
+    case 77: return "Graos de neve";
+    case 80: case 81: return "Pancadas";
+    case 82: return "Temporal";
+    case 85: case 86: return "Pancada de neve";
+    case 95: return "Tempestade";
+    case 96: case 99: return "Granizo";
+  }
+  return kindLabel(kindFromCode(c));
+}
+
 const char* Weather::kindLabel(WxKind k) {
   switch (k) {
     case WX_CLEAR:  return "Limpo";

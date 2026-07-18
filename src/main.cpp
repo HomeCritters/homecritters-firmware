@@ -553,11 +553,24 @@ static bool consoleNavigate(const String& c) {
     return true;
   }
   if (c == "wxfetch") { weather.requestFetch(0); Serial.println("[wx] fetch requested"); return true; }
-  if (c.startsWith("wxset:")) {  // force: clear|cloudy|rainy|storm|fog|snow ('' = off)
+  if (c.startsWith("wxset:")) {  // force a scene WMO code by name or number
     const String k = c.substring(6);
-    g_wxDebug = k == "clear" ? 0 : k == "cloudy" ? 1 : k == "rainy" ? 2
-              : k == "storm" ? 3 : k == "fog" ? 4 : k == "snow" ? 5 : -1;
-    Serial.printf("[wx] forced kind = %d\n", g_wxDebug);
+    // Named shortcuts map to a representative WMO code; any raw code works
+    // too (wxset:82). Empty = back to the real weather.
+    g_wxDebug = k == "clear"      ? 0  : k == "mclear"  ? 1
+              : k == "partly"     ? 2  : k == "cloudy"  ? 3
+              : k == "fog"        ? 45 : k == "drizzle" ? 53
+              : k == "frizzle"    ? 56 : k == "rainy"   ? 63
+              : k == "frain"      ? 66 : k == "pouring" ? 82
+              : k == "snow"       ? 73 : k == "grains"  ? 77
+              : k == "snowshower" ? 86 : k == "storm"   ? 95
+              : k == "hail"       ? 96
+              : (k.length() && isDigit(k[0])) ? k.toInt() : -1;
+    Serial.printf("[wx] forced code = %d\n", g_wxDebug);
+    return true;
+  }
+  if (c == "wxbolt") {  // debug: strike lightning right now (bolt + thunder)
+    renderer.triggerBolt();
     return true;
   }
   if (c.startsWith("wxloc:")) {  // wxloc:<lat>,<lon>[,<city>]
@@ -641,8 +654,28 @@ void loop() {
   // Weather: adopt any finished fetch and keep the scene condition current
   // (debug force wins). Runs on every screen so the data never goes stale.
   weather.loop();
-  renderer.setWeather(g_wxDebug >= 0 ? (WxKind)g_wxDebug : weather.kindNow());
-  if (renderer.consumeThunder()) audio.playThunder();  // storm flash clap
+  const uint8_t wxCode =
+      g_wxDebug >= 0 ? (uint8_t)g_wxDebug
+                     : (weather.fresh() ? weather.codeNow() : 0);
+  renderer.setWeather(wxCode);
+  if (renderer.consumeThunder()) audio.playThunder();  // strike -> clap
+  // Ambient weather SFX: a rain patter / forest wind clip every 60-120 s
+  // (random), pet screen only, first one ~8 s after the weather turns, and
+  // never over other audio (the play helpers bail if busy).
+  {
+    static unsigned long ambientAt = 0;
+    static uint8_t lastFam = 255;
+    const WxKind fam = Weather::kindFromCode(wxCode);
+    if ((uint8_t)fam != lastFam) { lastFam = (uint8_t)fam; ambientAt = now + 8000; }
+    const bool rainy = fam == WX_RAIN || fam == WX_STORM;
+    const bool windy = fam == WX_FOG || fam == WX_SNOW;
+    if ((rainy || windy) && screen == SCREEN_PET && !g_fullSleep &&
+        now >= ambientAt) {
+      ambientAt = now + 60000 + (esp_random() % 60000);
+      if (rainy) audio.playRainAmb();
+      else audio.playWindAmb();
+    }
+  }
 
   // --- WiFi setup mode (captive portal active): own screen; back tab exits ---
   if (web.configuring()) {

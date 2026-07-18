@@ -44,6 +44,8 @@ class AudioPlayer {
   void playSimon(int color);  // Genius tone (0=green 1=red 2=yellow 3=blue)
   void playBuzzer();     // Genius wrong answer
   void playThunder();    // storm lightning clap (skipped if audio is busy)
+  void playRainAmb();    // ambient rain patter (weather scenes, if idle)
+  void playWindAmb();    // ambient wind + creaky tree (fog/snow, if idle)
   void playListen();     // voice assistant: mic opened (ascending chime)
   void playConfirm();    // voice assistant: heard you, processing (descending)
 

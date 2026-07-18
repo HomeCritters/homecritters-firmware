@@ -225,11 +225,12 @@ theme::ScenePalette Renderer::tintPalette(const theme::ScenePalette& p,
   return o;
 }
 
-// Three puffy clouds drifting slowly across the sky (millis-driven, stateless).
-void Renderer::drawClouds() {
+// Up to three puffy clouds drifting slowly (millis-driven, stateless).
+void Renderer::drawClouds(uint8_t n) {
   struct C { int16_t y; int16_t w; uint16_t speedMs; };  // per-cloud params
   static const C cs[3] = {{30, 46, 240}, {52, 60, 340}, {22, 38, 180}};
-  for (int i = 0; i < 3; i++) {
+  if (n > 3) n = 3;
+  for (int i = 0; i < n; i++) {
     const int span = SCREEN_W + cs[i].w * 2;
     const int x = (int)((millis() / cs[i].speedMs + i * 97) % span) - cs[i].w;
     const int y = cs[i].y;
@@ -241,24 +242,73 @@ void Renderer::drawClouds() {
   }
 }
 
-// Falling rain streaks - same stateless millis pattern as drawSparkles.
-void Renderer::drawRain() {
+// Falling rain, scaled by intensity: 0 = drizzle (few thin short drops),
+// 1 = steady rain, 2 = downpour (dense, long, fast). Freezing rain goes icy
+// pale with little crystals glinting near the ground.
+void Renderer::drawRain(uint8_t intensity, bool freezing) {
   const unsigned long t = millis();
-  for (int i = 0; i < 16; i++) {
+  static const uint8_t N[3] = {8, 16, 26};
+  static const uint8_t SPD[3] = {8, 5, 4};   // ms per px (lower = faster)
+  static const uint8_t LEN[3] = {3, 5, 7};
+  const uint16_t c = freezing ? rgb565(205, 230, 250) : theme::RAINDROP;
+  for (int i = 0; i < N[intensity]; i++) {
     const int x = (i * 61 + 13) % SCREEN_W;
-    const int y = (int)((t / 5 + i * 977) % (GROUND_Y + 40));
-    _canvas.drawLine(x, y, x - 1, y + 5, theme::RAINDROP);
+    const int y = (int)((t / SPD[intensity] + i * 977) % (GROUND_Y + 40));
+    _canvas.drawLine(x, y, x - 1, y + LEN[intensity], c);
+  }
+  if (freezing) {  // ice crystals twinkling at ground level
+    const unsigned long ph = t / 300;
+    for (int i = 0; i < 6; i++) {
+      if ((ph + i) % 3 == 0) continue;
+      _canvas.fillCircle((i * 41 + 17) % SCREEN_W, GROUND_Y + 4 + (i * 7) % 18,
+                         1, TFT_WHITE);
+    }
   }
 }
 
-// Snow: slow white flakes with a gentle side-to-side wobble.
-void Renderer::drawSnow() {
+// Snow: white flakes with a gentle wobble. grains = tiny fast specks (WMO 77);
+// fast = snow showers. Intensity scales the flake count.
+void Renderer::drawSnow(uint8_t intensity, bool grains, bool fast) {
   const unsigned long t = millis();
-  for (int i = 0; i < 14; i++) {
-    const int y = (int)((t / 18 + i * 977) % (GROUND_Y + 40));
-    const int wob = (int)(3.0f * sinf(t / 900.0f + i * 1.7f));  // drift
+  static const uint8_t N[3] = {10, 14, 22};
+  const int spd = grains ? 8 : (fast ? 10 : 18);  // ms per px
+  for (int i = 0; i < N[intensity]; i++) {
+    const int y = (int)((t / spd + i * 977) % (GROUND_Y + 40));
+    const int wob = grains ? 0 : (int)(3.0f * sinf(t / 900.0f + i * 1.7f));
     const int x = ((i * 67 + 21) % SCREEN_W) + wob;
-    _canvas.fillCircle(x, y, i % 3 == 0 ? 2 : 1, TFT_WHITE);
+    _canvas.fillCircle(x, y, (!grains && i % 3 == 0) ? 2 : 1, TFT_WHITE);
+  }
+}
+
+// Hail: white pellets falling fast in front of everything.
+void Renderer::drawHail() {
+  const unsigned long t = millis();
+  for (int i = 0; i < 10; i++) {
+    const int x = (i * 83 + 29) % SCREEN_W;
+    const int y = (int)((t / 3 + i * 977) % (GROUND_Y + 50));
+    _canvas.fillCircle(x, y, 2, TFT_WHITE);
+    _canvas.drawPixel(x - 1, y - 3, theme::CLOUD);  // motion hint
+  }
+}
+
+// A jagged lightning bolt from the clouds to the treeline. The seed keeps the
+// shape stable for the strike's ~6 frames; each strike lands somewhere new.
+void Renderer::drawLightning() {
+  uint32_t s = _boltSeed;
+  auto rnd = [&s]() { s = s * 1103515245u + 12345u; return (s >> 16) & 0x7FFF; };
+  int x = _boltX, y = 14;
+  const uint16_t core = TFT_WHITE;
+  while (y < GROUND_Y - 6) {
+    const int ny = y + 12 + (int)(rnd() % 10);
+    const int nx = x + (int)(rnd() % 25) - 12;
+    _canvas.drawLine(x, y, nx, ny, theme::BOLT);
+    _canvas.drawLine(x + 1, y, nx + 1, ny, theme::BOLT);
+    _canvas.drawLine(x, y + 1, nx, ny + 1, core);
+    // occasional side branch
+    if (rnd() % 3 == 0) {
+      _canvas.drawLine(nx, ny, nx + ((rnd() % 2) ? 10 : -10), ny + 8, theme::BOLT);
+    }
+    x = nx; y = ny;
   }
 }
 
@@ -883,10 +933,10 @@ void Renderer::drawWeather(Weather& wx) {
   _canvas.drawCircle(124 + tw + 6, 84, 3, TFT_WHITE);  // degree mark
   char sub[40];
   if (wx.dayCount() > 0)
-    snprintf(sub, sizeof(sub), "%s  %d / %d", Weather::kindLabel(know),
+    snprintf(sub, sizeof(sub), "%s  %d / %d", Weather::labelForCode(wx.codeNow()),
              wx.day(0).hi, wx.day(0).lo);
   else
-    snprintf(sub, sizeof(sub), "%s", Weather::kindLabel(know));
+    snprintf(sub, sizeof(sub), "%s", Weather::labelForCode(wx.codeNow()));
   _canvas.setTextSize(1);
   _canvas.setTextColor(menu::TEXT_DIM);
   _canvas.setCursor(CENTER_X - _canvas.textWidth(sub) / 2, 128);
@@ -1600,55 +1650,73 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   const bool night = (tod == TOD_NIGHT);
   _p = (tod == TOD_NIGHT) ? NIGHT : (tod == TOD_AFTERNOON ? AFTERNOON : DAY);
 
-  // Real weather paints on top of the time-of-day theme: overcast/rain/storm
-  // tint the whole palette toward gray (heavier for rain) and hide the sun -
-  // clouds take its place. Party mode keeps its own show untouched.
-  const bool overcast =
-      _wx != WX_CLEAR && !(mediaFx == 1 && !menuOpen);
-  if (overcast) {
-    const uint8_t tint = _wx == WX_CLOUDY ? 80
-                         : _wx == WX_FOG  ? 95
-                         : _wx == WX_SNOW ? 105
-                                          : 130;  // rain/storm heaviest
-    _p = tintPalette(_p, tint);
-  }
+  // Real weather paints on top of the time-of-day theme. Every WMO variant
+  // gets its own look: partly-cloudy keeps the sun with a light tint, rain
+  // scales with intensity, freezing rain goes icy, snow flakes scale, hail
+  // pelts, storms strike visible lightning. Party mode stays untouched.
+  const bool party = (mediaFx == 1 && !menuOpen);
+  const uint8_t wc = party ? 0 : _wxCode;
+  const WxKind k = Weather::kindFromCode(wc);
+  const uint8_t inten = Weather::intensityFromCode(wc);
+  const bool freezing = Weather::codeFreezing(wc);
+  const bool hail = Weather::codeHail(wc);
+  const bool partly = (wc == 2);           // sun still visible
+  const bool wisp = (wc == 1);             // mainly clear: one stray cloud
+  const bool overcast = k != WX_CLEAR && !partly;
+
+  uint8_t tint = 0, cloudN = 0;
+  if (partly) { tint = 40; cloudN = 2; }
+  else if (wc == 3) { tint = 85; cloudN = 3; }
+  else if (k == WX_FOG) { tint = 95; cloudN = 2; }
+  else if (k == WX_SNOW) { tint = 100 + inten * 10; cloudN = 3; }
+  else if (k == WX_RAIN) { tint = freezing ? 115 : (uint8_t)(110 + inten * 15); cloudN = 3; }
+  else if (k == WX_STORM) { tint = hail ? 145 : 135; cloudN = 3; }
+  if (tint) _p = tintPalette(_p, tint);
 
   drawSky();
-  if (overcast) {
-    // Storm flash: whole sky whites out for 2 frames, thunder follows.
-    if (_wx == WX_STORM) {
-      const unsigned long nowMs = millis();
-      if (_nextFlashMs == 0) _nextFlashMs = nowMs + 4000;
-      if ((long)(nowMs - _nextFlashMs) >= 0) {
-        _flashFrames = 2;
-        _thunderPending = true;
-        _nextFlashMs = nowMs + 8000 + (esp_random() % 12000);
-      }
-      if (_flashFrames > 0) {
-        _flashFrames--;
-        _canvas.fillRect(0, 0, SCREEN_W, GROUND_Y, rgb565(235, 240, 250));
-      }
+  if (k == WX_STORM) {
+    // Lightning: schedule a strike every 8-20 s; the strike whites the sky
+    // for 2 frames and draws a jagged bolt for ~6 frames (visible!).
+    const unsigned long nowMs = millis();
+    if (_nextFlashMs == 0) _nextFlashMs = nowMs + 4000;
+    if ((long)(nowMs - _nextFlashMs) >= 0) {
+      _flashFrames = 6;
+      _thunderPending = true;
+      _boltX = 40 + (esp_random() % 160);
+      _boltSeed = esp_random() | 1;
+      _nextFlashMs = nowMs + 8000 + (esp_random() % 12000);
     }
-    drawClouds();
-  } else if (tod == TOD_NIGHT) {
-    drawStars();
-    drawMoon();
-  } else if (tod == TOD_AFTERNOON) {
-    drawSunset();
-  } else {
-    drawSun();
+    if (_flashFrames >= 5)  // first 2 frames: sky whiteout
+      _canvas.fillRect(0, 0, SCREEN_W, GROUND_Y, rgb565(235, 240, 250));
+  }
+  if (overcast || wisp) drawClouds(overcast ? cloudN : 1);
+  if (!overcast) {  // clear / mainly-clear / partly keep the celestial bodies
+    if (tod == TOD_NIGHT) {
+      drawStars();
+      drawMoon();
+    } else if (tod == TOD_AFTERNOON) {
+      drawSunset();
+    } else {
+      drawSun();
+    }
+  }
+  if (k == WX_STORM && _flashFrames > 0) {
+    _flashFrames--;
+    drawLightning();
   }
   drawForest(night);
   drawSparkles(night);
   // Disco floor goes UNDER the pet (Leon dances on it); the ball + lasers
   // overlay goes on top of everything at the end.
-  if (mediaFx == 1 && !menuOpen) drawDiscoFloor();
+  if (party) drawDiscoFloor();
   drawHeader(pet, wifiOn, micMuted, micLive);
   drawFerret(ferret);
   // Precipitation/haze falls IN FRONT of the pet (livelier), under the HUD.
-  if (overcast && (_wx == WX_RAIN || _wx == WX_STORM)) drawRain();
-  if (overcast && _wx == WX_SNOW) drawSnow();
-  if (overcast && _wx == WX_FOG) drawFog();
+  if (k == WX_RAIN) drawRain(inten, freezing);
+  if (k == WX_STORM) drawRain(hail ? 1 : 2, false);
+  if (hail) drawHail();
+  if (k == WX_SNOW) drawSnow(inten, wc == 77, wc == 85 || wc == 86);
+  if (k == WX_FOG) drawFog();
   // battery is shown in the config menu (not the home scene)
 
   if (clockActive) {

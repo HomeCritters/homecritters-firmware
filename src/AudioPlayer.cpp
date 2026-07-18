@@ -30,6 +30,8 @@
 #include "sounds/simon_blue.h"
 #include "sounds/sfx_buzzer.h"
 #include "sounds/sfx_thunder.h"
+#include "sounds/sfx_rainamb.h"
+#include "sounds/sfx_wind.h"
 #include "sounds/sfx_listen.h"
 #include "sounds/sfx_confirm.h"
 
@@ -278,6 +280,8 @@ void AudioPlayer::playCamera()    { play(sfx_camera_mp3,   sfx_camera_mp3_len); 
 void AudioPlayer::playClick()     { play(sfx_click_mp3,    sfx_click_mp3_len); }
 void AudioPlayer::playBuzzer()    { play(sfx_buzzer_mp3,   sfx_buzzer_mp3_len); }
 void AudioPlayer::playThunder()   { if (!busy()) play(sfx_thunder_mp3, sfx_thunder_mp3_len); }
+void AudioPlayer::playRainAmb()   { if (!busy()) play(sfx_rainamb_mp3, sfx_rainamb_mp3_len); }
+void AudioPlayer::playWindAmb()   { if (!busy()) play(sfx_wind_mp3,    sfx_wind_mp3_len); }
 void AudioPlayer::playListen()    { play(sfx_listen_mp3,   sfx_listen_mp3_len); }
 void AudioPlayer::playConfirm()   { play(sfx_confirm_wav,  sfx_confirm_wav_len); }
 

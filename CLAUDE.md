@@ -170,8 +170,16 @@ portal/tools ficam aqui.
   fetch imediato no boot/troca de local/abrir a tela (>15 min). A condição
   atual **pinta a cena**: nublado/chuva/tempestade tingem a paleta de cinza
   (`tintPalette`+`lerp565`), nuvens derivam no céu, gotas caem NA FRENTE do
-  Leon, tempestade dá flash no céu + **trovão** (`sfx_thunder`, só se nada
-  tocando). **Tela Tempo** (`SCREEN_WEATHER`): swipe pra CIMA da metade de
+  Leon, tempestade dá flash no céu + **raio serrilhado desenhado** (~6
+  frames, posição aleatória) + **trovão** (`sfx_thunder`) a cada 8-20 s.
+  **Cada código WMO tem visual próprio**: quase-limpo (sol+1 nuvem),
+  parcial (sol+2 nuvens), garoa/chuva/temporal (densidade e velocidade das
+  gotas por intensidade), congelante (gotas geladas + cristais no chão),
+  neve por intensidade, grãos (77), pancadas de neve (rápidas), granizo
+  (pedras brancas velozes + raio). **SFX ambiente**: chuva
+  (`sfx_rainamb`, família chuva/tempestade) e vento com corvo (`sfx_wind`,
+  neblina/neve) a cada 60-120 s aleatórios, só na tela do pet, nunca por
+  cima de outro áudio; 1º toque ~8 s após o clima virar. **Tela Tempo** (`SCREEN_WEATHER`): swipe pra CIMA da metade de
   baixo (ou tap na aba ˄ da base) — hoje grande (ícone+temp+condição+max/min)
   + 4 próximos dias; volta = swipe pra baixo/pull esquerdo. Local (lat/lon/
   cidade ASCII) em NVS "wx", configurado pelo **portal** (busca de cidade —

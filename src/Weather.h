@@ -65,7 +65,12 @@ class Weather {
   const Day& day(int i) const { return _days[i]; }
 
   static WxKind kindFromCode(uint8_t code);
-  static const char* kindLabel(WxKind k);  // PT label for the screen
+  static const char* kindLabel(WxKind k);  // PT label (coarse family)
+  // Granular views of a WMO code (each variant gets its own visual):
+  static uint8_t intensityFromCode(uint8_t c);  // 0 light, 1 normal, 2 heavy
+  static bool codeFreezing(uint8_t c);          // 56/57/66/67 freezing rain
+  static bool codeHail(uint8_t c);              // 96/99 thunderstorm w/ hail
+  static const char* labelForCode(uint8_t c);   // PT label, granular
 
  private:
   static void taskTrampoline(void* arg);
