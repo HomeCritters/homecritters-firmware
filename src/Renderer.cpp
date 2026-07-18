@@ -412,6 +412,23 @@ void Renderer::drawClock(Clock& clock) {
   _canvas.setTextColor(menu::CLOCK_DATE);
   _canvas.setCursor(CENTER_X - _canvas.textWidth(d) / 2, 186);
   _canvas.print(d);
+
+  // Current weather under the clock (only with real data): mini condition
+  // icon + temperature, centered in the strip between the panel (ends 200)
+  // and the bottom tab (starts 226).
+  if (_wxTemp != INT8_MIN) {
+    char tw[6];
+    snprintf(tw, sizeof(tw), "%d", _wxTemp);
+    _canvas.setTextSize(2);
+    const int textW = _canvas.textWidth(tw);
+    const int total = 18 + 8 + textW + 8;      // icon + gap + temp + degree
+    const int x0 = CENTER_X - total / 2;
+    drawWxIcon(x0 + 9, 212, Weather::kindFromCode(_wxCode), 1);
+    _canvas.setTextColor(TFT_WHITE);
+    _canvas.setCursor(x0 + 26, 205);
+    _canvas.print(tw);
+    _canvas.drawCircle(x0 + 26 + textW + 4, 206, 2, TFT_WHITE);  // degree
+  }
 }
 
 void Renderer::drawMenuHandle() {

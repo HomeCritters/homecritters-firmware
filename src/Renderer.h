@@ -61,8 +61,12 @@ class Renderer {
   void drawHaPanel(HaPanel& ha, int page, bool loading = false);
 
   // Weather: the current WMO code tints/animates the pet scene (set each
-  // frame by main; 0 = clear); drawWeather is the forecast screen.
-  void setWeather(uint8_t wmoCode) { _wxCode = wmoCode; }
+  // frame by main; 0 = clear). temp (INT8_MIN = unknown) feeds the little
+  // condition+temperature line under the idle clock.
+  void setWeather(uint8_t wmoCode, int8_t temp = INT8_MIN) {
+    _wxCode = wmoCode;
+    _wxTemp = temp;
+  }
   void drawWeather(Weather& wx);
   // Debug/console: fire a lightning strike right now (validates bolt+thunder).
   void triggerBolt() { _flashFrames = 6; _thunderPending = true; }
@@ -112,6 +116,7 @@ class Renderer {
 
   // Real-weather scene state (set by main from the Weather model).
   uint8_t _wxCode = 0;             // current WMO code (0 = clear)
+  int8_t _wxTemp = INT8_MIN;       // current temp (INT8_MIN = unknown)
   unsigned long _nextFlashMs = 0;  // next lightning flash (storm)
   uint8_t _flashFrames = 0;        // frames left of the current flash
   int16_t _boltX = 120;            // where the current bolt strikes

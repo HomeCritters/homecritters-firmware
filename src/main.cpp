@@ -650,7 +650,8 @@ void loop() {
   const uint8_t wxCode =
       g_wxDebug >= 0 ? (uint8_t)g_wxDebug
                      : (weather.fresh() ? weather.codeNow() : 0);
-  renderer.setWeather(wxCode);
+  renderer.setWeather(wxCode,
+                      weather.fresh() ? (int8_t)weather.tempNow() : INT8_MIN);
   if (renderer.consumeThunder()) audio.playThunder();  // strike -> clap
   // Ambient weather SFX: a rain patter / forest wind clip every 60-120 s
   // (random), pet screen only, first one ~8 s after the weather turns, and
