@@ -75,6 +75,10 @@ class WebPortal {
     if (strcmp(_voiceState, s) != 0) { _voiceState = s; _dirty = true; }
   }
   const char* voiceState() const { return _voiceState; }
+  // HA-driven voice state ("voice:listening|thinking|speaking|idle" over WS,
+  // pushed by the assist satellite during wake-word runs). -1 = none pending;
+  // else 0 idle / 1 listening / 2 thinking / 3 speaking. Consumed by main.
+  int consumeVoiceCmd() { const int v = _voiceCmd; _voiceCmd = -1; return v; }
 
   // --- full sleep (night mode: screen + LED off, pet asleep) ---
   // Pending "fullsleep:on|off" request from HA/portal; -1 none, 0 off, 1 on.
@@ -211,7 +215,8 @@ class WebPortal {
   void sendAuthedTXT(const char* msg);  // broadcast to authed clients only
   static void randHex(char* out, size_t hexChars);   // esp_random -> hex
   static void hmacHex(const char* key, const char* msg, char out65[65]);
-  const char* _voiceState = "idle";  // idle|listening (device-side PTT feedback)
+  const char* _voiceState = "idle";  // idle|listening|thinking|speaking
+  volatile int _voiceCmd = -1;       // pending HA-driven state (see consumeVoiceCmd)
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   bool _fullSleep = false;           // actual mode, reported by main
   volatile int _sleepSndReq = -1, _wakeSndReq = -1;  // pending sound settings

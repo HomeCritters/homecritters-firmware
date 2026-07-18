@@ -547,6 +547,13 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     // consume the audio directly.
     if (msg == "ptt:start") { if (_micClient < 0) _micClient = num; voicePttStart(); return; }
     if (msg == "ptt:end")   { voicePttEnd(); return; }
+    // Voice pipeline state pushed by HA (wake word runs): drives the ring/LED.
+    // (after "voice:sub" above, which must match first)
+    if (msg.startsWith("voice:")) {
+      const String s = msg.substring(6);
+      _voiceCmd = s == "listening" ? 1 : s == "thinking" ? 2 : s == "speaking" ? 3 : 0;
+      return;
+    }
     // Full sleep (night mode): screen + LED off, pet asleep. Main applies it.
     if (msg == "fullsleep:on")  { _fullSleepReq = 1; return; }
     if (msg == "fullsleep:off") { _fullSleepReq = 0; return; }
