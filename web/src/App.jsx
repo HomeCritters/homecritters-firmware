@@ -386,6 +386,11 @@ export default function App() {
   const [name, setName] = useState('');
   const [vol, setVol] = useState(80);
   const [ledBright, setLedBright] = useState(50);
+  // Weather city search (geocoding runs in the browser; device only stores
+  // the chosen lat/lon/city via the wxloc command).
+  const [citySearch, setCitySearch] = useState('');
+  const [cityResults, setCityResults] = useState([]);
+  const [citySearching, setCitySearching] = useState(false);
   const wsRef = useRef(null);
   const nameDirty = useRef(false);
   const volDirty = useRef(false);
@@ -779,6 +784,50 @@ export default function App() {
               checked={!!state?.wakeSnd}
               onChange={(v) => send(v ? 'wakesnd:on' : 'wakesnd:off')}
             />
+          </div>
+
+          <div style={{ marginTop: 20 }}>
+            <Text strong>🌤️ Clima</Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2 }}>
+              Cena e previsão seguem o tempo real (Open-Meteo).
+              Cidade atual: <b>{state?.wxCity || 'não configurada'}</b>
+            </Text>
+            <Input.Search
+              style={{ marginTop: 8 }}
+              placeholder="Buscar cidade..."
+              value={citySearch}
+              loading={citySearching}
+              onChange={(e) => setCitySearch(e.target.value)}
+              onSearch={async (q) => {
+                if (!q || q.length < 2) return;
+                setCitySearching(true);
+                try {
+                  const r = await fetch(
+                    'https://geocoding-api.open-meteo.com/v1/search?name=' +
+                    encodeURIComponent(q) + '&count=6&language=pt&format=json');
+                  const j = await r.json();
+                  setCityResults(j.results || []);
+                } catch { setCityResults([]); }
+                setCitySearching(false);
+              }}
+            />
+            {cityResults.map((c) => (
+              <Button
+                key={c.id}
+                block
+                size="small"
+                style={{ marginTop: 6, textAlign: 'left' }}
+                onClick={() => {
+                  // Device font is ASCII-only: strip accents before sending.
+                  const ascii = c.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                  send(`wxloc:${c.latitude.toFixed(4)},${c.longitude.toFixed(4)},${ascii}`);
+                  setCityResults([]);
+                  setCitySearch('');
+                }}
+              >
+                {c.name}{c.admin1 ? `, ${c.admin1}` : ''} ({c.country_code})
+              </Button>
+            ))}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
