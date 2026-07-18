@@ -349,8 +349,24 @@ void Renderer::drawHeader(const Pet& pet, bool wifiOn, bool micMuted,
   _canvas.setCursor(CENTER_X - _canvas.textWidth(pet.name().c_str()) / 2, 20);
   _canvas.print(pet.name());
 
-  // WiFi indicator (small dot), inside the visible circle next to the status
-  if (wifiOn) _canvas.fillCircle(196, 42, 3, _p.sparkle);
+  // WiFi indicator: only when there's something to say. The old "connected"
+  // dot read as a tiny moon floating over the sunset - gone. Disconnected
+  // shows a small crossed-out WiFi glyph (mirrors the mic icon's spot).
+  if (!wifiOn) {
+    const int wx = 182, wy = 48;
+    const uint16_t c = _canvas.color565(200, 200, 210);
+    _canvas.fillCircle(wx, wy, 2, c);  // emitter dot
+    for (int b = 1; b <= 2; b++) {     // two arcs above it
+      const int r = 3 + b * 4;
+      for (int deg = -55; deg <= 55; deg += 9) {
+        const float a = deg * 3.14159f / 180.0f;
+        _canvas.drawPixel(wx + (int)(r * sinf(a)), wy - (int)(r * cosf(a)), c);
+      }
+    }
+    const uint16_t red = _canvas.color565(235, 40, 40);
+    _canvas.drawLine(wx - 7, wy - 10, wx + 7, wy + 4, red);
+    _canvas.drawLine(wx - 7, wy - 9, wx + 8, wy + 4, red);
+  }
 
   // Mic muted: small crossed-out mic top-left. The LED stays on mood duty -
   // this is the on-screen privacy hint. Position pulled INSIDE the round
