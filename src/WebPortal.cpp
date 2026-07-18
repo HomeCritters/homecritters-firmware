@@ -541,7 +541,7 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     }
     // Mic control needs the client num (audio is streamed back to it).
     // Muted = ignore any request to open the mic (privacy wins over HA).
-    if (msg == "mic:on")  { if (_micMuted) return; _micClient = num; _micOn = true; _dirty = true; return; }
+    if (msg == "mic:on")  { if (_micMuted || _fullSleep) return; _micClient = num; _micOn = true; _dirty = true; return; }
     if (msg == "mic:off") { _micOn = false; _micClient = -1;  _dirty = true; return; }
     // Privacy mute toggle (portal switch / HA switch / BOOT tap via main).
     if (msg == "mute:on")  { setMicMuted(true);  return; }
@@ -854,7 +854,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
   snprintf(out, n,
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,\"micMuted\":%s,"
-           "\"micOn\":%s,\"micClient\":%d,\"assistOn\":%s,"
+           "\"micOn\":%s,\"micClient\":%d,\"assistOn\":%s,\"micLive\":%s,"
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
@@ -867,6 +867,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _wakeSnd ? "true" : "false",
            _micMuted ? "true" : "false",
            _micOn ? "true" : "false", _micClient, _assistOn ? "true" : "false",
+           micLive() ? "true" : "false",
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,
