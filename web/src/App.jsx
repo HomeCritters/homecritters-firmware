@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ConfigProvider,
   theme,
@@ -22,7 +22,7 @@ import {
   Spin,
 } from 'antd';
 import ferretSheet from './ferret-sheet.png';
-import { hmacSha256Hex } from './hmac.js';
+import { hmacSha256Hex, timingSafeEqualHex } from './hmac.js';
 
 const { Title, Text } = Typography;
 
@@ -364,6 +364,16 @@ function FerretStage({ anim, flip, x, seq, size = 96 }) {
   );
 }
 
+// Memoized leaf components: the WS push re-renders App ~10x/s, but these only
+// repaint when THEIR props actually change (the pads/stage are the only
+// always-visible subtrees that matter; the heavy Drawer/Modals are mounted
+// only while open, below).
+const FerretStageM = React.memo(FerretStage);
+const GamePadM = React.memo(GamePad);
+const BallPadM = React.memo(BallPad);
+const SimonPadM = React.memo(SimonPad);
+const BatteryTagM = React.memo(BatteryTag);
+
 export default function App() {
   const [state, setState] = useState(null);
   const [online, setOnline] = useState(false);
@@ -462,7 +472,10 @@ export default function App() {
           }
           if (ev.data.startsWith('proof:')) {
             const tok = localStorage.getItem('token');
-            if (!tok || ev.data.slice(6) !== hmacSha256Hex(tok, cnonce)) {
+            // Constant-time compare (hygiene parity with the HA plugin's
+            // hmac.compare_digest; remote timing over WS is impractical, but
+            // there's no reason to hand out an early-exit oracle either).
+            if (!tok || !timingSafeEqualHex(ev.data.slice(6), hmacSha256Hex(tok, cnonce))) {
               ws.close();  // not the real device (mDNS spoof) - bail
             }
             return;
@@ -513,10 +526,13 @@ export default function App() {
     };
   }, []);
 
-  const send = (m) => {
+  // Stable identity (useCallback): the memoized pads receive `send`/`onBack`
+  // as props - a fresh closure per render would defeat their React.memo.
+  const send = useCallback((m) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(m);
-  };
+  }, []);
+  const backToPet = useCallback(() => send('game:back'), [send]);
 
   const val = (k) => Math.round(state ? state[k] : 0);
   const playing = state?.screen === 'doodle';
@@ -535,7 +551,7 @@ export default function App() {
         <div style={{ position: 'relative', textAlign: 'center', paddingTop: 2 }}>
           {typeof state?.battery === 'number' && state.battery >= 0 && (
             <div style={{ position: 'absolute', left: 0, top: 4 }}>
-              <BatteryTag pct={state.battery} />
+              <BatteryTagM pct={state.battery} />
             </div>
           )}
           <Button
@@ -559,7 +575,7 @@ export default function App() {
           <Title level={2} style={{ margin: '0 0 8px' }}>
             {state ? state.name : 'Furão'} {state && (state.sleeping ? '😴' : '😊')}
           </Title>
-          <FerretStage
+          <FerretStageM
             anim={state ? state.anim : 'idle'}
             flip={state ? state.flip : false}
             x={state ? state.x : 0.5}
@@ -570,13 +586,13 @@ export default function App() {
 
         {playing ? (
           /* Game controller: steer Doodle Jump on the hardware from the phone */
-          <GamePad send={send} score={state?.score} onBack={() => send('game:back')} />
+          <GamePadM send={send} score={state?.score} onBack={backToPet} />
         ) : playingBall ? (
           /* Bolinha controller: swipe up to throw the ball on the hardware */
-          <BallPad send={send} score={state?.score} onBack={() => send('game:back')} />
+          <BallPadM send={send} score={state?.score} onBack={backToPet} />
         ) : playingSimon ? (
           /* Genius controller: 4 color pads, presses mirror on the hardware */
-          <SimonPad send={send} score={state?.score} onBack={() => send('game:back')} />
+          <SimonPadM send={send} score={state?.score} onBack={backToPet} />
         ) : (
           <>
             {/* 2x2 stat bars, hardware style */}
@@ -639,7 +655,10 @@ export default function App() {
           <Badge status={online ? 'success' : 'error'} text={online ? 'Ao vivo' : 'Reconectando…'} />
         </div>
 
-        {/* Settings: name + volume + clock */}
+        {/* Settings: name + volume + clock. Mounted only while open - the
+            drawer subtree is by far the heaviest and the 10Hz state push
+            shouldn't pay for it while it's closed (99% of the time). */}
+        {settingsOpen && (
         <Drawer
           title="Configurações"
           placement="right"
@@ -943,8 +962,10 @@ export default function App() {
             </Button>
           </div>
         </Drawer>
+        )}
 
         {/* Pairing (F-Sec 1): a 6-digit PIN pops on the device screen */}
+        {needToken && (
         <Modal title="🔑 Parear com o bichinho" open={needToken} closable={false} footer={null}>
           <Text>
             Um código de <b>6 dígitos</b> apareceu na tela do bichinho. Digite
@@ -976,8 +997,10 @@ export default function App() {
             para baixo → Seguranca → Parear.
           </Text>
         </Modal>
+        )}
 
         {/* Hardware screenshot: /shot.bmp rendered by the firmware on demand */}
+        {(!!shotSrc || shotLoading) && (
         <Modal
           title="📸 Tela do hardware"
           open={!!shotSrc}
@@ -1035,6 +1058,7 @@ export default function App() {
             )}
           </div>
         </Modal>
+        )}
       </div>
     </ConfigProvider>
   );

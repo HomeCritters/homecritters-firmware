@@ -92,3 +92,15 @@ export function hmacSha256Hex(key, msg) {
   outer.set(innerHash, 64);
   return hex(sha256(outer));
 }
+
+// Constant-time hex string comparison (no early exit): parity with the HA
+// plugin's hmac.compare_digest for the device-proof check.
+export function timingSafeEqualHex(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const n = Math.max(a.length, b.length);
+  let diff = a.length === b.length ? 0 : 1;
+  for (let i = 0; i < n; i++) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
