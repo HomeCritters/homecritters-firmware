@@ -47,6 +47,8 @@ DebugConsole     console;
 // Which screen is showing.
 enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON, SCREEN_HA, SCREEN_WEATHER };
 static Screen screen = SCREEN_PET;
+// Single entry point for switching screens (defined after the loopX handlers).
+static void enterScreen(Screen s, unsigned long now);
 static int g_haPage = 0;  // HA panel current page
 
 static unsigned long lastTickMs = 0;
@@ -414,21 +416,16 @@ static void loopGamesMenu(unsigned long now) {
       screen = SCREEN_PET;  // pulled or tapped the left tab
     } else if (ui::inGameDoodle(g_gamesStartX, g_gamesStartY)) {
       audio.playClick();
-      startDoodle(now);
+      enterScreen(SCREEN_DOODLE, now);
     } else if (ui::inGameBall(g_gamesStartX, g_gamesStartY)) {
       audio.playClick();
-      ball.reset(); g_touchDown = false; screen = SCREEN_BALL;
+      enterScreen(SCREEN_BALL, now);
     } else if (ui::inGameSimon(g_gamesStartX, g_gamesStartY)) {
       audio.playClick();
-      startSimon(now);
+      enterScreen(SCREEN_SIMON, now);
     }
   }
-  const int timeout = petClock.menuTimeoutSec();
-  if (timeout > 0 && screen == SCREEN_GAMES &&
-      idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
-    screen = SCREEN_PET;
-  }
-  renderer.drawGamesMenu();
+  renderer.drawGamesMenu();  // idle auto-close lives in the screen table
 }
 
 // HA control panel: swipe up/down = page, tap a controllable tile = toggle
@@ -486,12 +483,7 @@ static void loopHaPanel(unsigned long now) {
       }
     }
   }
-  const int timeout = petClock.menuTimeoutSec();
-  if (timeout > 0 && screen == SCREEN_HA &&
-      idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
-    screen = SCREEN_PET;
-  }
-  renderer.drawHaPanel(haPanel, g_haPage, loading);
+  renderer.drawHaPanel(haPanel, g_haPage, loading);  // idle close: screen table
 }
 
 // Weather forecast screen: opened by swiping UP from the bottom of the pet
@@ -515,12 +507,61 @@ static void loopWeather(unsigned long now) {
       screen = SCREEN_PET;
     }
   }
-  const int timeout = petClock.menuTimeoutSec();
-  if (timeout > 0 && screen == SCREEN_WEATHER &&
-      idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
-    screen = SCREEN_PET;
+  renderer.drawWeather(weather);  // idle auto-close lives in the screen table
+}
+
+// ---- Screen table ----------------------------------------------------------
+// One row per full-screen mode: the loop() dispatcher, the name reported to
+// the portal, the game-score source, the frame pacing and whether the idle
+// timeout auto-returns to the pet. Adding a screen = one row here + one
+// enterScreen case, instead of touching four scattered blocks.
+struct ScreenDef {
+  Screen id;
+  const char* name;             // web.setScreen() value
+  void (*loop)(unsigned long);  // per-frame handler
+  int (*score)();               // game score for the portal (nullptr = none)
+  uint8_t frameDelayMs;         // loop pacing for this screen
+  bool idleClose;               // menu timeout returns to SCREEN_PET
+};
+static const ScreenDef SCREENS[] = {
+    {SCREEN_DOODLE, "doodle", loopDoodle, [] { return doodle.score(); }, 12, false},
+    // forest backdrop is heavier to redraw; 50fps is plenty
+    {SCREEN_BALL, "ball", loopBall, [] { return ball.catches(); }, 20, false},
+    {SCREEN_SIMON, "simon", loopSimon, [] { return simon.score(); }, 15, false},
+    {SCREEN_GAMES, "games", loopGamesMenu, nullptr, 30, true},
+    {SCREEN_HA, "ha", loopHaPanel, nullptr, 30, true},
+    {SCREEN_WEATHER, "weather", loopWeather, nullptr, 30, true},
+};
+static const ScreenDef* screenDef(Screen s) {
+  for (const auto& d : SCREENS)
+    if (d.id == s) return &d;
+  return nullptr;  // SCREEN_PET (handled inline in loop())
+}
+
+// Everything a screen needs on entry, in ONE place - touch, serial console
+// and the portal all funnel here. The per-call-site copies had drifted
+// (serial nav to the HA panel skipped haSubscribe, for instance).
+static void enterScreen(Screen s, unsigned long now) {
+  menuOpen = false;
+  switch (s) {
+    case SCREEN_HA:
+      g_haPage = 0;
+      g_haOpenedMs = now;
+      g_haSwallow = true;
+      web.haSubscribe();
+      break;
+    case SCREEN_WEATHER:
+      weather.requestFetch(15UL * 60 * 1000);  // refresh if >15 min old
+      break;
+    case SCREEN_DOODLE: startDoodle(now); return;  // sets screen itself
+    case SCREEN_SIMON:  startSimon(now);  return;  // sets screen itself
+    case SCREEN_BALL:
+      ball.reset();
+      g_touchDown = false;
+      break;
+    default: break;  // SCREEN_PET / SCREEN_GAMES: nothing extra
   }
-  renderer.drawWeather(weather);
+  screen = s;
 }
 
 // Navigation/action commands from the DebugConsole (screen state lives here;
@@ -563,10 +604,10 @@ static bool consoleNavigate(const String& c) {
     }
     return true;
   }
-  if (c == "pet")    { menuOpen = false; screen = SCREEN_PET; return true; }
-  if (c == "games")  { menuOpen = false; screen = SCREEN_GAMES; return true; }
-  if (c == "hapanel"){ menuOpen = false; g_haPage = 0; g_haOpenedMs = millis(); screen = SCREEN_HA; return true; }
-  if (c == "weather"){ menuOpen = false; screen = SCREEN_WEATHER; weather.requestFetch(15UL * 60 * 1000); return true; }
+  if (c == "pet")    { enterScreen(SCREEN_PET, now); return true; }
+  if (c == "games")  { enterScreen(SCREEN_GAMES, now); return true; }
+  if (c == "hapanel"){ enterScreen(SCREEN_HA, now); return true; }
+  if (c == "weather"){ enterScreen(SCREEN_WEATHER, now); return true; }
   if (c == "wx") {  // dump the weather model
     Serial.printf("[wx] city='%s' loc=%d fetched=%d stale=%lums now=%dC code=%d kind=%d\n",
                   weather.city(), weather.hasLocation(), weather.everFetched(),
@@ -600,9 +641,9 @@ static bool consoleNavigate(const String& c) {
     }
     return true;
   }
-  if (c == "doodle") { startDoodle(now); return true; }
-  if (c == "ball")   { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; return true; }
-  if (c == "simon")  { startSimon(now); return true; }
+  if (c == "doodle") { enterScreen(SCREEN_DOODLE, now); return true; }
+  if (c == "ball")   { enterScreen(SCREEN_BALL, now); return true; }
+  if (c == "simon")  { enterScreen(SCREEN_SIMON, now); return true; }
 
   if (c.startsWith("menu")) {
     screen = SCREEN_PET; menuOpen = true;
@@ -903,68 +944,41 @@ void loop() {
 
   // Report the current screen to the portal and honor phone game nav (start/
   // back), so Doodle Jump can be launched and steered entirely from the phone.
-  web.setScreen(screen == SCREEN_DOODLE ? "doodle" :
-                screen == SCREEN_BALL   ? "ball"   :
-                screen == SCREEN_SIMON  ? "simon"  :
-                screen == SCREEN_GAMES  ? "games"  :
-                screen == SCREEN_HA     ? "ha"     :
-                screen == SCREEN_WEATHER ? "weather" : "pet");
-  switch (web.consumeGameNav()) {
-    case WebPortal::NAV_START:
-      if (screen != SCREEN_DOODLE) { startDoodle(now); web.pushState(); }
-      break;
-    case WebPortal::NAV_BALL:
-      if (screen != SCREEN_BALL) { ball.reset(); g_touchDown = false; screen = SCREEN_BALL; web.pushState(); }
-      break;
-    case WebPortal::NAV_SIMON:
-      if (screen != SCREEN_SIMON) { startSimon(now); web.pushState(); }
-      break;
-    case WebPortal::NAV_BACK:
-      if (screen == SCREEN_DOODLE) { leaveDoodle(); web.pushState(); }
-      else if (screen == SCREEN_BALL) { leaveBall(now); web.pushState(); }
-      else if (screen == SCREEN_SIMON) { leaveSimon(now); web.pushState(); }
-      break;
-    default: break;
+  {
+    const ScreenDef* def = screenDef(screen);
+    web.setScreen(def ? def->name : "pet");
+    switch (web.consumeGameNav()) {
+      case WebPortal::NAV_START:
+        if (screen != SCREEN_DOODLE) { enterScreen(SCREEN_DOODLE, now); web.pushState(); }
+        break;
+      case WebPortal::NAV_BALL:
+        if (screen != SCREEN_BALL) { enterScreen(SCREEN_BALL, now); web.pushState(); }
+        break;
+      case WebPortal::NAV_SIMON:
+        if (screen != SCREEN_SIMON) { enterScreen(SCREEN_SIMON, now); web.pushState(); }
+        break;
+      case WebPortal::NAV_BACK:
+        if (screen == SCREEN_DOODLE) { leaveDoodle(); web.pushState(); }
+        else if (screen == SCREEN_BALL) { leaveBall(now); web.pushState(); }
+        else if (screen == SCREEN_SIMON) { leaveSimon(now); web.pushState(); }
+        break;
+      default: break;
+    }
   }
 
-  // --- game screens ---
-  if (screen == SCREEN_DOODLE) {
-    web.setGameScore(doodle.score());
-    loopDoodle(now);
+  // --- table-driven full screens (everything except the pet scene) ---
+  if (const ScreenDef* def = screenDef(screen)) {
+    if (def->score) web.setGameScore(def->score());
+    def->loop(now);
+    if (def->idleClose) {
+      const int timeout = petClock.menuTimeoutSec();
+      if (timeout > 0 && screen == def->id &&
+          idleSince(now, lastInteractionMs) > (unsigned long)timeout * 1000) {
+        screen = SCREEN_PET;
+      }
+    }
     serviceShots();
-    delay(12);
-    return;
-  }
-  if (screen == SCREEN_BALL) {
-    web.setGameScore(ball.catches());
-    loopBall(now);
-    serviceShots();
-    delay(20);  // the forest backdrop is heavier to redraw; 50fps is plenty
-    return;
-  }
-  if (screen == SCREEN_SIMON) {
-    web.setGameScore(simon.score());
-    loopSimon(now);
-    serviceShots();
-    delay(15);
-    return;
-  }
-  if (screen == SCREEN_GAMES) {
-    loopGamesMenu(now);
-    serviceShots();
-    delay(30);
-    return;
-  }
-  if (screen == SCREEN_HA) {
-    loopHaPanel(now);
-    serviceShots();
-    delay(30);
-    return;
-  }
-  if (screen == SCREEN_WEATHER) {
-    loopWeather(now);
-    serviceShots();
-    delay(30);
+    delay(def->frameDelayMs);
     return;
   }
 
@@ -1028,19 +1042,13 @@ void loop() {
       // in clock mode a touch only wakes the screen (doesn't run the action)
     } else if (ev.ui == ui::UI_HA_TOGGLE) {
       audio.playClick();
-      if (!menuOpen) {
-        g_haPage = 0; g_haOpenedMs = now; screen = SCREEN_HA;
-        g_haSwallow = true; web.haSubscribe();
-      }
+      if (!menuOpen) enterScreen(SCREEN_HA, now);
     } else if (ev.ui == ui::UI_GAMES_TOGGLE) {
       audio.playClick();
-      if (!menuOpen) screen = SCREEN_GAMES;
+      if (!menuOpen) enterScreen(SCREEN_GAMES, now);
     } else if (ev.ui == ui::UI_WEATHER_TOGGLE) {
       audio.playClick();
-      if (!menuOpen) {
-        screen = SCREEN_WEATHER;
-        weather.requestFetch(15UL * 60 * 1000);  // refresh if >15 min old
-      }
+      if (!menuOpen) enterScreen(SCREEN_WEATHER, now);
     } else if (ev.ui != ui::UI_NONE) {
       audio.playClick();  // every menu button/handle clicks
       handleUi(ev.ui);
