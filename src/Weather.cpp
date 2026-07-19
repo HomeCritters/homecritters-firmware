@@ -3,6 +3,7 @@
 #include <Preferences.h>
 #include <esp_http_client.h>
 #include <esp_task_wdt.h>
+#include "JsonLite.h"
 // The IDF cert-bundle header isn't on the Arduino variant include path, but
 // the symbol lives in the prebuilt libs (CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y).
 extern "C" esp_err_t esp_crt_bundle_attach(void* conf);
@@ -96,68 +97,9 @@ const char* Weather::kindLabel(WxKind k) {
   return "";
 }
 
-// ---------- tiny JSON helpers (Open-Meteo replies only) ----------
-// Find `"key":` inside [p, end) and return a pointer just past the colon.
-static const char* findKey(const char* p, const char* end, const char* key) {
-  char pat[40];
-  snprintf(pat, sizeof(pat), "\"%s\":", key);
-  const char* hit = strstr(p, pat);
-  if (!hit || hit >= end) return nullptr;
-  return hit + strlen(pat);
-}
-
-// Bound the object that starts at the '{' found right after `"name":`.
-static bool findObject(const char* json, const char* name,
-                       const char** out, const char** outEnd) {
-  const char* p = findKey(json, json + strlen(json), name);
-  if (!p || *p != '{') return false;
-  int depth = 0;
-  const char* q = p;
-  for (; *q; q++) {
-    if (*q == '{') depth++;
-    else if (*q == '}' && --depth == 0) { *out = p; *outEnd = q; return true; }
-  }
-  return false;
-}
-
-// Read up to max numbers from `"key":[...]` inside [p, end).
-static int readNumArray(const char* p, const char* end, const char* key,
-                        float* out, int max) {
-  const char* q = findKey(p, end, key);
-  if (!q || *q != '[') return 0;
-  q++;
-  int n = 0;
-  while (n < max && q < end && *q != ']') {
-    char* after = nullptr;
-    float v = strtof(q, &after);
-    if (after == q) { q++; continue; }  // skip separators/nulls
-    out[n++] = v;
-    q = after;
-    while (q < end && (*q == ',' || *q == ' ')) q++;
-  }
-  return n;
-}
-
-// Read up to max quoted strings from `"key":[...]` (ISO dates).
-static int readStrArray(const char* p, const char* end, const char* key,
-                        char out[][11], int max) {
-  const char* q = findKey(p, end, key);
-  if (!q || *q != '[') return 0;
-  int n = 0;
-  while (n < max && q < end && *q != ']') {
-    const char* open = strchr(q, '"');
-    if (!open || open >= end) break;
-    const char* close = strchr(open + 1, '"');
-    if (!close || close >= end) break;
-    size_t len = close - open - 1;
-    if (len > 10) len = 10;
-    memcpy(out[n], open + 1, len);
-    out[n][len] = 0;
-    n++;
-    q = close + 1;
-  }
-  return n;
-}
+// JSON scanning helpers (findKey/findObject/readNumArray/readStrArray) live
+// in JsonLite.h, shared with HaPanel.
+using namespace jsonlite;
 
 // ISO "YYYY-MM-DD" -> weekday 0=Sun..6=Sat (civil days-from-epoch algorithm).
 static int wdayFromIso(const char* iso) {
