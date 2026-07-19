@@ -90,21 +90,39 @@ static std::atomic<bool> s_ovlActive{false};
 static int s_outHz = 16000;                // current TX clock (SetRate)
 
 bool AudioCodec::startOverlay(const uint8_t* wav, uint32_t len, uint8_t gain) {
-  // Minimal parse of our generated WAVs: RIFF/WAVE, PCM (fmt 1), mono,
-  // 16-bit, data chunk at the standard 44-byte offset.
-  if (len < 45 || memcmp(wav, "RIFF", 4) != 0 || memcmp(wav + 8, "WAVE", 4) != 0)
+  // Proper RIFF chunk walk: afconvert (and others) insert extra chunks (a
+  // 4KB "FLLR" filler, LIST metadata...) between fmt and data. Assuming the
+  // canonical 44-byte layout made the overlay "play" the filler: ~0.13s of
+  // silence - thunder/clicks were inaudible over music while the Genius
+  // tones (canonical headers) mixed fine.
+  if (len < 44 || memcmp(wav, "RIFF", 4) != 0 || memcmp(wav + 8, "WAVE", 4) != 0)
     return false;
-  const uint16_t fmt = wav[20] | (wav[21] << 8);
-  const uint16_t ch = wav[22] | (wav[23] << 8);
-  const uint16_t bits = wav[34] | (wav[35] << 8);
-  if (fmt != 1 || ch != 1 || bits != 16) return false;
-  const uint32_t rate = wav[24] | (wav[25] << 8) | (wav[26] << 16) | ((uint32_t)wav[27] << 24);
-  const uint32_t dataLen = wav[40] | (wav[41] << 8) | (wav[42] << 16) | ((uint32_t)wav[43] << 24);
-  const uint32_t n = (dataLen <= len - 44 ? dataLen : len - 44) / 2;
-  if (!n || !rate) return false;
+  auto rd16 = [&](uint32_t o) { return (uint16_t)(wav[o] | (wav[o + 1] << 8)); };
+  auto rd32 = [&](uint32_t o) {
+    return (uint32_t)wav[o] | ((uint32_t)wav[o + 1] << 8) |
+           ((uint32_t)wav[o + 2] << 16) | ((uint32_t)wav[o + 3] << 24);
+  };
+  uint32_t rate = 0, dataOff = 0, dataLen = 0;
+  bool fmtOk = false;
+  for (uint32_t p = 12; p + 8 <= len;) {
+    const uint32_t sz = rd32(p + 4);
+    if (memcmp(wav + p, "fmt ", 4) == 0 && sz >= 16 && p + 8 + 16 <= len) {
+      fmtOk = rd16(p + 8) == 1 && rd16(p + 10) == 1 && rd16(p + 22) == 16;
+      rate = rd32(p + 12);  // PCM, mono, 16-bit
+    } else if (memcmp(wav + p, "data", 4) == 0) {
+      dataOff = p + 8;
+      dataLen = sz;
+      break;
+    }
+    p += 8 + sz + (sz & 1);  // chunks are word-aligned
+  }
+  if (!fmtOk || !rate || !dataOff) return false;
+  if (dataLen > len - dataOff) dataLen = len - dataOff;
+  const uint32_t n = dataLen / 2;
+  if (!n) return false;
 
   s_ovlActive.store(false);  // park the reader while the payload swaps
-  s_ovlPcm = wav + 44;
+  s_ovlPcm = wav + dataOff;
   s_ovlN = n;
   s_ovlPosFp = 0;
   s_ovlRate = rate;

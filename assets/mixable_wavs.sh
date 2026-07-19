@@ -29,7 +29,20 @@ data = bytes(int(t, 16) for t in re.findall(r'0x[0-9A-Fa-f]{2}', body))
 open(dst, 'wb').write(data)
 EOF
   # Already a WAV (re-run of this script)? afconvert reads it fine either way.
-  afconvert -f WAVE -d LEI16@16000 -c 1 "$TMP/$name.bin" "$TMP/$name.wav"
+  afconvert -f WAVE -d LEI16@16000 -c 1 "$TMP/$name.bin" "$TMP/$name.raw.wav"
+  # Canonicalize: afconvert inserts a 4KB FLLR filler chunk; rewrite as a
+  # minimal 44-byte-header WAV (smaller flash + the firmware's simple case).
+  python3 - "$TMP/$name.raw.wav" "$TMP/$name.wav" <<'EOF'
+import struct, sys, wave
+src, dst = sys.argv[1], sys.argv[2]
+r = wave.open(src, 'rb')
+assert r.getnchannels() == 1 and r.getsampwidth() == 2
+rate, frames = r.getframerate(), r.readframes(r.getnframes())
+r.close()
+w = wave.open(dst, 'wb')
+w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+w.writeframes(frames); w.close()
+EOF
   python3 assets/mp3_to_header.py "$TMP/$name.wav" "sfx_${name}_wav" "$hdr"
   ls -la "$TMP/$name.wav"
 done
