@@ -1118,6 +1118,5 @@ void loop() {
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
                 (uint8_t)audio.mediaKind(), voiceState, web.micMuted(), web.micLive());
   serviceShots();
-
   delay(30);
 }

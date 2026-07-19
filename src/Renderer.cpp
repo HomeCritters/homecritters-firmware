@@ -47,7 +47,7 @@ void Renderer::begin() {
 // screen looking perfect - a bug class this codebase already shipped once
 // (drawHaPanel). Route every push through here; never call pushSprite direct.
 void Renderer::beginScreen(uint16_t bg) { _canvas.fillScreen(bg); }
-void Renderer::endScreen() { endScreen(); }
+void Renderer::endScreen() { _canvas.pushSprite(0, 0); }
 
 // Copy the finished canvas into the stable snapshot buffer (render thread).
 void Renderer::takeWebSnapshot() {
