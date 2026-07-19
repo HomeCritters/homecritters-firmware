@@ -32,6 +32,7 @@ void DebugConsole::printHelp() {
   Serial.println(F("  nb:<http-url> | nb2:<http-url> - net throughput (raw | esp_http_client)"));
   Serial.println(F("  mem                  - heap/psram report"));
   Serial.println(F("  diag                 - uptime/reset/heap/wifi health snapshot"));
+  Serial.println(F("  top                  - cpu%/task list (Linux-top style)"));
 }
 
 void DebugConsole::dispatch(const String& c) {
@@ -45,6 +46,7 @@ void DebugConsole::dispatch(const String& c) {
   if (c == "shot") { _navigate(c); return; }
   if (c == "mem") { netbench::memReport(); return; }
   if (c == "cpu") { netbench::cpuReport(); return; }
+  if (c == "top") { netbench::topReport(); return; }
   if (c == "slp") { netbench::wifiPsReport(); return; }
   if (c.startsWith("nb2:")) { netbench::runIdf(c.c_str() + 4); return; }
   if (c.startsWith("nb:")) { netbench::runRaw(c.c_str() + 3); return; }

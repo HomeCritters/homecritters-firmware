@@ -20,6 +20,7 @@
 #include <Preferences.h>  // night-mode sound settings
 #include <esp_task_wdt.h>  // task watchdog (hang -> reboot)
 #include <WiFi.h>          // diag command (IP/RSSI)
+#include "TaskRegistry.h"  // `top` roster (render loop registers itself)
 
 // ============================================================
 // Desk tamagotchi (ferret) - Ball V2
@@ -901,6 +902,7 @@ void setup() {
   wasSleeping = pet.sleeping();
   lastTickMs = lastSaveMs = lastInteractionMs = millis();
   esp_task_wdt_add(nullptr);  // watch the render loop too
+  taskreg::add("loopTask", xTaskGetCurrentTaskHandle(), 1, 1);  // `top` roster
   Serial.printf("[homecritters] ready. battery ~%d%%\n", battery.percent());
 }
 

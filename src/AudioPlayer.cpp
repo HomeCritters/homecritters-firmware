@@ -3,6 +3,7 @@
 #include <WiFi.h>  // adaptive modem sleep (full radio only while streaming)
 #include <Preferences.h>
 #include <esp_task_wdt.h>
+#include "TaskRegistry.h"
 #include <AudioGeneratorMP3.h>
 #include <AudioGeneratorWAV.h>
 #include <AudioGeneratorFLAC.h>
@@ -180,7 +181,9 @@ void AudioPlayer::begin() {
 
   if (!_ring.alloc(RING_BYTES)) Serial.println("[audio] ring alloc failed");
   _reader.begin(&_ring);
-  xTaskCreatePinnedToCore(taskTrampoline, "audio", 12288, this, 5, nullptr, 1);
+  TaskHandle_t h = nullptr;
+  xTaskCreatePinnedToCore(taskTrampoline, "audio", 12288, this, 5, &h, 1);
+  taskreg::add("audio", h, 1, 5);
 }
 
 void AudioPlayer::applyGain() {

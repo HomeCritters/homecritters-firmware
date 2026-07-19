@@ -5,6 +5,7 @@
 #include <esp_http_client.h>
 #include <esp_heap_caps.h>
 #include <esp_wifi.h>
+#include "TaskRegistry.h"
 
 namespace netbench {
 
@@ -177,6 +178,14 @@ static void counterTask(void* arg) {
   vTaskDelete(nullptr);
 }
 
+// 1s variant for `top` (snappier than the 3s probe).
+static void counterTask1s(void* arg) {
+  volatile uint32_t* c = (volatile uint32_t*)arg;
+  const uint32_t t0 = millis();
+  while (millis() - t0 < 1000) (*c)++;
+  vTaskDelete(nullptr);
+}
+
 void cpuReport() {
   s_cnt0 = s_cnt1 = 0;
   xTaskCreatePinnedToCore(counterTask, "cnt0", 2048, (void*)&s_cnt0, 0, nullptr, 0);
@@ -193,6 +202,80 @@ void wifiPsReport() {
   esp_wifi_get_ps(&ps);
   Serial.printf("[wifi] ps was %d (0=NONE 1=MIN 2=MAX) -> forcing NONE\n", (int)ps);
   esp_wifi_set_ps(WIFI_PS_NONE);
+}
+
+// `top`: one screen of system health, Linux-top style. Per-core busy% comes
+// from prio-0 counter tasks (whatever count they DON'T reach vs the best-ever
+// baseline was stolen by real work - self-calibrating, so the first call on a
+// quiet system sets the 100%-idle mark); per-task stack/state come from the
+// TaskRegistry (the Arduino core lacks the FreeRTOS trace facility, so a
+// generic task walk isn't available). BLOCKS ~1.1s while sampling - callers
+// off the render thread only (serial console task / the WS top task).
+static const char* taskStateName(TaskHandle_t h) {
+#if INCLUDE_eTaskGetState
+  switch (eTaskGetState(h)) {
+    case eRunning:   return "run";
+    case eReady:     return "ready";
+    case eBlocked:   return "block";
+    case eSuspended: return "susp";
+    case eDeleted:   return "dead";
+    default:         return "?";
+  }
+#else
+  return "?";
+#endif
+}
+
+void topSample(TopSnap& s) {
+  s_cnt0 = s_cnt1 = 0;  // 1s busy sample on both cores
+  xTaskCreatePinnedToCore(counterTask1s, "cnt0", 2048, (void*)&s_cnt0, 0, nullptr, 0);
+  xTaskCreatePinnedToCore(counterTask1s, "cnt1", 2048, (void*)&s_cnt1, 0, nullptr, 1);
+  vTaskDelay(pdMS_TO_TICKS(1100));
+  static uint32_t base0 = 0, base1 = 0;  // best (most idle) count ever seen
+  if (s_cnt0 > base0) base0 = s_cnt0;
+  if (s_cnt1 > base1) base1 = s_cnt1;
+  s.busy0 = base0 ? (int)(100 - (100ULL * s_cnt0) / base0) : 0;
+  s.busy1 = base1 ? (int)(100 - (100ULL * s_cnt1) / base1) : 0;
+  s.upSec = millis() / 1000;
+  s.heapK = heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024;
+  s.heapMinK = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024;
+  s.heapBigK = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024;
+  s.psramK = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024;
+}
+
+void topReport() {
+  TopSnap s;
+  topSample(s);
+  Serial.printf("[top] up %lus | cpu0 %d%% busy, cpu1 %d%% busy (1s sample)\n",
+                s.upSec, s.busy0, s.busy1);
+  Serial.printf("[top] heap %uKB free (min %uKB, largest %uKB) | psram %uKB free\n",
+                s.heapK, s.heapMinK, s.heapBigK, s.psramK);
+  Serial.println("[top] task        core prio stack-free state");
+  for (int i = 0; i < taskreg::count(); i++) {
+    const auto& t = taskreg::tasks()[i];
+    Serial.printf("[top]  %-11s %4d %4u %7u B  %s\n", t.name, (int)t.core,
+                  (unsigned)t.prio,
+                  (unsigned)(uxTaskGetStackHighWaterMark(t.handle) * sizeof(StackType_t)),
+                  taskStateName(t.handle));
+  }
+}
+
+// Same snapshot as JSON, for the portal's dev panel ("top:{...}" WS reply).
+void topJson(char* out, unsigned int n) {
+  TopSnap s;
+  topSample(s);
+  size_t o = snprintf(out, n,
+      "top:{\"up\":%lu,\"c0\":%d,\"c1\":%d,\"heap\":%u,\"min\":%u,"
+      "\"big\":%u,\"psram\":%u,\"tasks\":[",
+      s.upSec, s.busy0, s.busy1, s.heapK, s.heapMinK, s.heapBigK, s.psramK);
+  for (int i = 0; i < taskreg::count() && o < n; i++) {
+    const auto& t = taskreg::tasks()[i];
+    o += snprintf(out + o, n - o, "%s{\"n\":\"%s\",\"c\":%d,\"p\":%u,\"s\":%u,\"st\":\"%s\"}",
+                  i ? "," : "", t.name, (int)t.core, (unsigned)t.prio,
+                  (unsigned)(uxTaskGetStackHighWaterMark(t.handle) * sizeof(StackType_t)),
+                  taskStateName(t.handle));
+  }
+  if (o < n) snprintf(out + o, n - o, "]}");
 }
 
 void memReport() {

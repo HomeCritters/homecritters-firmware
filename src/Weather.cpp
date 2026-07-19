@@ -3,6 +3,7 @@
 #include <Preferences.h>
 #include <esp_http_client.h>
 #include <esp_task_wdt.h>
+#include "TaskRegistry.h"
 #include "JsonLite.h"
 // The IDF cert-bundle header isn't on the Arduino variant include path, but
 // the symbol lives in the prebuilt libs (CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y).
@@ -123,6 +124,7 @@ void Weather::begin(bool (*busy)()) {
   // Core 0 (with WiFi/lwIP), prio 2: below the audio reader (3). 8KB stack:
   // TLS handshake runs here.
   xTaskCreatePinnedToCore(taskTrampoline, "weather", 8192, this, 2, &_task, 0);
+  taskreg::add("weather", _task, 0, 2);
 }
 
 void Weather::loadNvs() {

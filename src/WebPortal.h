@@ -250,6 +250,13 @@ class WebPortal {
   static void hmacHex(const char* key, const char* msg, char out65[65]);
   const char* _voiceState = "idle";  // idle|listening|thinking|speaking
   volatile int _voiceCmd = -1;       // pending HA-driven state (see consumeVoiceCmd)
+  // Dev-panel `top` (WS): a one-shot core-0 task runs the blocking 1.1s CPU
+  // sample and fills _topJson; handle() (render thread, owns the WS) sends it.
+  volatile bool _topBusy = false;
+  volatile bool _topReady = false;
+  int _topClient = -1;
+  char _topJson[832] = {0};
+  static void topTask(void* arg);
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   volatile bool _fullSleep = false;  // actual mode, reported by main (night
                                      // mode also HARD-gates the mic: no

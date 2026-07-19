@@ -26,6 +26,17 @@ void runIdf(const char* url);
 
 void memReport();
 void cpuReport();  // 3s prio-0 counter per core: relative idle CPU
+// Linux-top style health snapshot. topSample BLOCKS ~1.1s (counter tasks) -
+// never call from the render loop; the console task and the WS top task are
+// the intended callers.
+struct TopSnap {
+  int busy0, busy1;
+  unsigned long upSec;
+  unsigned heapK, heapMinK, heapBigK, psramK;
+};
+void topSample(TopSnap& s);
+void topReport();                          // human format -> Serial
+void topJson(char* out, unsigned int n);   // "top:{...}" -> portal dev panel
 void wifiPsReport();  // print + force WiFi power save NONE
 
 }  // namespace netbench

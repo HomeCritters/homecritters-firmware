@@ -4,6 +4,8 @@
 #include <Preferences.h>
 #include <mbedtls/md.h>  // HMAC-SHA256 (challenge-response auth)
 #include <esp_task_wdt.h>
+#include "TaskRegistry.h"
+#include "NetBench.h"  // topJson (dev-panel top)
 #include <cstring>
 #include "Renderer.h"
 #include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
@@ -167,6 +169,15 @@ void WebPortal::httpTask(void* arg) {
   }
 }
 
+// One-shot worker for the dev-panel `top`: blocks ~1.1s in topSample, hands
+// the JSON to handle() and dies.
+void WebPortal::topTask(void* arg) {
+  WebPortal* self = static_cast<WebPortal*>(arg);
+  netbench::topJson(self->_topJson, sizeof(self->_topJson));
+  self->_topReady = true;
+  vTaskDelete(nullptr);
+}
+
 // ---- HTTP + WebSocket servers ----
 void WebPortal::handle() {
   if (!_serverUp && connected()) startServer();
@@ -191,6 +202,13 @@ void WebPortal::handle() {
   if (now - _lastBroadcast >= interval) {
     broadcastState();
     _lastBroadcast = now;
+  }
+  // A finished `top` sample: deliver it to the requesting client.
+  if (_topReady) {
+    _topReady = false;
+    if (_topClient >= 0 && _wsAuthed[_topClient]) _ws.sendTXT((uint8_t)_topClient, _topJson);
+    _topClient = -1;
+    _topBusy = false;
   }
   // Expire the PIN pairing window.
   if (_pairUntil && now >= _pairUntil) endPairing();
@@ -314,11 +332,15 @@ void WebPortal::startServer() {
   }
   _serverUp = true;
   // Serve HTTP on core 0 so a big page load can't stall the render loop.
-  xTaskCreatePinnedToCore(httpTask, "http", 8192, this, 1, nullptr, 0);
+  TaskHandle_t h = nullptr;
+  xTaskCreatePinnedToCore(httpTask, "http", 8192, this, 1, &h, 0);
+  taskreg::add("http", h, 0, 1);
   // Mic capture ring + producer task (core 0): fills the ring off the render
   // loop; handle() drains it to the WS. 48KB = ~1.5s of 16kHz mono cushion.
   if (!_micRing.capacity()) _micRing.alloc(48 * 1024);
-  xTaskCreatePinnedToCore(micCaptureTask, "miccap", 4096, this, 3, nullptr, 0);
+  h = nullptr;
+  xTaskCreatePinnedToCore(micCaptureTask, "miccap", 4096, this, 3, &h, 0);
+  taskreg::add("miccap", h, 0, 3);
   Serial.printf("[web] portal at http://%s.local/  (ip %s, ws :81)\n", HOSTNAME, ip().c_str());
 }
 
@@ -619,6 +641,17 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     }
     if (msg == "wxbolt") {
       if (_renderer) _renderer->triggerBolt();
+      return;
+    }
+    // Dev panel: Linux-top style snapshot. The 1.1s CPU sample runs on its
+    // own one-shot core-0 task (never on this render thread); handle() sends
+    // the "top:{...}" reply when it lands.
+    if (msg == "top") {
+      if (!_topBusy) {
+        _topBusy = true;
+        _topClient = num;
+        xTaskCreatePinnedToCore(topTask, "top", 4096, this, 1, nullptr, 0);
+      }
       return;
     }
     // Pipeline liveness from the satellite: assist:on when a wake/STT stage

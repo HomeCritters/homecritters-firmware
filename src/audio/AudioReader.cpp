@@ -1,6 +1,7 @@
 #include "AudioReader.h"
 #include <esp_http_client.h>
 #include <esp_task_wdt.h>
+#include "../TaskRegistry.h"
 
 // Client config mirrors Voice PE's reader (validated by netbench nb2:
 // ~280 KB/s sustained). timeout_ms is deliberately short: esp_http_client_read
@@ -18,6 +19,7 @@ void AudioReader::begin(StreamRing* ring) {
   // Core 0 (PRO, with WiFi/lwIP), prio 3: above the WebPortal http task (1),
   // below nothing latency-critical. 6KB stack fits esp_http_client (no TLS).
   xTaskCreatePinnedToCore(taskTrampoline, "audioread", 6144, this, 3, &_task, 0);
+  taskreg::add("audioread", _task, 0, 3);
 }
 
 bool AudioReader::start(const char* url) {
