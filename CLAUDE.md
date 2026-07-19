@@ -72,7 +72,8 @@ src/
     AudioReader.{h,cpp}  #   task core 0: esp_http_client → ring (zero-copy)
     StreamRing.{h,cpp}   #   anel SPSC 1MB em PSRAM (produtor/consumidor)
     RingSource.h         #   adaptador AudioFileSource sobre o ring
-  NetBench.{h,cpp}     # nb/nb2/cpu/mem/slp: medição de rede/CPU (console)
+  NetBench.{h,cpp}     # nb/nb2/cpu/mem/slp/top: medição de rede/CPU (console)
+  TaskRegistry.h       # roster das tasks longas p/ o `top` (sem trace facility)
   Clock.{h,cpp}        # relógio NTP (timezone POSIX, 12/24h, ociosidade)
   DoodleGame.{h,cpp}   # mini-game estilo doodle jump (física; Renderer desenha)
   BallGame.{h,cpp}     # mini-game "Bolinha" (fetch: arremesso + furão busca)
@@ -273,6 +274,14 @@ portal/tools ficam aqui.
   fazer o mesmo (espera infinita → usar timeout + feed). Idle WDTs ficam
   desinscritos (áudio ocupado esfomeia idle por design). Boot loga o motivo
   do reset; `diag` no serial mostra heap/uptime/stack/clients.
+- **`top` (serial + portal)**: CPU%/core (contadores idle autocalibrados — a
+  1ª medição vira o baseline "100% livre"), heap/psram e stack/estado por task
+  (via TaskRegistry: task longa nova deve se registrar com `taskreg::add`).
+  No portal: Desenvolvimento > "📊 Top" (comando WS `top`, amostra de 1.1s
+  roda numa task one-shot core 0 — nunca no render thread).
+- **Portal modular** (`web/src/`): `App.jsx` é só composição;
+  `useDeviceSocket.js` (WS+auth+estado), `options.js` (listas/utils),
+  `components/` (Ferret, GamePads, SettingsDrawer, Modals, Widgets).
 - Texto marquee/scroll: `setTextWrap(false)` antes do `print()` com cursor
   fora do clip — com wrap ligado (default) o LovyanGFX re-ancora o cursor e o
   texto fica congelado mesmo com o offset animando.
