@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <Preferences.h>
 #include <esp_http_client.h>
+#include <esp_task_wdt.h>
 // The IDF cert-bundle header isn't on the Arduino variant include path, but
 // the symbol lives in the prebuilt libs (CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y).
 extern "C" esp_err_t esp_crt_bundle_attach(void* conf);
@@ -203,8 +204,9 @@ void Weather::saveNvs() {
 }
 
 void Weather::setLocation(float lat, float lon, const char* city) {
-  _lat = lat;
-  _lon = lon;
+  // Bound to real-world coordinates (inputs arrive from WS/serial/HA).
+  _lat = constrain(lat, -90.0f, 90.0f);
+  _lon = constrain(lon, -180.0f, 180.0f);
   // ASCII-only for the display font (portal already transliterates; belt
   // and suspenders for serial/HA sources).
   size_t o = 0;
@@ -238,8 +240,10 @@ void Weather::loop() {
 void Weather::taskTrampoline(void* arg) { static_cast<Weather*>(arg)->taskLoop(); }
 
 void Weather::taskLoop() {
+  esp_task_wdt_add(nullptr);  // watched: a wedged TLS fetch reboots the device
   unsigned long nextAt = 0;  // 0 = asap (boot fetch)
   for (;;) {
+    esp_task_wdt_reset();
     vTaskDelay(pdMS_TO_TICKS(1000));
     const bool due = _fetchNow || (long)(millis() - nextAt) >= 0;
     if (!due) continue;
@@ -293,7 +297,12 @@ bool Weather::fetchOnce() {
       break;
     }
     size_t got = 0;
-    while (got < BODY_MAX - 1) {
+    // Hard deadline on the body read: each read blocks up to HTTP_TIMEOUT_MS,
+    // so a server dripping bytes could otherwise stretch this loop (and hold
+    // the watchdog) indefinitely.
+    const unsigned long readT0 = millis();
+    while (got < BODY_MAX - 1 && millis() - readT0 < 20000UL) {
+      esp_task_wdt_reset();
       int r = esp_http_client_read(client, body + got, BODY_MAX - 1 - got);
       if (r <= 0) break;
       got += r;

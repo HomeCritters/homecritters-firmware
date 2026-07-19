@@ -171,7 +171,10 @@ void AudioPlayer::begin() {
   //     blocks on I2S DMA writes most of the time, so this can't starve the
   //     UI, but guarantees the DMA never starves when core 1 is busy - the
   //     intent of Voice PE's high-priority speaker task.
-  // Busy tasks can starve the idle tasks, so unwatch both WDTs.
+  // Busy tasks legitimately starve the idle tasks during playback, so unwatch
+  // the idle WDTs. Real hang protection comes from the long-running tasks
+  // subscribing THEMSELVES to the TWDT (configured in setup()) and feeding it
+  // each loop - a wedged task then reboots the device instead of freezing it.
   esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(0));
   esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(1));
 
@@ -392,7 +395,9 @@ void AudioPlayer::taskTrampoline(void* arg) {
 }
 
 void AudioPlayer::taskLoop() {
+  esp_task_wdt_add(nullptr);  // watched: a wedged decoder reboots the device
   for (;;) {
+    esp_task_wdt_reset();
     // Snapshot the pending requests atomically, then act outside the lock.
     const unsigned char* data = nullptr;
     unsigned int len = 0;

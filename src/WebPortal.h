@@ -150,6 +150,12 @@ class WebPortal {
 
   // '\n'-separated IP list of connected clients (hardware Conexoes page).
   void clientsInfo(char* out, size_t n);
+  // Authenticated WS clients right now (diagnostics).
+  int authedCount() const {
+    int n = 0;
+    for (int i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) n += _wsAuthed[i];
+    return n;
+  }
   // JSON array of connected clients for the portal/HA manager. Marks the
   // recipient's own row via its socket number `selfNum`.
   void clientsJson(char* out, size_t n, int selfNum);
@@ -227,6 +233,14 @@ class WebPortal {
   char _pairPin[7] = {0};        // current 6-digit PIN ("" = none)
   unsigned long _pairUntil = 0;  // window deadline (0 = closed)
   uint8_t _pairAttempts = 0;     // wrong PINs this window (3 = close)
+  // Remote (WS pair:start) rate limit: any unauthed LAN socket can pop the PIN
+  // overlay on the screen, so cap it - 30s cooldown between windows and at
+  // most 5 remote windows per hour. The hardware menu tile and serial `pair`
+  // (physically-present owner) bypass this.
+  unsigned long _pairCooldownUntil = 0;
+  unsigned long _pairHourStart = 0;
+  uint8_t _pairHourCount = 0;
+  bool allowRemotePairing();
   int _pairSlot = -1;            // slot minted for the current pairing
   char _shotNonce[33] = {0};     // one-shot /shot.bmp challenge
   unsigned long _shotNonceAt = 0;

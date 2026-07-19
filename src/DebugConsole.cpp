@@ -31,6 +31,7 @@ void DebugConsole::printHelp() {
   Serial.println(F("  play:<http-mp3-url> | mstop  - media stream test"));
   Serial.println(F("  nb:<http-url> | nb2:<http-url> - net throughput (raw | esp_http_client)"));
   Serial.println(F("  mem                  - heap/psram report"));
+  Serial.println(F("  diag                 - uptime/reset/heap/wifi health snapshot"));
 }
 
 void DebugConsole::dispatch(const String& c) {

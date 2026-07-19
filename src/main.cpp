@@ -18,6 +18,8 @@
 #include "DebugConsole.h"
 #include "pins.h"  // BOOT pin (full-sleep wake check)
 #include <Preferences.h>  // night-mode sound settings
+#include <esp_task_wdt.h>  // task watchdog (hang -> reboot)
+#include <WiFi.h>          // diag command (IP/RSSI)
 
 // ============================================================
 // Desk tamagotchi (ferret) - Ball V2
@@ -57,6 +59,23 @@ static ui::MenuPage menuPage = ui::PAGE_MAIN;  // which config sub-page is showi
 // Shared raw-touch state for the game screens (press tracking, last position).
 static bool g_touchDown = false;
 static int32_t g_touchX = 0, g_touchY = 0;
+
+// Short label for the boot log ("why did I reboot?"). A 24/7 device needs the
+// black box: without this, a watchdog/panic reset is indistinguishable from a
+// power cycle.
+static const char* resetReasonName(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:  return "poweron";
+    case ESP_RST_SW:       return "software";
+    case ESP_RST_PANIC:    return "PANIC";
+    case ESP_RST_INT_WDT:  return "INT-WDT";
+    case ESP_RST_TASK_WDT: return "TASK-WDT";
+    case ESP_RST_WDT:      return "WDT";
+    case ESP_RST_BROWNOUT: return "BROWNOUT";
+    case ESP_RST_DEEPSLEEP:return "deepsleep";
+    default:               return "unknown";
+  }
+}
 
 // Idle time since a timestamp, saturating at 0. A web command handled in
 // web.handle() sets lastInteractionMs to a millis() slightly AFTER this loop's
@@ -517,6 +536,20 @@ static bool consoleNavigate(const String& c) {
   const unsigned long now = millis();
   if (c == "shot")   { g_shotPending = true; return true; }  // captured post-render
   if (c.startsWith("voice:")) { g_voiceDebug = c.substring(6).toInt(); return true; }  // force voice ring
+  if (c == "diag") {  // runtime health snapshot (the "black box" counterpart)
+    Serial.printf("[diag] uptime %lus | reset %s\n", now / 1000,
+                  resetReasonName(esp_reset_reason()));
+    Serial.printf("[diag] heap %uKB free (min %uKB, largest %uKB) | psram %uKB free\n",
+                  (unsigned)(ESP.getFreeHeap() / 1024),
+                  (unsigned)(ESP.getMinFreeHeap() / 1024),
+                  (unsigned)(ESP.getMaxAllocHeap() / 1024),
+                  (unsigned)(ESP.getFreePsram() / 1024));
+    Serial.printf("[diag] wifi %s rssi %d | ws clients %d | loop stack %u free\n",
+                  WiFi.isConnected() ? WiFi.localIP().toString().c_str() : "down",
+                  WiFi.RSSI(), web.authedCount(),
+                  (unsigned)uxTaskGetStackHighWaterMark(nullptr));
+    return true;
+  }
   if (c == "token")  { Serial.printf("[auth] pairing token: %s\n", web.authToken()); return true; }
   if (c == "pair")   { web.startPairing(); Serial.printf("[auth] pairing pin: %s\n", web.pairingPin()); return true; }
   if (c == "revoke") { web.revokeAll(); Serial.println("[auth] revoked (all clients)"); return true; }
@@ -601,7 +634,17 @@ static bool consoleNavigate(const String& c) {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n[homecritters] boot");
+  Serial.printf("\n[homecritters] boot (reset: %s, heap %uKB, psram %uKB)\n",
+                resetReasonName(esp_reset_reason()),
+                (unsigned)(ESP.getFreeHeap() / 1024),
+                (unsigned)(ESP.getFreePsram() / 1024));
+
+  // Task watchdog, 30s: every long-running task subscribes itself and feeds it
+  // (audio decoder, weather, http, miccap, audioread, and this loop below).
+  // The idle-task WDTs stay unwatched (see AudioPlayer::begin) - busy audio
+  // legitimately starves idle; a task that stops feeding for 30s is a real
+  // hang and the panic handler reboots us out of it.
+  esp_task_wdt_init(30, true);
 
   renderer.begin();
   led.begin();
@@ -633,10 +676,12 @@ void setup() {
 
   wasSleeping = pet.sleeping();
   lastTickMs = lastSaveMs = lastInteractionMs = millis();
+  esp_task_wdt_add(nullptr);  // watch the render loop too
   Serial.printf("[homecritters] ready. battery ~%d%%\n", battery.percent());
 }
 
 void loop() {
+  esp_task_wdt_reset();
   const unsigned long now = millis();
 
   console.poll();  // debug console (screenshots + navigation)

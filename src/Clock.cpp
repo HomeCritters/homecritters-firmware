@@ -87,6 +87,13 @@ void Clock::setDateDmy(bool v) {
 }
 
 void Clock::setTz(const String& tz) {
+  // Bound + sanitize before this reaches setenv(): POSIX TZ strings are short
+  // printable ASCII; the raw value arrives from the network (WS `tz:` command).
+  if (tz.length() > 64) return;
+  for (size_t i = 0; i < tz.length(); i++) {
+    const char c = tz[i];
+    if (c < 0x21 || c > 0x7E) return;  // no spaces/control/8-bit chars
+  }
   _tz = tz;
   _prefs.begin("clock", false);
   _prefs.putString("tz", tz);

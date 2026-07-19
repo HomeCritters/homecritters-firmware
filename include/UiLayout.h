@@ -126,7 +126,6 @@ constexpr int16_t MENU_BTN_R = 17;  // +/- stepper button radius
 constexpr int16_t MENU_CELL_W = 70, MENU_CELL_H = 66;
 constexpr int16_t MENU_COL_L = 43, MENU_COL_R = 127;   // column x
 constexpr int16_t MENU_ROW_1 = 48, MENU_ROW_2 = 118;   // row y (battery pill above)
-constexpr int16_t MENU_QR_CX  = MENU_COL_R + MENU_CELL_W / 2;  // QR center x
 // Sub-pages with two tiles (Conexao, Seguranca): one centered row.
 constexpr int16_t MENU_SUB_ROW = 86;
 

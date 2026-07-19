@@ -3,6 +3,7 @@
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <mbedtls/md.h>  // HMAC-SHA256 (challenge-response auth)
+#include <esp_task_wdt.h>
 #include <cstring>
 #include "Renderer.h"
 #include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
@@ -156,7 +157,9 @@ void WebPortal::endConfig() {
 // freezes the screen. The WebSocket (commands/state) stays on the main loop.
 void WebPortal::httpTask(void* arg) {
   WebPortal* self = static_cast<WebPortal*>(arg);
+  esp_task_wdt_add(nullptr);  // watched: a wedged HTTP handler reboots the device
   for (;;) {
+    esp_task_wdt_reset();
     // While the WiFiManager captive portal is up it owns port 80; polling our
     // server concurrently from another core would fight over the socket.
     if (!self->_configuring) self->_server.handleClient();
@@ -226,9 +229,11 @@ void WebPortal::handle() {
 void WebPortal::micCaptureTask(void* arg) { static_cast<WebPortal*>(arg)->micCaptureLoop(); }
 
 void WebPortal::micCaptureLoop() {
+  esp_task_wdt_add(nullptr);  // watched: a wedged I2S capture reboots the device
   bool wasBusy = true;  // force a 16kHz clock restore on the first real capture
   int16_t frame[320];   // 20ms @ 16kHz mono
   for (;;) {
+    esp_task_wdt_reset();
     // Night mode is a privacy gate like mute: stop capturing at the source.
     if (!_micOn || _fullSleep) { wasBusy = true; _micRing.reset(); vTaskDelay(pdMS_TO_TICKS(20)); continue; }
     if (_audio && _audio->busy()) { wasBusy = true; vTaskDelay(pdMS_TO_TICKS(10)); continue; }
@@ -480,8 +485,20 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
       } else if (msg == "pair:start") {
         // New client asks to pair: pop the PIN on the screen and keep this
         // socket alive (exempt from the no-auth sweep) while the window is
-        // open, so it can submit the PIN the user reads.
-        startPairing();
+        // open, so it can submit the PIN the user reads. Rate-limited: this
+        // arrives unauthenticated, so without a cap any LAN host could keep
+        // the PIN overlay on the screen forever (UI DoS) and farm fresh PINs.
+        // A remote request never extends an open window either.
+        if (!pairingActive()) {
+          if (!allowRemotePairing()) {
+            Serial.printf("[ws] client %u pair:start throttled\n", num);
+            _ws.sendTXT(num, "err:pair-throttled");
+            _ws.disconnect(num);
+            return;
+          }
+          _pairHourCount++;
+          startPairing();
+        }
         _wsPairing[num] = true;
         Serial.printf("[ws] client %u pairing (pin on screen)\n", num);
       } else if (msg.startsWith("pair:") && pairingActive() &&
@@ -773,7 +790,19 @@ void WebPortal::startPairing() {
 void WebPortal::endPairing() {
   _pairUntil = 0;
   _pairPin[0] = 0;
+  _pairCooldownUntil = millis() + 30000;  // next REMOTE window only after 30s
   for (uint8_t i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) _wsPairing[i] = false;
+}
+
+// Remote pair:start quota (see header): 30s cooldown + 5 windows/hour.
+bool WebPortal::allowRemotePairing() {
+  const unsigned long now = millis();
+  if ((long)(now - _pairCooldownUntil) < 0) return false;
+  if (now - _pairHourStart > 3600000UL) {  // rolling hour bucket
+    _pairHourStart = now;
+    _pairHourCount = 0;
+  }
+  return _pairHourCount < 5;
 }
 
 void WebPortal::cancelPairing() { endPairing(); }

@@ -422,6 +422,9 @@ export default function App() {
   useEffect(() => {
     let ws;
     let retry;
+    // Reconnect backoff: 1.5s after a blip, doubling to 30s while the device
+    // stays away (phone left on the page overnight shouldn't hammer it).
+    let retryMs = 1500;
     const connect = () => {
       ws = new WebSocket(`ws://${location.hostname}:81/`);
       wsRef.current = ws;
@@ -443,7 +446,8 @@ export default function App() {
           if (localStorage.getItem('token')) localStorage.removeItem('token');
           setNeedToken(true);
         }
-        retry = setTimeout(connect, 1500);
+        retry = setTimeout(connect, retryMs);
+        retryMs = Math.min(retryMs * 2, 30000);
       };
       ws.onmessage = (ev) => {
         if (typeof ev.data === 'string') {
@@ -477,6 +481,7 @@ export default function App() {
           const j = JSON.parse(ev.data);
           if (!gotState.current) {
             gotState.current = true;  // authenticated
+            retryMs = 1500;           // healthy again: reset the backoff
             setOnline(true);
             setNeedToken(false);
             // Name this connection for the manager, then fetch the list.

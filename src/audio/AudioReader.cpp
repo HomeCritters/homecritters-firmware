@@ -1,5 +1,6 @@
 #include "AudioReader.h"
 #include <esp_http_client.h>
+#include <esp_task_wdt.h>
 
 // Client config mirrors Voice PE's reader (validated by netbench nb2:
 // ~280 KB/s sustained). timeout_ms is deliberately short: esp_http_client_read
@@ -36,8 +37,11 @@ void AudioReader::taskTrampoline(void* arg) {
 }
 
 void AudioReader::taskLoop() {
+  esp_task_wdt_add(nullptr);  // watched: a wedged network read reboots the device
   for (;;) {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // parked until start()
+    // Parked until start(); the timed wait exists only to feed the watchdog.
+    esp_task_wdt_reset();
+    if (!ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2000))) continue;
     fetch();
     _ring->setEof();  // success and failure both just end the stream
     _state = State::Idle;
@@ -76,6 +80,7 @@ void AudioReader::fetch() {
 
   uint32_t lastData = millis();
   while (!_abort) {
+    esp_task_wdt_reset();  // every wait in here is bounded (timeout_ms / ticks)
     uint32_t contig;
     uint8_t* dst = _ring->writeRegion(contig);
     if (!dst) {  // ring full: decoder is behind, give it room
