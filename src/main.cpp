@@ -703,9 +703,19 @@ static void loopWeatherFx(unsigned long now) {
   const bool windy = fam == WX_FOG || fam == WX_SNOW;
   if ((rainy || windy) && screen == SCREEN_PET && !g_fullSleep &&
       now >= ambientAt) {
-    ambientAt = now + 60000 + (esp_random() % 60000);
-    if (rainy) audio.playRainAmb();
-    else audio.playWindAmb();
+    if (rainy) {
+      // CONTINUOUS rain bed: restart the clip as soon as it ends (checked
+      // every second; playRainAmb bails while anything else owns the
+      // decoder). Sparse clips left most thunder strikes landing in silence
+      // - now every bolt has rain under it, storm-movie style.
+      audio.playRainAmb();
+      ambientAt = now + 1000;
+    } else {
+      // Wind stays sparse on purpose: the clip carries a crow caw that
+      // would grate on a continuous loop.
+      audio.playWindAmb();
+      ambientAt = now + 60000 + (esp_random() % 60000);
+    }
   }
 }
 
