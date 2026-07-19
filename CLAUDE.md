@@ -50,9 +50,18 @@ include/
                        # + simon_green/red/yellow/blue.h (tons WAV gerados)
   web_index.h          # portal React (single-file, gzip) em PROGMEM (gerado)
 src/
-  main.cpp             # orquestração: junta os módulos e roda o loop
+  main.cpp             # orquestração: tabela de telas (ScreenDef/enterScreen),
+                       # subsistemas do loop como funções (loopVoiceFsm/
+                       # loopNightMode/loopWeatherFx/loopMediaLedShow) e o loop
   Pet.{h,cpp}          # estado, stats, decaimento, humor, nome, NVS
-  Renderer.{h,cpp}     # desenho da cena (dono do display + canvas)
+  Renderer.{h,cpp}     # core: lifecycle (beginScreen/endScreen), cena do pet
+                       # (floresta+FX de clima+HUD+relógio+overlays)
+  RendererMenus.cpp    #   partial: menu config, pareamento, tela WiFi
+  RendererHa.cpp       #   partial: painel "Casa" (tiles + ícones)
+  RendererWeatherScreen.cpp  # partial: tela Tempo (previsão + glifos WMO)
+  RendererGames.cpp    #   partial: menu de jogos + Jump!/Bolinha/Genius
+  RendererShared.h     #   GROUND_Y + lerp565 (compartilhados pelos partials)
+  JsonLite.h           # helpers de parse JSON zero-alloc (Weather + HaPanel)
   FerretActor.{h,cpp}  # comportamento do furão (passeia/come/pula/cava/dorme)
   Animator.h           # troca de quadros por tempo (genérico)
   InputController.{h,cpp}  # toque (tap/swipe) + BOOT → Ações/eventos de UI
@@ -251,10 +260,19 @@ portal/tools ficam aqui.
   latência alta + 0% de perda + CPU livre durante playback = EMI, não software.
 - I2S **porta 0** (a porta 1 falhou o roteamento de pinos silenciosamente:
   decoder rodava, speaker mudo).
-- **Toda função de tela nova no Renderer PRECISA terminar em
-  `_canvas.pushSprite(0,0)`** — sem isso o LCD congela no frame anterior, e os
-  screenshots (serial e web leem o CANVAS, não o LCD) mostram a tela nova
-  bonitinha, escondendo o bug.
+- **Toda função de tela nova no Renderer PRECISA terminar em `endScreen()`**
+  (o único ponto que faz o pushSprite; nunca chamar pushSprite direto) — sem
+  isso o LCD congela no frame anterior, e os screenshots (serial e web leem o
+  CANVAS, não o LCD) mostram a tela nova bonitinha, escondendo o bug. Abrir
+  tela com `beginScreen(bg)`.
+- **Tela nova = 1 linha na tabela `SCREENS[]` + 1 case no `enterScreen()`**
+  (main.cpp): dispatch, nome pro portal, score, pacing e timeout saem da
+  tabela; TODA troca de tela (toque/serial/portal) passa por `enterScreen`.
+- **Watchdog (TWDT 30s) ligado**: tasks longas se inscrevem
+  (`esp_task_wdt_add`) e alimentam no loop; task nova de longa duração DEVE
+  fazer o mesmo (espera infinita → usar timeout + feed). Idle WDTs ficam
+  desinscritos (áudio ocupado esfomeia idle por design). Boot loga o motivo
+  do reset; `diag` no serial mostra heap/uptime/stack/clients.
 - Texto marquee/scroll: `setTextWrap(false)` antes do `print()` com cursor
   fora do clip — com wrap ligado (default) o LovyanGFX re-ancora o cursor e o
   texto fica congelado mesmo com o offset animando.
