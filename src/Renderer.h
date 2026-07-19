@@ -133,6 +133,12 @@ class Renderer {
   unsigned long _shootT0 = 0;      // active streak start (0 = none)
   int16_t _ssx = 0, _ssy = 0;      // streak origin
 
+  // Full-screen lifecycle: beginScreen fills the background, endScreen pushes
+  // the canvas to the LCD. EVERY draw path must exit through endScreen (see
+  // the comment at the definition - missing pushes freeze the display while
+  // screenshots keep looking right).
+  void beginScreen(uint16_t bg);
+  void endScreen();
   void drawSky();
   void drawStars();
   void drawMoon();

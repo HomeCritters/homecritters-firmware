@@ -39,6 +39,16 @@ void Renderer::begin() {
   if (!_snap) _snap = (uint16_t*)malloc(SCREEN_W * SCREEN_H * 2);
 }
 
+// --- Screen lifecycle -------------------------------------------------------
+// Every full-screen draw path starts with beginScreen (background fill) and
+// MUST end with endScreen on every return path: it pushes the canvas to the
+// LCD. Forgetting the push freezes the physical display on the last frame
+// while screenshots (which read the CANVAS, not the LCD) keep showing the new
+// screen looking perfect - a bug class this codebase already shipped once
+// (drawHaPanel). Route every push through here; never call pushSprite direct.
+void Renderer::beginScreen(uint16_t bg) { _canvas.fillScreen(bg); }
+void Renderer::endScreen() { endScreen(); }
+
 // Copy the finished canvas into the stable snapshot buffer (render thread).
 void Renderer::takeWebSnapshot() {
   const void* buf = _canvas.getBuffer();
@@ -1000,7 +1010,7 @@ void Renderer::drawHaTile(int x, int y, const HaPanel::Entity& e) {
 
 // Full HA panel: 2x2 tiles for the current page + dots + empty states.
 void Renderer::drawHaPanel(HaPanel& ha, int page, bool loading) {
-  _canvas.fillScreen(menu::BG);
+  beginScreen(menu::BG);
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
   const char* title = "Casa";
@@ -1029,7 +1039,7 @@ void Renderer::drawHaPanel(HaPanel& ha, int page, bool loading) {
       _canvas.print(l2);
     }
     drawLeftHandle();  // pull the left tab to go back
-    _canvas.pushSprite(0, 0);
+    endScreen();
     return;
   }
 
@@ -1064,7 +1074,7 @@ void Renderer::drawHaPanel(HaPanel& ha, int page, bool loading) {
                            px, cy + dh / 2 + 13 + bob, hc);
   }
   drawLeftHandle();  // left tab = back to the pet
-  _canvas.pushSprite(0, 0);
+  endScreen();
 }
 
 // ---- Weather forecast screen -----------------------------------------------
@@ -1154,7 +1164,7 @@ void Renderer::drawWxIcon(int cx, int cy, uint8_t code, int s) {
 }
 
 void Renderer::drawWeather(Weather& wx) {
-  _canvas.fillScreen(menu::BG);
+  beginScreen(menu::BG);
   // Own compact header (higher than drawPageHeader): frees vertical room
   // for the forecast ladder below.
   _canvas.setTextColor(TFT_WHITE);
@@ -1178,7 +1188,7 @@ void Renderer::drawWeather(Weather& wx) {
     _canvas.setCursor(CENTER_X - _canvas.textWidth(l2) / 2, 124);
     _canvas.print(l2);
     drawLeftHandle();
-    _canvas.pushSprite(0, 0);
+    endScreen();
     return;
   }
   if (!wx.everFetched()) {
@@ -1188,7 +1198,7 @@ void Renderer::drawWeather(Weather& wx) {
     _canvas.setCursor(CENTER_X - _canvas.textWidth(l1) / 2, 116);
     _canvas.print(l1);
     drawLeftHandle();
-    _canvas.pushSprite(0, 0);
+    endScreen();
     return;
   }
 
@@ -1274,12 +1284,12 @@ void Renderer::drawWeather(Weather& wx) {
     _canvas.print(w);
   }
   drawLeftHandle();
-  _canvas.pushSprite(0, 0);
+  endScreen();
 }
 
 void Renderer::drawMenu(ui::MenuPage page, int volume, int ledBright,
                         int batteryPct, bool wifiOn, const char* ip) {
-  _canvas.fillScreen(menu::BG);  // full-screen dark purple background
+  beginScreen(menu::BG);  // full-screen dark purple background
   if (page == PAGE_AUDIO)       drawMenuAudio(volume);
   else if (page == PAGE_LIGHT)  drawMenuLight(ledBright);
   else if (page == PAGE_CONN)   drawMenuConn(wifiOn, ip);
@@ -1378,7 +1388,7 @@ void Renderer::drawMenuSecHa() {
 // Full-screen pairing overlay: pops automatically when a client asks to pair
 // (or via Seguranca > Parear). Six digit boxes, TV-pairing style.
 void Renderer::drawPairingOverlay() {
-  _canvas.fillScreen(menu::BG);
+  beginScreen(menu::BG);
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
   const char* title = "Pareamento";
@@ -1489,7 +1499,7 @@ void Renderer::drawMenuLight(int ledBright) {
 }
 
 void Renderer::drawWifiConfig(const char* apName) {
-  _canvas.fillScreen(menu::BG);
+  beginScreen(menu::BG);
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
   const char* t = "Config WiFi";
@@ -1514,7 +1524,7 @@ void Renderer::drawWifiConfig(const char* apName) {
   _canvas.print(l2);
 
   drawLeftHandle();  // pull (or tap) the left tab to exit config
-  _canvas.pushSprite(0, 0);
+  endScreen();
 }
 
 // ------------------- Games -------------------
@@ -1557,7 +1567,7 @@ void Renderer::drawGameTile(int x, int y, const char* label, char icon, uint16_t
 }
 
 void Renderer::drawGamesMenu() {
-  _canvas.fillScreen(menu::BG);
+  beginScreen(menu::BG);
   _canvas.setTextColor(TFT_WHITE);
   _canvas.setTextSize(2);
   const char* title = "Jogos";
@@ -1569,7 +1579,7 @@ void Renderer::drawGamesMenu() {
   drawGameTile(GAME_COL_C, GAME_ROW_2, "Genius", 's', 0);
 
   drawLeftHandle();  // pull (or tap) the left tab to go back to the pet
-  _canvas.pushSprite(0, 0);
+  endScreen();
 }
 
 // The official ferret sprite (game-sized), jump animation, centered at (cx,cy).
@@ -1585,7 +1595,7 @@ void Renderer::drawDoodleFerret(int cx, int cy, bool faceLeft) {
 }
 
 void Renderer::drawDoodle(DoodleGame& game) {
-  _canvas.fillScreen(rgb565(150, 205, 235));  // light sky
+  beginScreen(rgb565(150, 205, 235));  // light sky
 
   // parallax clouds: drift down slower than the platforms as the run climbs
   static const int16_t clouds[3][2] = {{52, 34}, {182, 96}, {96, 168}};
@@ -1675,7 +1685,7 @@ void Renderer::drawDoodle(DoodleGame& game) {
     _canvas.print(h);
   }
 
-  _canvas.pushSprite(0, 0);
+  endScreen();
 }
 
 // The game ferret with a mode-appropriate animation, centered at (cx,cy).
@@ -1752,11 +1762,11 @@ void Renderer::drawBall(BallGame& game) {
     _canvas.print(hint);
   }
 
-  _canvas.pushSprite(0, 0);
+  endScreen();
 }
 
 void Renderer::drawSimon(SimonGame& game) {
-  _canvas.fillScreen(menu::BG);
+  beginScreen(menu::BG);
 
   // Four diagonal quadrant pads on a ring (classic Genius layout).
   // Index: 0=TL green, 1=TR red, 2=BL yellow, 3=BR blue.
@@ -1834,7 +1844,7 @@ void Renderer::drawSimon(SimonGame& game) {
     _canvas.print(h);
   }
 
-  _canvas.pushSprite(0, 0);
+  endScreen();
 }
 
 void Renderer::drawFerret(FerretActor& ferret) {
@@ -1926,7 +1936,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   // An active pairing takes over the whole screen (TV-pairing style).
   if (_pairPin[0]) {
     drawPairingOverlay();
-    _canvas.pushSprite(0, 0);
+    endScreen();
     return;
   }
   // Theme follows the real time of day (06-16 day, 16-18 afternoon, else
@@ -2058,7 +2068,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     else if (voiceState) drawVoiceRing(voiceState);
   }
 
-  _canvas.pushSprite(0, 0);
+  endScreen();
 }
 
 // Checkered dance floor over the grass strip, drawn UNDER the pet so Leon
