@@ -665,6 +665,196 @@ static bool consoleNavigate(const String& c) {
   return false;
 }
 
+// ---- loop() subsystems -----------------------------------------------------
+// Each of these was an anonymous block inside loop(); they keep their state in
+// function-local statics and run once per frame, in the order loop() calls
+// them. Extracting them keeps loop() readable orchestration.
+
+// Weather -> scene/SFX: adopt finished fetches, honor the dev-panel override,
+// paint the scene condition, fire thunder, and schedule the ambient clips
+// (rain patter / forest wind every 60-120s, pet screen only, never over
+// other audio - the play helpers bail if busy).
+static void loopWeatherFx(unsigned long now) {
+  weather.loop();
+  {  // dev panel (portal) can force/clear the scene weather like the serial
+    const int req = web.consumeWxSet();
+    if (req != -2) g_wxDebug = req;
+  }
+  const uint8_t wxCode =
+      g_wxDebug >= 0 ? (uint8_t)g_wxDebug
+                     : (weather.fresh() ? weather.codeNow() : 0);
+  renderer.setWeather(wxCode,
+                      weather.fresh() ? (int8_t)weather.tempNow() : INT8_MIN);
+  if (renderer.consumeThunder()) audio.playThunder();  // strike -> clap
+  static unsigned long ambientAt = 0;
+  static uint8_t lastFam = 255;
+  const WxKind fam = Weather::kindFromCode(wxCode);
+  if ((uint8_t)fam != lastFam) { lastFam = (uint8_t)fam; ambientAt = now + 8000; }
+  const bool rainy = fam == WX_RAIN || fam == WX_STORM;
+  const bool windy = fam == WX_FOG || fam == WX_SNOW;
+  if ((rainy || windy) && screen == SCREEN_PET && !g_fullSleep &&
+      now >= ambientAt) {
+    ambientAt = now + 60000 + (esp_random() % 60000);
+    if (rainy) audio.playRainAmb();
+    else audio.playWindAmb();
+  }
+}
+
+// Full sleep (night mode, for HA schedule automations): screen + LED dark,
+// Leon asleep, mic REALLY muted (visible in the HA switch); any local touch
+// or BOOT press wakes everything back up and restores the pre-night mute.
+static void loopNightMode(unsigned long now) {
+  int req = web.consumeFullSleep();
+  if (g_fullSleep) {
+    int32_t tx, ty;
+    if (lcd.getTouch(&tx, &ty) || digitalRead(PIN_BOOT_BUTTON) == LOW) req = 0;
+  }
+  if (req == 1 && !g_fullSleep) {
+    g_fullSleep = true;
+    menuOpen = false;
+    screen = SCREEN_PET;  // leave any game
+    if (!pet.sleeping()) {
+      g_muteNextSleepSnd = !g_nightSleepSnd;  // night mode may be silent
+      doAction(ACTION_TOGGLE_SLEEP);          // tuck Leon in
+    }
+    led.gameOff();               // LED dark (override until wake)
+    renderer.setDisplayOff(true);
+    web.setFullSleep(true);
+    g_micMutedBeforeNight = web.micMuted();
+    if (!g_micMutedBeforeNight) web.setMicMuted(true);
+  } else if (req == 0 && g_fullSleep) {
+    g_fullSleep = false;
+    renderer.setDisplayOff(false);
+    led.endGame();               // release the LED back to mood
+    if (pet.sleeping()) {
+      g_muteNextWakeSnd = !g_nightWakeSnd;
+      doAction(ACTION_TOGGLE_SLEEP);  // wake Leon
+    }
+    if (!g_micMutedBeforeNight && web.micMuted()) web.setMicMuted(false);
+    web.setFullSleep(false);
+    lastInteractionMs = now;
+    g_inputSwallowUntil = now + 800;  // the wake tap must not also feed/pat
+  }
+
+  // Night sound settings changed from HA/portal: apply + persist.
+  int ss, ws;
+  if (web.consumeNightSnd(ss, ws)) {
+    if (ss >= 0) g_nightSleepSnd = ss;
+    if (ws >= 0) g_nightWakeSnd = ws;
+    web.setNightSnd(g_nightSleepSnd, g_nightWakeSnd);
+    Preferences p;
+    p.begin("night", false);
+    p.putBool("ssnd", g_nightSleepSnd);
+    p.putBool("wsnd", g_nightWakeSnd);
+    p.end();
+  }
+}
+
+// Pairing overlay: mirror the PIN (renderer takes over the screen while it's
+// set) and make sure we're on the pet screen so it actually shows. While it's
+// up, the ONLY live touch target is the cancel X - everything else is
+// swallowed (taps must not invisibly feed/pet the hidden scene).
+static void loopPairingOverlay(unsigned long now) {
+  renderer.setPairingPin(web.pairingActive() ? web.pairingPin() : "");
+  if (!web.pairingActive()) return;
+  if (screen != SCREEN_PET) { screen = SCREEN_PET; menuOpen = false; }
+  int32_t tx, ty;
+  if (lcd.getTouch(&tx, &ty) && ui::inPairCancel(tx, ty)) {
+    web.cancelPairing();
+    audio.playClick();
+    g_inputSwallowUntil = now + 800;  // the cancel tap ends here
+  }
+}
+
+// Media LED show: beat-following rainbow while music plays ("balada"), cyan
+// pulse while the assistant speaks (matches the on-screen voice ring). Uses
+// the same override channel as the Genius game; released when media ends.
+static void loopMediaLedShow(unsigned long now) {
+  static uint8_t lastKind = 0;
+  const uint8_t mk = (uint8_t)audio.mediaKind();
+  if (mk == AudioPlayer::MEDIA_MUSIC) {
+    // Beat-follow: the CodecOutput reports the live PCM envelope. A spike
+    // above the ~1s running average = beat -> hue jump + full-bright flash
+    // that decays; between beats the LED holds a dim glow of the current
+    // color. If the track has no clear transients, the hue still drifts.
+    static float slowEnv = 40.0f, flash = 0.0f;
+    static uint8_t hue = 0;
+    static unsigned long lastBeatMs = 0;
+    const float lvl = (float)audio.mediaLevel();       // 0..255
+    slowEnv += (lvl - slowEnv) * 0.03f;                // ~1s average @33fps
+    if (lvl > slowEnv * 1.35f + 6.0f && now - lastBeatMs > 160) {
+      lastBeatMs = now;
+      flash = 1.0f;
+      hue += 47;                                       // new color per beat
+    } else {
+      flash *= 0.86f;                                  // fast decay
+    }
+    if (now - lastBeatMs > 1800) hue += 2;             // beatless: slow drift
+    const uint8_t x = (hue % 85) * 3;
+    uint8_t r, g, b;
+    if (hue < 85)       { r = 255 - x; g = x;       b = 0; }
+    else if (hue < 170) { r = 0;       g = 255 - x; b = x; }
+    else                { r = x;       g = 0;       b = 255 - x; }
+    const float k = 0.25f + 0.75f * flash;             // dim glow <-> flash
+    led.gameColor((uint8_t)(r * k), (uint8_t)(g * k), (uint8_t)(b * k));
+  } else if (mk == AudioPlayer::MEDIA_TTS) {
+    const uint8_t p = (uint8_t)(120 + 100 * sinf(now / 300.0f));
+    led.gameColor(0, p / 2, p);
+  } else if (lastKind) {
+    led.endGame();  // media over: LED back to the mood
+  }
+  lastKind = mk;
+}
+
+// Voice assistant feedback state machine (drives the on-screen ring + LED +
+// portal). listening (BOOT held) -> thinking (released, STT/intent) ->
+// speaking (TTS plays) -> idle. The thinking phase closes the feedback gap
+// between releasing the button and hearing the reply; a timeout clears it if
+// no answer comes (e.g. STT heard nothing). Returns the current state for
+// the renderer: 0 idle, 1 listening, 2 thinking, 3 speaking.
+static uint8_t loopVoiceFsm(unsigned long now, const InputEvent& ev) {
+  static uint8_t g_voice = 0, g_voiceLast = 0;
+  static unsigned long g_voiceSince = 0;
+  if (ev.voice == InputEvent::V_PTT_START) {
+    lastInteractionMs = now;
+    if (!web.micMuted()) {  // muted: PTT is denied (red LED already says why)
+      web.voicePttStart(); g_voice = 1; g_voiceSince = now;
+    }
+  } else if (ev.voice == InputEvent::V_PTT_END) {
+    if (g_voice == 1) { web.voicePttEnd(); g_voice = 2; g_voiceSince = now; }
+  } else if (ev.voice == InputEvent::V_MUTE_TOGGLE) {
+    // Quick BOOT tap: privacy mute, Echo-style. Down chime = mic closed,
+    // up chime = mic open; the LED stays red while muted.
+    lastInteractionMs = now;
+    const bool muted = !web.micMuted();
+    web.setMicMuted(muted);
+    if (muted) audio.playConfirm(); else audio.playListen();
+  }
+  // HA-driven states (wake word pipeline pushes voice:listening/thinking/...).
+  const int vc = web.consumeVoiceCmd();
+  if (vc >= 0) { g_voice = (uint8_t)vc; g_voiceSince = now; }
+  if (audio.mediaKind() == AudioPlayer::MEDIA_TTS) {
+    g_voice = 3; g_voiceSince = now;                     // reply is speaking
+  } else if (g_voice == 3) {
+    g_voice = 0;                                         // TTS finished
+  } else if (g_voice != 0 && now - g_voiceSince > 15000) {
+    g_voice = 0;  // stuck without progress (e.g. HA died mid-run): clear
+  }
+  if (g_voiceDebug >= 0) g_voice = (uint8_t)g_voiceDebug;  // debug: force a ring
+  if (g_voice != g_voiceLast) {
+    static const char* const NAMES[] = {"idle", "listening", "thinking", "speaking"};
+    web.setVoiceState(NAMES[g_voice]);
+    switch (g_voice) {
+      case 1: led.gameColor(0, 200, 255); break;   // cyan
+      case 2: led.gameColor(255, 150, 0); break;   // amber
+      case 3: led.gameColor(0, 200, 255); break;   // cyan
+      default: led.endGame(); break;               // release to mood
+    }
+    g_voiceLast = g_voice;
+  }
+  return g_voice;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -719,36 +909,9 @@ void loop() {
   const unsigned long now = millis();
 
   console.poll();  // debug console (screenshots + navigation)
-  // Weather: adopt any finished fetch and keep the scene condition current
-  // (debug force wins). Runs on every screen so the data never goes stale.
-  weather.loop();
-  {  // dev panel (portal) can force/clear the scene weather like the serial
-    const int req = web.consumeWxSet();
-    if (req != -2) g_wxDebug = req;
-  }
-  const uint8_t wxCode =
-      g_wxDebug >= 0 ? (uint8_t)g_wxDebug
-                     : (weather.fresh() ? weather.codeNow() : 0);
-  renderer.setWeather(wxCode,
-                      weather.fresh() ? (int8_t)weather.tempNow() : INT8_MIN);
-  if (renderer.consumeThunder()) audio.playThunder();  // strike -> clap
-  // Ambient weather SFX: a rain patter / forest wind clip every 60-120 s
-  // (random), pet screen only, first one ~8 s after the weather turns, and
-  // never over other audio (the play helpers bail if busy).
-  {
-    static unsigned long ambientAt = 0;
-    static uint8_t lastFam = 255;
-    const WxKind fam = Weather::kindFromCode(wxCode);
-    if ((uint8_t)fam != lastFam) { lastFam = (uint8_t)fam; ambientAt = now + 8000; }
-    const bool rainy = fam == WX_RAIN || fam == WX_STORM;
-    const bool windy = fam == WX_FOG || fam == WX_SNOW;
-    if ((rainy || windy) && screen == SCREEN_PET && !g_fullSleep &&
-        now >= ambientAt) {
-      ambientAt = now + 60000 + (esp_random() % 60000);
-      if (rainy) audio.playRainAmb();
-      else audio.playWindAmb();
-    }
-  }
+  // Weather: adopt fetches, paint the scene condition, thunder + ambient SFX.
+  // Runs on every screen so the data never goes stale.
+  loopWeatherFx(now);
 
   // --- WiFi setup mode (captive portal active): own screen; back tab exits ---
   if (web.configuring()) {
@@ -790,71 +953,8 @@ void loop() {
   }
   wasSleeping = sleeping;
 
-  // --- Full sleep (night mode, for HA schedule automations): screen + LED
-  // dark, Leon asleep. Driven by "fullsleep:on|off" (HA switch / portal
-  // button); any local touch or BOOT press wakes everything back up.
-  {
-    int req = web.consumeFullSleep();
-    if (g_fullSleep) {
-      int32_t tx, ty;
-      if (lcd.getTouch(&tx, &ty) || digitalRead(PIN_BOOT_BUTTON) == LOW) req = 0;
-    }
-    if (req == 1 && !g_fullSleep) {
-      g_fullSleep = true;
-      menuOpen = false;
-      screen = SCREEN_PET;  // leave any game
-      if (!pet.sleeping()) {
-        g_muteNextSleepSnd = !g_nightSleepSnd;  // night mode may be silent
-        doAction(ACTION_TOGGLE_SLEEP);          // tuck Leon in
-      }
-      led.gameOff();               // LED dark (override until wake)
-      renderer.setDisplayOff(true);
-      web.setFullSleep(true);
-      // Night engages the REAL privacy mute (visible: HA switch goes off) -
-      // not just the internal gate. Waking restores whatever the user had.
-      g_micMutedBeforeNight = web.micMuted();
-      if (!g_micMutedBeforeNight) web.setMicMuted(true);
-    } else if (req == 0 && g_fullSleep) {
-      g_fullSleep = false;
-      renderer.setDisplayOff(false);
-      led.endGame();               // release the LED back to mood
-      if (pet.sleeping()) {
-        g_muteNextWakeSnd = !g_nightWakeSnd;
-        doAction(ACTION_TOGGLE_SLEEP);  // wake Leon
-      }
-      if (!g_micMutedBeforeNight && web.micMuted()) web.setMicMuted(false);
-      web.setFullSleep(false);
-      lastInteractionMs = now;
-      g_inputSwallowUntil = now + 800;  // the wake tap must not also feed/pat
-    }
-    // Pairing overlay: mirror the PIN (renderer takes over the screen while
-    // it's set) and make sure we're on the pet screen so it actually shows.
-    // While it's up, the ONLY live touch target is the cancel X - everything
-    // else is swallowed (taps must not invisibly feed/pet the hidden scene).
-    renderer.setPairingPin(web.pairingActive() ? web.pairingPin() : "");
-    if (web.pairingActive()) {
-      if (screen != SCREEN_PET) { screen = SCREEN_PET; menuOpen = false; }
-      int32_t tx, ty;
-      if (lcd.getTouch(&tx, &ty) && ui::inPairCancel(tx, ty)) {
-        web.cancelPairing();
-        audio.playClick();
-        g_inputSwallowUntil = now + 800;  // the cancel tap ends here
-      }
-    }
-
-    // Night sound settings changed from HA/portal: apply + persist.
-    int ss, ws;
-    if (web.consumeNightSnd(ss, ws)) {
-      if (ss >= 0) g_nightSleepSnd = ss;
-      if (ws >= 0) g_nightWakeSnd = ws;
-      web.setNightSnd(g_nightSleepSnd, g_nightWakeSnd);
-      Preferences p;
-      p.begin("night", false);
-      p.putBool("ssnd", g_nightSleepSnd);
-      p.putBool("wsnd", g_nightWakeSnd);
-      p.end();
-    }
-  }
+  loopNightMode(now);       // full-sleep enter/exit + night sound settings
+  loopPairingOverlay(now);  // PIN overlay mirror + cancel X
 
   if (now - lastSaveMs > game::SAVE_INTERVAL_MS) {
     pet.save();
@@ -901,46 +1001,7 @@ void loop() {
   }
 
   led.update(pet.mood());
-
-  // Media LED show: slow rainbow while music plays ("balada"), cyan pulse
-  // while the assistant speaks (matches the on-screen voice ring). Uses the
-  // same override channel as the Genius game; released when media ends.
-  {
-    static uint8_t lastKind = 0;
-    const uint8_t mk = (uint8_t)audio.mediaKind();
-    if (mk == AudioPlayer::MEDIA_MUSIC) {
-      // Beat-follow: the CodecOutput reports the live PCM envelope. A spike
-      // above the ~1s running average = beat -> hue jump + full-bright flash
-      // that decays; between beats the LED holds a dim glow of the current
-      // color. If the track has no clear transients, the hue still drifts.
-      static float slowEnv = 40.0f, flash = 0.0f;
-      static uint8_t hue = 0;
-      static unsigned long lastBeatMs = 0;
-      const float lvl = (float)audio.mediaLevel();       // 0..255
-      slowEnv += (lvl - slowEnv) * 0.03f;                // ~1s average @33fps
-      if (lvl > slowEnv * 1.35f + 6.0f && now - lastBeatMs > 160) {
-        lastBeatMs = now;
-        flash = 1.0f;
-        hue += 47;                                       // new color per beat
-      } else {
-        flash *= 0.86f;                                  // fast decay
-      }
-      if (now - lastBeatMs > 1800) hue += 2;             // beatless: slow drift
-      const uint8_t x = (hue % 85) * 3;
-      uint8_t r, g, b;
-      if (hue < 85)       { r = 255 - x; g = x;       b = 0; }
-      else if (hue < 170) { r = 0;       g = 255 - x; b = x; }
-      else                { r = x;       g = 0;       b = 255 - x; }
-      const float k = 0.25f + 0.75f * flash;             // dim glow <-> flash
-      led.gameColor((uint8_t)(r * k), (uint8_t)(g * k), (uint8_t)(b * k));
-    } else if (mk == AudioPlayer::MEDIA_TTS) {
-      const uint8_t p = (uint8_t)(120 + 100 * sinf(now / 300.0f));
-      led.gameColor(0, p / 2, p);
-    } else if (lastKind) {
-      led.endGame();  // media over: LED back to the mood
-    }
-    lastKind = mk;
-  }
+  loopMediaLedShow(now);  // balada rainbow / TTS cyan pulse
 
   // Report the current screen to the portal and honor phone game nav (start/
   // back), so Doodle Jump can be launched and steered entirely from the phone.
@@ -991,50 +1052,8 @@ void loop() {
   // the hidden scene must not react to invisible touches.
   if (g_fullSleep || web.pairingActive() || now < g_inputSwallowUntil) ev = InputEvent{};
 
-  // --- Voice assistant feedback state machine (drives the on-screen ring +
-  // LED + portal). listening (BOOT held) -> thinking (released, STT/intent) ->
-  // speaking (TTS plays) -> idle. The thinking phase closes the feedback gap
-  // between releasing the button and hearing the reply; a timeout clears it if
-  // no answer comes (e.g. STT heard nothing). 0 idle,1 listen,2 think,3 speak.
-  static uint8_t g_voice = 0, g_voiceLast = 0;
-  static unsigned long g_voiceSince = 0;
-  if (ev.voice == InputEvent::V_PTT_START) {
-    lastInteractionMs = now;
-    if (!web.micMuted()) {  // muted: PTT is denied (red LED already says why)
-      web.voicePttStart(); g_voice = 1; g_voiceSince = now;
-    }
-  } else if (ev.voice == InputEvent::V_PTT_END) {
-    if (g_voice == 1) { web.voicePttEnd(); g_voice = 2; g_voiceSince = now; }
-  } else if (ev.voice == InputEvent::V_MUTE_TOGGLE) {
-    // Quick BOOT tap: privacy mute, Echo-style. Down chime = mic closed,
-    // up chime = mic open; the LED stays red while muted (below).
-    lastInteractionMs = now;
-    const bool muted = !web.micMuted();
-    web.setMicMuted(muted);
-    if (muted) audio.playConfirm(); else audio.playListen();
-  }
-  // HA-driven states (wake word pipeline pushes voice:listening/thinking/...).
-  const int vc = web.consumeVoiceCmd();
-  if (vc >= 0) { g_voice = (uint8_t)vc; g_voiceSince = now; }
-  if (audio.mediaKind() == AudioPlayer::MEDIA_TTS) {
-    g_voice = 3; g_voiceSince = now;                     // reply is speaking
-  } else if (g_voice == 3) {
-    g_voice = 0;                                         // TTS finished
-  } else if (g_voice != 0 && now - g_voiceSince > 15000) {
-    g_voice = 0;  // stuck without progress (e.g. HA died mid-run): clear
-  }
-  if (g_voiceDebug >= 0) g_voice = (uint8_t)g_voiceDebug;  // debug: force a ring
-  if (g_voice != g_voiceLast) {
-    static const char* const NAMES[] = {"idle", "listening", "thinking", "speaking"};
-    web.setVoiceState(NAMES[g_voice]);
-    switch (g_voice) {
-      case 1: led.gameColor(0, 200, 255); break;   // cyan
-      case 2: led.gameColor(255, 150, 0); break;   // amber
-      case 3: led.gameColor(0, 200, 255); break;   // cyan
-      default: led.endGame(); break;               // release to mood
-    }
-    g_voiceLast = g_voice;
-  }
+  // Voice assistant ring/LED state machine (PTT + wake-word driven).
+  const uint8_t voiceState = loopVoiceFsm(now, ev);
 
   if (ev.ui != ui::UI_NONE || ev.action != ACTION_NONE) {
     lastInteractionMs = now;
@@ -1097,7 +1116,7 @@ void loop() {
   }
   renderer.draw(pet, battery, ferret, menuOpen, menuPage, audio.volume(),
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
-                (uint8_t)audio.mediaKind(), g_voice, web.micMuted(), web.micLive());
+                (uint8_t)audio.mediaKind(), voiceState, web.micMuted(), web.micLive());
   serviceShots();
 
   delay(30);
