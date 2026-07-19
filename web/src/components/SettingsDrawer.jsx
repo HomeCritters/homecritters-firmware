@@ -76,13 +76,51 @@ function TopPanel({ topInfo, onRefresh }) {
               overflowX: 'auto',
             }}
           >
-            <div style={{ color: '#8a8a99' }}>task        core prio stack st</div>
-            {(topInfo.tasks || []).map((t) => (
-              <div key={t.n} style={{ whiteSpace: 'pre', color: t.s < 512 ? '#e04640' : '#d8d2e8' }}>
-                {t.n.padEnd(11)} {String(t.c).padStart(3)} {String(t.p).padStart(4)}
-                {' '}{String(t.s).padStart(5)}B {t.st}
-              </div>
-            ))}
+            {/* Header and rows share ONE fixed-width template so the columns
+                can't drift (hand-spaced header + per-cell padding wobbled). */}
+            {(() => {
+              const row = (n, c, p, s, st) =>
+                `${n.padEnd(10)}${c.padStart(5)}${p.padStart(5)}${s.padStart(8)}  ${st}`;
+              return (
+                <>
+                  <div style={{ whiteSpace: 'pre', color: '#8a8a99' }}>
+                    {row('task', 'core', 'prio', 'stack', 'estado')}
+                  </div>
+                  {(topInfo.tasks || []).map((t) => (
+                    <div key={t.n} style={{ whiteSpace: 'pre', color: t.s < 512 ? '#e04640' : '#d8d2e8' }}>
+                      {row(t.n, String(t.c), String(t.p), `${t.s}B`, t.st)}
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 11,
+              lineHeight: 1.6,
+              color: '#9a93ad',
+              background: '#1d1731',
+              borderRadius: 8,
+              padding: '8px 12px',
+            }}
+          >
+            <b style={{ color: '#b9b3c8' }}>Legenda</b><br />
+            <b>CPU 0</b>: núcleo do rádio — WiFi, rede, clima, mic ·{' '}
+            <b>CPU 1</b>: núcleo da tela — desenho da cena e decodificação de
+            áudio. Ocupação medida em amostras de ~1s.<br />
+            <b>Memória</b>: RAM interna do chip (335KB) — a crítica: DMA,
+            stacks e WiFi só vivem nela. <i>mín livre</i> = o pior momento
+            desde ligar (se encostar em ~10KB, é aperto de verdade).<br />
+            <b>PSRAM</b>: RAM externa de 8MB, mais lenta — buffers grandes
+            (1MB do streaming de música, prints de tela).<br />
+            <b>🌡️</b>: temperatura interna do SoC (do chip, não do ambiente;
+            verde &lt;60°, amarelo &lt;75°).<br />
+            <b>Tabela</b>: as tasks do firmware — <i>core</i> onde roda,{' '}
+            <i>prio</i>ridade, <i>stack</i> = pilha que sobrou de reserva
+            (vermelho &lt;512B = perigo), <i>estado</i>: run = executando,
+            ready = na fila, block = dormindo à espera de trabalho.
           </div>
         </div>
       )}
