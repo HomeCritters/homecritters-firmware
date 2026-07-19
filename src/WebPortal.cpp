@@ -442,6 +442,29 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     if ((int)num == _assistClient) { _assistOn = false; _assistClient = -1; }
     if (was) _clientsDirty = true;  // refresh the connections list
   } else if (type == WStype_TEXT) {
+    // Zero-alloc fast path for the high-rate game-controller messages
+    // (Jump! joystick ~30/s, Bolinha throws): parse straight from the payload
+    // instead of building a String + substrings per sample - long phone game
+    // sessions were churning the heap. Everything else takes the String path
+    // below. The WS library NUL-terminates text payloads.
+    if (_wsAuthed[num] && len >= 8 &&
+        strncmp((const char*)payload, "game:x:", 7) == 0) {
+      _gameTx = strtof((const char*)payload + 7, nullptr);  // normalized [0..1]
+      _gameTxMs = millis();
+      return;  // joystick never marks _dirty (no broadcast echo)
+    }
+    if (_wsAuthed[num] && len >= 8 &&
+        strncmp((const char*)payload, "ball:t:", 7) == 0) {
+      char* after = nullptr;
+      const float nx = strtof((const char*)payload + 7, &after);
+      if (after && *after == ':') {
+        _throwNx = nx;
+        _throwNy = strtof(after + 1, nullptr);
+        _throwReq = true;
+        _dirty = true;  // same as the String path: coalesced state echo
+      }
+      return;
+    }
     String msg;
     msg.reserve(len);
     for (size_t i = 0; i < len; i++) msg += (char)payload[i];
