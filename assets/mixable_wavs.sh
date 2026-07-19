@@ -17,7 +17,10 @@ cd "$(dirname "$0")/.."
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-for name in click camera thunder; do
+# Every short SFX is mixable; only the long "beds" (sleep_music, rainamb,
+# wind) stay MP3 on the exclusive decoder path.
+for name in click camera thunder eat drink tap wake jump boost crumble \
+            record death throw buzzer listen confirm; do
   hdr="include/sounds/sfx_${name}.h"
   # Extract the byte array from the C header back into a binary file.
   python3 - "$hdr" "$TMP/$name.bin" <<'EOF'

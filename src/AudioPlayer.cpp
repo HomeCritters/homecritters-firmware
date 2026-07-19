@@ -294,27 +294,30 @@ void AudioPlayer::playMix(const unsigned char* wav, unsigned int len) {
   play(wav, len);
 }
 
+// Every short SFX is mixable (WAV 16k mono, assets/mixable_wavs.sh): over
+// music/ambience they SUM instead of being dropped. Only the long beds
+// (sleep tune, rain, wind) keep the exclusive decoder path.
 void AudioPlayer::playSleepTune() { play(sleep_music_mp3, sleep_music_mp3_len); }
-void AudioPlayer::playWake()      { play(sfx_wake_mp3,     sfx_wake_mp3_len); }
-void AudioPlayer::playEat()       { play(sfx_eat_mp3,      sfx_eat_mp3_len); }
-void AudioPlayer::playDrink()     { play(sfx_drink_mp3,    sfx_drink_mp3_len); }
-void AudioPlayer::playPat()       { play(sfx_tap_mp3,      sfx_tap_mp3_len); }
-void AudioPlayer::playJump()      { play(sfx_jump_mp3,     sfx_jump_mp3_len); }
-void AudioPlayer::playBoost()     { play(sfx_boost_mp3,    sfx_boost_mp3_len); }
-void AudioPlayer::playCrumble()   { play(sfx_crumble_mp3,  sfx_crumble_mp3_len); }
-void AudioPlayer::playRecord()    { play(sfx_record_mp3,   sfx_record_mp3_len); }
-void AudioPlayer::playDeath()     { play(sfx_death_mp3,    sfx_death_mp3_len); }
-void AudioPlayer::playThrow()     { play(sfx_throw_mp3,    sfx_throw_mp3_len); }
-void AudioPlayer::playCamera()    { playMix(sfx_camera_wav, sfx_camera_wav_len); }
-void AudioPlayer::playClick()     { playMix(sfx_click_wav,  sfx_click_wav_len); }
-void AudioPlayer::playBuzzer()    { play(sfx_buzzer_mp3,   sfx_buzzer_mp3_len); }
+void AudioPlayer::playWake()      { playMix(sfx_wake_wav,    sfx_wake_wav_len); }
+void AudioPlayer::playEat()       { playMix(sfx_eat_wav,     sfx_eat_wav_len); }
+void AudioPlayer::playDrink()     { playMix(sfx_drink_wav,   sfx_drink_wav_len); }
+void AudioPlayer::playPat()       { playMix(sfx_tap_wav,     sfx_tap_wav_len); }
+void AudioPlayer::playJump()      { playMix(sfx_jump_wav,    sfx_jump_wav_len); }
+void AudioPlayer::playBoost()     { playMix(sfx_boost_wav,   sfx_boost_wav_len); }
+void AudioPlayer::playCrumble()   { playMix(sfx_crumble_wav, sfx_crumble_wav_len); }
+void AudioPlayer::playRecord()    { playMix(sfx_record_wav,  sfx_record_wav_len); }
+void AudioPlayer::playDeath()     { playMix(sfx_death_wav,   sfx_death_wav_len); }
+void AudioPlayer::playThrow()     { playMix(sfx_throw_wav,   sfx_throw_wav_len); }
+void AudioPlayer::playCamera()    { playMix(sfx_camera_wav,  sfx_camera_wav_len); }
+void AudioPlayer::playClick()     { playMix(sfx_click_wav,   sfx_click_wav_len); }
+void AudioPlayer::playBuzzer()    { playMix(sfx_buzzer_wav,  sfx_buzzer_wav_len); }
 // Thunder rides ON TOP of the rain bed now (the whole point of the mixer);
 // the old !busy() gate made storms silent whenever the ambience was playing.
 void AudioPlayer::playThunder()   { playMix(sfx_thunder_wav, sfx_thunder_wav_len); }
 void AudioPlayer::playRainAmb()   { if (!busy()) play(sfx_rainamb_mp3, sfx_rainamb_mp3_len); }
 void AudioPlayer::playWindAmb()   { if (!busy()) play(sfx_wind_mp3,    sfx_wind_mp3_len); }
-void AudioPlayer::playListen()    { play(sfx_listen_mp3,   sfx_listen_mp3_len); }
-void AudioPlayer::playConfirm()   { play(sfx_confirm_wav,  sfx_confirm_wav_len); }
+void AudioPlayer::playListen()    { playMix(sfx_listen_wav,  sfx_listen_wav_len); }
+void AudioPlayer::playConfirm()   { playMix(sfx_confirm_wav, sfx_confirm_wav_len); }
 
 void AudioPlayer::playSimon(int color) {
   switch (color) {  // mixable: the Genius tones sum over the party music

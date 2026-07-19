@@ -122,8 +122,9 @@ portal/tools ficam aqui.
   noite configuráveis (`sleepsnd`/`wakesnd`, NVS); toque/BOOT acorda.
 - **Áudio** (`AudioPlayer`, ES8311 + I2S porta 0): efeitos por ação — comer,
   banho/água, carinho (tap), acordar — e ronco ao dormir. Um som por vez (um
-  novo `play()` interrompe o anterior) NO caminho do decoder; **MIXER**: SFX
-  curtos "mixáveis" (click, câmera, trovão, tons do Genius) tocam via
+  novo `play()` interrompe o anterior) NO caminho do decoder; **MIXER**:
+  TODOS os SFX curtos são "mixáveis" (só as camas longas — sleep_music,
+  chuva, vento — ficam exclusivas no decoder) e tocam via
   `playMix()` — se algo já estiver soando, o SFX é SOMADO por cima como
   overlay PCM no `CodecOutput::ConsumeSample` (trovão sobre a chuva
   ambiente, click sobre a balada), NUNCA sobre TTS (voz tem prioridade), 1
