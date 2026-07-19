@@ -7,6 +7,8 @@ body,
   margin: 0;
   min-height: 100%;
   background: #16101f;
+  /* No scroll-chaining/bounce feeding the browser's back-forward gesture */
+  overscroll-behavior: none;
 }
 body {
   font-family: system-ui, -apple-system, sans-serif;

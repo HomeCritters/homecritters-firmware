@@ -6,12 +6,35 @@
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>HomeCritters</title>
+    <!-- Home-screen web app (iOS): added via "Adicionar a Tela de Inicio",
+         the portal runs standalone - no Safari chrome, no back-swipe gesture
+         stealing the game controls. Harmless in a normal tab. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#16101f" />
   </head>
   <body>
     <div id="root"></div>
     <script>
       // iOS Safari ignores user-scalable=no; block pinch-zoom explicitly.
       document.addEventListener('gesturestart', (e) => e.preventDefault());
+      // Game-controller defense (iOS Safari): a drag starting near the screen
+      // edge triggers the system back/forward swipe and hijacks the D-pad.
+      // 1) Swallow touches that start in the edge zones (non-passive, so
+      //    preventDefault actually blocks the navigation gesture).
+      document.addEventListener('touchstart', (e) => {
+        const x = e.touches[0] && e.touches[0].clientX;
+        if (x !== undefined && (x < 28 || x > window.innerWidth - 28)) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+      // 2) History sentinel: if the gesture still slips through, "back" lands
+      //    on this pushed state instead of leaving the portal.
+      history.pushState({ critter: true }, '');
+      window.addEventListener('popstate', () => {
+        history.pushState({ critter: true }, '');
+      });
     </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
