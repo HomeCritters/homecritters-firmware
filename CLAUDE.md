@@ -274,11 +274,13 @@ portal/tools ficam aqui.
   fazer o mesmo (espera infinita → usar timeout + feed). Idle WDTs ficam
   desinscritos (áudio ocupado esfomeia idle por design). Boot loga o motivo
   do reset; `diag` no serial mostra heap/uptime/stack/clients.
-- **`top` (serial + portal)**: CPU%/core (contadores idle autocalibrados — a
-  1ª medição vira o baseline "100% livre"), heap/psram e stack/estado por task
-  (via TaskRegistry: task longa nova deve se registrar com `taskreg::add`).
-  No portal: Desenvolvimento > "📊 Top" (comando WS `top`, amostra de 1.1s
-  roda numa task one-shot core 0 — nunca no render thread).
+- **`top` (serial + portal, TEMPO REAL)**: CPU%/core (contadores idle
+  autocalibrados — a 1ª medição vira o baseline "100% livre"), memória com
+  totais (barras de uso), **temperatura do SoC** (`temperatureRead`, die) e
+  stack/estado por task (via TaskRegistry: task longa nova deve se registrar
+  com `taskreg::add`). No portal: Desenvolvimento > "📊 Top" streama sozinho
+  (cada resposta do WS `top` dispara a próxima medição, ~1.2s; a amostra de
+  1.1s roda numa task one-shot core 0 — nunca no render thread).
 - **Portal modular** (`web/src/`): `App.jsx` é só composição;
   `useDeviceSocket.js` (WS+auth+estado), `options.js` (listas/utils),
   `components/` (Ferret, GamePads, SettingsDrawer, Modals, Widgets).

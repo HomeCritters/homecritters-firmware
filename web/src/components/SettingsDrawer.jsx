@@ -9,47 +9,61 @@ import {
 
 const { Text } = Typography;
 
-// Linux-top mirror (dev panel): renders the device's "top:{...}" snapshot.
-// While mounted with data it auto-refreshes every 5s (the device samples for
-// ~1.1s per request on a side task, so this stays cheap).
+// Linux-top mirror (dev panel), REAL TIME: each reply triggers the next
+// sample (the device measures for ~1.1s per request, so this self-clocks at
+// ~1.2s like a live top), with a 3s fallback timer in case a reply is lost.
+// The device ignores overlapping requests while one is in flight.
 function TopPanel({ topInfo, onRefresh }) {
-  const [auto, setAuto] = useState(false);
   useEffect(() => {
-    if (!auto) return undefined;
-    onRefresh();
-    const t = setInterval(onRefresh, 5000);
+    onRefresh();  // start streaming as soon as the drawer section mounts
+    const t = setInterval(onRefresh, 3000);  // lost-reply fallback
     return () => clearInterval(t);
-  }, [auto, onRefresh]);
+  }, [onRefresh]);
+  useEffect(() => {
+    if (topInfo) onRefresh();  // reply landed -> ask for the next sample
+  }, [topInfo, onRefresh]);
+
+  const memUsed = topInfo && topInfo.heapT ? topInfo.heapT - topInfo.heap : 0;
+  const memPct = topInfo && topInfo.heapT ? Math.round((100 * memUsed) / topInfo.heapT) : 0;
+  const psUsed = topInfo && topInfo.psramT ? topInfo.psramT - topInfo.psram : 0;
+  const psPct = topInfo && topInfo.psramT ? Math.round((100 * psUsed) / topInfo.psramT) : 0;
+  const barColor = (v) => (v > 85 ? '#e04640' : v > 60 ? '#f0c846' : '#46c85a');
+  const temp = topInfo?.temp;
+  const tempColor = temp > 75 ? '#e04640' : temp > 60 ? '#f0c846' : '#5ac86e';
 
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text strong>📊 Top (CPU / tasks)</Text>
-        <Space>
-          <Text type="secondary" style={{ fontSize: 12 }}>auto</Text>
-          <Switch size="small" checked={auto} onChange={setAuto} />
-        </Space>
+        <Text strong>📊 Top</Text>
+        {topInfo ? (
+          <Space size={10}>
+            <Text style={{ fontSize: 13, color: tempColor }}>🌡️ {temp?.toFixed(1)}°C</Text>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              up {Math.floor(topInfo.up / 60)}min
+            </Text>
+          </Space>
+        ) : (
+          <Text type="secondary" style={{ fontSize: 12 }}>medindo…</Text>
+        )}
       </div>
-      <Button block size="small" style={{ marginTop: 8 }} onClick={onRefresh}>
-        Medir agora (~1s)
-      </Button>
       {topInfo && (
-        <div style={{ marginTop: 10 }}>
-          {[['CPU 0 (rádio/rede)', topInfo.c0], ['CPU 1 (render/áudio)', topInfo.c1]].map(([l, v]) => (
+        <div style={{ marginTop: 6 }}>
+          {[
+            ['CPU 0 (rádio/rede)', topInfo.c0, `${topInfo.c0}%`],
+            ['CPU 1 (render/áudio)', topInfo.c1, `${topInfo.c1}%`],
+            [`Memória (${memUsed}/${topInfo.heapT}KB · mín livre ${topInfo.min}KB)`, memPct, `${memPct}%`],
+            [`PSRAM (${psUsed}/${topInfo.psramT}KB)`, psPct, `${psPct}%`],
+          ].map(([l, v, txt]) => (
             <div key={l}>
               <Text type="secondary" style={{ fontSize: 11 }}>{l}</Text>
               <Progress
                 percent={v}
                 size="small"
-                strokeColor={v > 85 ? '#e04640' : v > 60 ? '#f0c846' : '#46c85a'}
-                format={(p) => `${p}%`}
+                strokeColor={barColor(v)}
+                format={() => txt}
               />
             </div>
           ))}
-          <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
-            heap {topInfo.heap}KB livre (mín {topInfo.min}KB, maior bloco {topInfo.big}KB)
-            · psram {topInfo.psram}KB · uptime {Math.floor(topInfo.up / 60)}min
-          </Text>
           <div
             style={{
               marginTop: 8,

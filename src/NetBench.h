@@ -33,6 +33,8 @@ struct TopSnap {
   int busy0, busy1;
   unsigned long upSec;
   unsigned heapK, heapMinK, heapBigK, psramK;
+  unsigned heapTotK, psramTotK;  // capacity (usage bars in the portal)
+  float tempC;                   // SoC internal temperature sensor
 };
 void topSample(TopSnap& s);
 void topReport();                          // human format -> Serial

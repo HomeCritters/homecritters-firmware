@@ -241,15 +241,18 @@ void topSample(TopSnap& s) {
   s.heapMinK = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024;
   s.heapBigK = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024;
   s.psramK = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024;
+  s.heapTotK = heap_caps_get_total_size(MALLOC_CAP_INTERNAL) / 1024;
+  s.psramTotK = heap_caps_get_total_size(MALLOC_CAP_SPIRAM) / 1024;
+  s.tempC = temperatureRead();  // S3 internal sensor (die temp, not ambient)
 }
 
 void topReport() {
   TopSnap s;
   topSample(s);
-  Serial.printf("[top] up %lus | cpu0 %d%% busy, cpu1 %d%% busy (1s sample)\n",
-                s.upSec, s.busy0, s.busy1);
-  Serial.printf("[top] heap %uKB free (min %uKB, largest %uKB) | psram %uKB free\n",
-                s.heapK, s.heapMinK, s.heapBigK, s.psramK);
+  Serial.printf("[top] up %lus | cpu0 %d%% busy, cpu1 %d%% busy (1s sample) | soc %.1fC\n",
+                s.upSec, s.busy0, s.busy1, s.tempC);
+  Serial.printf("[top] heap %u/%uKB free (min %uKB, largest %uKB) | psram %u/%uKB free\n",
+                s.heapK, s.heapTotK, s.heapMinK, s.heapBigK, s.psramK, s.psramTotK);
   Serial.println("[top] task        core prio stack-free state");
   for (int i = 0; i < taskreg::count(); i++) {
     const auto& t = taskreg::tasks()[i];
@@ -266,8 +269,10 @@ void topJson(char* out, unsigned int n) {
   topSample(s);
   size_t o = snprintf(out, n,
       "top:{\"up\":%lu,\"c0\":%d,\"c1\":%d,\"heap\":%u,\"min\":%u,"
-      "\"big\":%u,\"psram\":%u,\"tasks\":[",
-      s.upSec, s.busy0, s.busy1, s.heapK, s.heapMinK, s.heapBigK, s.psramK);
+      "\"big\":%u,\"psram\":%u,\"heapT\":%u,\"psramT\":%u,\"temp\":%.1f,"
+      "\"tasks\":[",
+      s.upSec, s.busy0, s.busy1, s.heapK, s.heapMinK, s.heapBigK, s.psramK,
+      s.heapTotK, s.psramTotK, s.tempC);
   for (int i = 0; i < taskreg::count() && o < n; i++) {
     const auto& t = taskreg::tasks()[i];
     o += snprintf(out + o, n - o, "%s{\"n\":\"%s\",\"c\":%d,\"p\":%u,\"s\":%u,\"st\":\"%s\"}",
