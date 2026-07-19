@@ -265,7 +265,7 @@ static void loopBall(unsigned long now) {
     g_touchDown = false;
     const int32_t dx = g_touchX - g_ballDragX;
     const int32_t dy = g_touchY - g_ballDragY;
-    if (g_ballDragX < 26 && dx > 45 && abs(dx) > abs(dy)) {
+    if (g_ballDragX < 26 && dx > ui::SWIPE_MIN && abs(dx) > abs(dy)) {
       audio.playClick();
       leaveBall(now);  // pull from the left edge -> quit the game
     } else if (ball.ready() && dy < -25 && abs(dy) > abs(dx)) {
@@ -409,12 +409,9 @@ static void loopGamesMenu(unsigned long now) {
     lastInteractionMs = now;
     const int32_t dx = g_touchX - g_gamesStartX;
     const int32_t dy = g_touchY - g_gamesStartY;
-    if (dx > 45 && abs(dx) > abs(dy) && g_gamesStartX < 65) {
+    if (ui::isBackPull(dx, dy, g_gamesStartX, g_gamesStartY)) {
       audio.playClick();
-      screen = SCREEN_PET;  // pulled the left tab
-    } else if (ui::inLeftHandle(g_gamesStartX, g_gamesStartY)) {
-      audio.playClick();
-      screen = SCREEN_PET;  // tapped the tab
+      screen = SCREEN_PET;  // pulled or tapped the left tab
     } else if (ui::inGameDoodle(g_gamesStartX, g_gamesStartY)) {
       audio.playClick();
       startDoodle(now);
@@ -468,11 +465,10 @@ static void loopHaPanel(unsigned long now) {
     lastInteractionMs = now;
     const int32_t dx = g_touchX - g_haStartX, dy = g_touchY - g_haStartY;
     const int pages = (haPanel.count() + ui::HA_PER_PAGE - 1) / ui::HA_PER_PAGE;
-    if (abs(dy) > 45 && abs(dy) > abs(dx)) {           // vertical swipe = page
+    if (abs(dy) > ui::SWIPE_MIN && abs(dy) > abs(dx)) {  // vertical swipe = page
       if (dy < 0 && g_haPage < pages - 1) { g_haPage++; audio.playClick(); }
       else if (dy > 0 && g_haPage > 0)    { g_haPage--; audio.playClick(); }
-    } else if ((dx > 45 && abs(dx) > abs(dy) && g_haStartX < 65) ||
-               ui::inLeftHandle(g_haStartX, g_haStartY)) {  // left = back
+    } else if (ui::isBackPull(dx, dy, g_haStartX, g_haStartY)) {  // left = back
       audio.playClick();
       screen = SCREEN_PET;
     } else {  // tap a tile -> toggle if controllable (optimistic)
@@ -513,11 +509,8 @@ static void loopWeather(unsigned long now) {
     g_touchDown = false;
     lastInteractionMs = now;
     const int32_t dx = g_touchX - g_wxStartX, dy = g_touchY - g_wxStartY;
-    const bool backSwipeDown = dy > 45 && abs(dy) > abs(dx);
-    const bool backPullLeft =
-        (dx > 45 && abs(dx) > abs(dy) && g_wxStartX < 65) ||
-        ui::inLeftHandle(g_wxStartX, g_wxStartY);
-    if (backSwipeDown || backPullLeft) {
+    const bool backSwipeDown = dy > ui::SWIPE_MIN && abs(dy) > abs(dx);
+    if (backSwipeDown || ui::isBackPull(dx, dy, g_wxStartX, g_wxStartY)) {
       audio.playClick();
       screen = SCREEN_PET;
     }
@@ -727,7 +720,7 @@ void loop() {
     else if (g_touchDown) {  // release: left-edge pull or tap on the tab = exit
       g_touchDown = false;
       const int32_t dx = g_touchX - wcStartX, dy = g_touchY - wcStartY;
-      if ((dx > 45 && abs(dx) > abs(dy) && wcStartX < 65) || ui::inLeftHandle(wcStartX, wcStartY)) {
+      if (ui::isBackPull(dx, dy, wcStartX, wcStartY)) {
         audio.playClick();
         web.cancelConfig();
       }

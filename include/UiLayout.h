@@ -118,6 +118,21 @@ inline bool inBottomHandle(int32_t tx, int32_t ty) {
          tx > CENTER_X - BHANDLE_W / 2 && tx < CENTER_X + BHANDLE_W / 2;
 }
 
+// --- Gesture thresholds (single source: InputController + raw-touch screens
+// used to carry their own slightly-divergent literals) ---
+constexpr int32_t SWIPE_MIN = 45;       // dominant-axis travel = a swipe
+constexpr int32_t EDGE_LEFT = 65;       // back-pull must start in this zone
+constexpr int32_t EDGE_LEFT_WIDE = 95;  // pet-screen HA pull (edge touch is weak)
+constexpr int32_t EDGE_RIGHT = 165;     // games pull starts right of this
+
+// The standard "back" gesture on release: a rightward pull that started at
+// the left edge, or a tap on the left tab. Shared by every custom screen.
+inline bool isBackPull(int32_t dx, int32_t dy, int32_t sx, int32_t sy) {
+  const int32_t ady = dy < 0 ? -dy : dy;  // dx > SWIPE_MIN implies |dx| == dx
+  return (dx > SWIPE_MIN && dx > ady && sx < EDGE_LEFT) ||
+         inLeftHandle(sx, sy);
+}
+
 constexpr int16_t MENU_BTN_R = 17;  // +/- stepper button radius
 
 // Main page: a perfect 2x2 grid of equal squares - Audio, Luz (top row),

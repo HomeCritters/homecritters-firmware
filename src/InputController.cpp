@@ -26,20 +26,20 @@ InputEvent InputController::releaseEvent(bool menuOpen, ui::MenuPage page) {
   const int32_t adx = abs(dx), ady = abs(dy);
 
   // GESTURE: dominant, long swipe.
-  if (ady > 45 && ady > adx) {  // vertical -> config menu / weather
+  if (ady > ui::SWIPE_MIN && ady > adx) {  // vertical -> config menu / weather
     if (dy > 0 && _startY < 120) { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // down -> open
     if (dy < 0 && menuOpen)      { ev.ui = ui::UI_MENU_TOGGLE; return ev; }  // up   -> close
     // Swipe up starting on the bottom half (menu closed) -> weather forecast.
     if (dy < 0 && !menuOpen && _startY > 140) { ev.ui = ui::UI_WEATHER_TOGGLE; return ev; }
   }
-  if (adx > 40 && adx > ady) {  // horizontal
+  if (adx > ui::SWIPE_MIN && adx > ady) {  // horizontal
     // Right edge, pull left -> open the games menu (pet screen only).
-    if (dx < 0 && _startX > 165 && !menuOpen) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
+    if (dx < 0 && _startX > ui::EDGE_RIGHT && !menuOpen) { ev.ui = ui::UI_GAMES_TOGGLE; return ev; }
     // Left edge, pull right -> "back" in menus; on the pet screen, open the
     // Home Assistant panel (mirror of the games pull on the right). The zone
-    // is generous (<95) because the round panel's extreme-left touch is weak,
-    // so a rightward swipe often first registers a bit inward.
-    if (dx > 0 && _startX < 95) {
+    // is generous because the round panel's extreme-left touch is weak, so a
+    // rightward swipe often first registers a bit inward.
+    if (dx > 0 && _startX < ui::EDGE_LEFT_WIDE) {
       ev.ui = menuOpen ? ui::UI_MENU_BACK : ui::UI_HA_TOGGLE;
       return ev;
     }
