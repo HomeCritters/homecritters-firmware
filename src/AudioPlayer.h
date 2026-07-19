@@ -81,6 +81,9 @@ class AudioPlayer {
 
  private:
   void play(const unsigned char* data, unsigned int len);
+  // Mixable SFX (WAV 16k mono): overlay on top of whatever plays (never over
+  // TTS), decoder path when idle. One overlay channel - newest wins.
+  void playMix(const unsigned char* wav, unsigned int len);
   void applyGain();
 
   int _volume = 80;

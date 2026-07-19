@@ -33,6 +33,7 @@ void DebugConsole::printHelp() {
   Serial.println(F("  mem                  - heap/psram report"));
   Serial.println(F("  diag                 - uptime/reset/heap/wifi health snapshot"));
   Serial.println(F("  top                  - cpu%/task list (Linux-top style)"));
+  Serial.println(F("  mix                  - thunder via the mixer (overlay test)"));
 }
 
 void DebugConsole::dispatch(const String& c) {

@@ -7,6 +7,7 @@
 #include "Renderer.h"
 #include "InputController.h"
 #include "AudioPlayer.h"
+#include "audio/AudioCodec.h"  // mixer debug (overlayActive)
 #include "FerretActor.h"
 #include "WebPortal.h"
 #include "Clock.h"
@@ -628,6 +629,13 @@ static bool consoleNavigate(const String& c) {
   }
   if (c == "wxbolt") {  // debug: strike lightning right now (bolt + thunder)
     renderer.triggerBolt();
+    return true;
+  }
+  if (c == "mix") {  // debug: thunder via the mixer (overlay if busy, decoder if idle)
+    const bool wasBusy = audio.busy();
+    audio.playThunder();
+    Serial.printf("[mix] thunder fired (busy=%d overlay=%d)\n", wasBusy,
+                  AudioCodec::overlayActive());
     return true;
   }
   if (c.startsWith("wxloc:")) {  // wxloc:<lat>,<lon>[,<city>]

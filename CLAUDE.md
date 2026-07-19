@@ -122,10 +122,18 @@ portal/tools ficam aqui.
   noite configuráveis (`sleepsnd`/`wakesnd`, NVS); toque/BOOT acorda.
 - **Áudio** (`AudioPlayer`, ES8311 + I2S porta 0): efeitos por ação — comer,
   banho/água, carinho (tap), acordar — e ronco ao dormir. Um som por vez (um
-  novo `play()` interrompe o anterior); SFX suprimidos enquanto mídia toca.
-  MP3s em PROGMEM. Volume 0-100 com curva perceptual `pow(v, 2.5)`, NVS.
-  Decoder task no **core 1** (prio 5); rede de mídia no core 0. **Áudio
-  validado no hardware.**
+  novo `play()` interrompe o anterior) NO caminho do decoder; **MIXER**: SFX
+  curtos "mixáveis" (click, câmera, trovão, tons do Genius) tocam via
+  `playMix()` — se algo já estiver soando, o SFX é SOMADO por cima como
+  overlay PCM no `CodecOutput::ConsumeSample` (trovão sobre a chuva
+  ambiente, click sobre a balada), NUNCA sobre TTS (voz tem prioridade), 1
+  canal (novo substitui). **SFX mixável = WAV 16kHz mono** regenerado por
+  `assets/mixable_wavs.sh` (extrai o MP3 do próprio header + afconvert);
+  quando idle o MESMO WAV toca pelo decoder. Overlay morre em troca/fim de
+  mídia (sem cauda órfã). Serial: `mix` testa. MP3s/WAVs em PROGMEM. Volume
+  0-100 com curva perceptual `pow(v, 2.5)` (overlay mixa PRÉ-Amplify: segue
+  o volume). Decoder task no **core 1** (prio 5); rede de mídia no core 0.
+  **Áudio validado no hardware.**
 - **Menu de config (tela cheia)**: abre por **swipe pra baixo** (ou tap na aba
   ⌄); fecha por swipe pra cima; aba esquerda = voltar um nível (`menuParent`).
   Estrutura aninhada: **Main 2x2** = Audio | Luz | **Conexao** | **Seguranca**.

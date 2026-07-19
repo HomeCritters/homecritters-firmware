@@ -279,6 +279,21 @@ void AudioPlayer::stopStream() {
   portEXIT_CRITICAL(&_reqMux);
 }
 
+// Mixable SFX (WAV 16k mono, see assets/mixable_wavs.sh): if anything is
+// already sounding, SUM the SFX on top of it via the AudioCodec overlay -
+// thunder over the rain ambience, clicks over music - instead of dropping or
+// preempting. Policy: ONE overlay channel (a new one replaces the previous)
+// and never over TTS (the spoken reply has priority). Idle = decoder path,
+// same as any SFX (the decoder plays WAV natively).
+void AudioPlayer::playMix(const unsigned char* wav, unsigned int len) {
+  if (busy()) {
+    if (_streaming && _kind == MEDIA_TTS) return;  // voice has priority
+    AudioCodec::startOverlay(wav, len);
+    return;
+  }
+  play(wav, len);
+}
+
 void AudioPlayer::playSleepTune() { play(sleep_music_mp3, sleep_music_mp3_len); }
 void AudioPlayer::playWake()      { play(sfx_wake_mp3,     sfx_wake_mp3_len); }
 void AudioPlayer::playEat()       { play(sfx_eat_mp3,      sfx_eat_mp3_len); }
@@ -290,21 +305,23 @@ void AudioPlayer::playCrumble()   { play(sfx_crumble_mp3,  sfx_crumble_mp3_len);
 void AudioPlayer::playRecord()    { play(sfx_record_mp3,   sfx_record_mp3_len); }
 void AudioPlayer::playDeath()     { play(sfx_death_mp3,    sfx_death_mp3_len); }
 void AudioPlayer::playThrow()     { play(sfx_throw_mp3,    sfx_throw_mp3_len); }
-void AudioPlayer::playCamera()    { play(sfx_camera_mp3,   sfx_camera_mp3_len); }
-void AudioPlayer::playClick()     { play(sfx_click_mp3,    sfx_click_mp3_len); }
+void AudioPlayer::playCamera()    { playMix(sfx_camera_wav, sfx_camera_wav_len); }
+void AudioPlayer::playClick()     { playMix(sfx_click_wav,  sfx_click_wav_len); }
 void AudioPlayer::playBuzzer()    { play(sfx_buzzer_mp3,   sfx_buzzer_mp3_len); }
-void AudioPlayer::playThunder()   { if (!busy()) play(sfx_thunder_mp3, sfx_thunder_mp3_len); }
+// Thunder rides ON TOP of the rain bed now (the whole point of the mixer);
+// the old !busy() gate made storms silent whenever the ambience was playing.
+void AudioPlayer::playThunder()   { playMix(sfx_thunder_wav, sfx_thunder_wav_len); }
 void AudioPlayer::playRainAmb()   { if (!busy()) play(sfx_rainamb_mp3, sfx_rainamb_mp3_len); }
 void AudioPlayer::playWindAmb()   { if (!busy()) play(sfx_wind_mp3,    sfx_wind_mp3_len); }
 void AudioPlayer::playListen()    { play(sfx_listen_mp3,   sfx_listen_mp3_len); }
 void AudioPlayer::playConfirm()   { play(sfx_confirm_wav,  sfx_confirm_wav_len); }
 
 void AudioPlayer::playSimon(int color) {
-  switch (color) {
-    case 0: play(simon_green_wav,  simon_green_wav_len);  break;
-    case 1: play(simon_red_wav,    simon_red_wav_len);    break;
-    case 2: play(simon_yellow_wav, simon_yellow_wav_len); break;
-    case 3: play(simon_blue_wav,   simon_blue_wav_len);   break;
+  switch (color) {  // mixable: the Genius tones sum over the party music
+    case 0: playMix(simon_green_wav,  simon_green_wav_len);  break;
+    case 1: playMix(simon_red_wav,    simon_red_wav_len);    break;
+    case 2: playMix(simon_yellow_wav, simon_yellow_wav_len); break;
+    case 3: playMix(simon_blue_wav,   simon_blue_wav_len);   break;
   }
 }
 
@@ -386,6 +403,7 @@ void AudioPlayer::startMedia(const char* url) {
 // parks; it only touches the ring, never _dec/_src), then decoder, then the
 // ring reset - both sides are quiescent by then. Decoder task only.
 void AudioPlayer::stopMedia() {
+  AudioCodec::stopOverlay();  // a track change must not drag an SFX tail along
   _reader.stop();
   const uint32_t t0 = millis();
   while (!_reader.idle() && millis() - t0 < 2500) vTaskDelay(1);
@@ -466,6 +484,9 @@ void AudioPlayer::taskLoop() {
 
     if (_playing) {
       if (!DEC->loop()) {  // clip finished / EOF (or a live stream dropped)
+        // The pump is about to stop: kill any overlay too, or its unplayed
+        // tail would resume out of nowhere when the NEXT sound starts.
+        AudioCodec::stopOverlay();
         if (_live) {
           // Diagnose why media ended: fill>0 = decoder choked on the data;
           // fill==0 = the source dried up (clean EOF or dead server).

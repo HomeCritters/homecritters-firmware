@@ -42,6 +42,18 @@ size_t readMicMono(int16_t* dst, size_t frames, uint32_t timeoutMs);
 // Fed by CodecOutput::ConsumeSample; drives the beat-following party LED.
 uint16_t outLevel();
 
+// --- SFX overlay (the mixer) -------------------------------------------
+// Plays a WAV (PCM16 MONO, standard 44-byte header - the format our asset
+// pipeline generates) ON TOP of whatever the decoder is sending to the DAC:
+// thunder over the rain ambience, clicks over music. ONE channel - a new
+// overlay replaces the previous. The overlay only sounds while a decoded
+// stream is pumping ConsumeSample (it is a mix-in, not a source); the idle
+// path keeps playing SFX through the decoder as before (AudioPlayer routes).
+// Returns false if the WAV isn't PCM16 mono. gain: 0..255 (255 = 1.0).
+bool startOverlay(const uint8_t* wav, uint32_t len, uint8_t gain = 230);
+void stopOverlay();
+bool overlayActive();
+
 }  // namespace AudioCodec
 
 // AudioOutput sink the ESP8266Audio decoders write into. Delegates to the
