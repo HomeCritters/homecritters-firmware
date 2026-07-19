@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <atomic>
 
 // ============================================================
 // Weather: standalone real-weather client (NO Home Assistant).
@@ -85,8 +86,13 @@ class Weather {
   void saveNvs();
 
   // --- location (NVS) ---
-  bool _hasLoc = false;
-  float _lat = 0, _lon = 0;
+  // Written by the render thread (setLocation), read by the core-0 fetch task.
+  // Atomics with release/acquire ordering: _hasLoc is stored LAST (release) so
+  // when the task sees it true, the lat/lon it then loads are the new pair - a
+  // plain bool gave no such guarantee across cores (torn-location fetches).
+  // _city stays plain: it's only touched on the render thread (display/NVS).
+  std::atomic<bool> _hasLoc{false};
+  std::atomic<float> _lat{0}, _lon{0};
   char _city[25] = {0};
 
   // --- adopted model (main thread reads) ---
@@ -106,8 +112,11 @@ class Weather {
     int dayCount;
   };
   Staging _st = {};
-  volatile bool _stReady = false;   // task -> main handoff
-  volatile bool _fetchNow = false;  // main -> task "fetch asap"
+  // task -> main handoff: the task fills _st, THEN stores _stReady (release);
+  // loop() loads it (acquire) before copying, so the payload writes are
+  // visible on the other core. volatile alone is not a memory barrier.
+  std::atomic<bool> _stReady{false};
+  std::atomic<bool> _fetchNow{false};  // main -> task "fetch asap" (flag only)
   bool (*_busy)() = nullptr;
   TaskHandle_t _task = nullptr;
 };

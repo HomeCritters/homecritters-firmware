@@ -50,11 +50,19 @@ void StatusLed::update(Mood mood) {
 
 void StatusLed::setBrightness(int pct) {
   _brightPct = constrain(pct, 0, 100);
+  // NVS write is debounced (flushNvs): a portal slider drag fires this dozens
+  // of times and each write blocks the render loop on a flash commit.
+  _nvsDirtyAt = millis() | 1;
+  if (!_death) render(moodColor(_last), pctToRaw(_brightPct));  // apply now
+}
+
+void StatusLed::flushNvs() {
+  if (!_nvsDirtyAt || millis() - _nvsDirtyAt < 2000) return;
+  _nvsDirtyAt = 0;
   Preferences p;
   p.begin("led", false);
   p.putInt("bright", _brightPct);
   p.end();
-  if (!_death) render(moodColor(_last), pctToRaw(_brightPct));  // apply now
 }
 
 void StatusLed::startDeath() {

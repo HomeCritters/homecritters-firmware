@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "LGFX_BallV2.h"
 #include "UiLayout.h"
 #include "Theme.h"
@@ -37,6 +38,7 @@ class Renderer {
   // the display, so it owns this too. Floored so the screen never goes dark.
   void setScreenBrightness(int pct);
   int screenBrightness() const { return _scrBright; }
+  void flushNvs();  // debounced brightness persist - call every loop
   // Full-sleep blank: backlight hard off / restore (never persisted).
   void setDisplayOff(bool off);
   // Active pairing PIN ("" = none): draws a full-screen overlay with the
@@ -101,14 +103,19 @@ class Renderer {
   int _pressedButton = -1;
   unsigned long _pressedUntil = 0;
   int _scrBright = 70;  // screen backlight brightness (0..100)
+  unsigned long _nvsDirtyAt = 0;  // 0 = clean; else millis() of last change
   bool _displayOff = false;  // full-sleep blank (setDisplayOff)
   char _pairPin[7] = {0};       // active pairing PIN ("" = no overlay)
   char _clientsInfo[120] = {0}; // authed WS clients ('\n'-separated)
   bool _revokeArmed = false;    // revoke button in "Confirma?" state
 
-  uint16_t* _snap = nullptr;       // stable copy of the canvas for /shot.bmp
-  volatile bool _snapReq = false;  // HTTP task -> render loop
-  volatile bool _snapReady = false;
+  uint16_t* _snap = nullptr;  // stable copy of the canvas for /shot.bmp
+  // HTTP task (core 0) <-> render loop (core 1) handoff. Atomics, not plain
+  // volatile: the render loop fills _snap and THEN stores _snapReady, and the
+  // seq_cst ordering guarantees the HTTP task that sees _snapReady==true also
+  // sees the finished pixels (volatile gave no cross-core ordering at all).
+  std::atomic<bool> _snapReq{false};
+  std::atomic<bool> _snapReady{false};
 
   // Palette active for the current frame (day or night). Set at the top
   // of draw() and read by the helpers, instead of threading a parameter.

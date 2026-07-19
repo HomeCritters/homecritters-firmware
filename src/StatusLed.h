@@ -15,8 +15,9 @@ class StatusLed {
   void begin();
   void update(Mood mood);        // mood-driven (call every loop)
 
-  void setBrightness(int pct);   // 0..100, persisted to NVS
+  void setBrightness(int pct);   // 0..100 (applied now, NVS via flushNvs)
   int brightness() const { return _brightPct; }
+  void flushNvs();               // debounced persist - call every loop
 
   void startDeath();             // begin the game-over red effect
   void endGame();                // leaving the game -> back to mood
@@ -31,6 +32,7 @@ class StatusLed {
   Mood _last = MOOD_HAPPY;
   bool _init = false;
   int _brightPct = 50;
+  unsigned long _nvsDirtyAt = 0;  // 0 = clean; else millis() of last change
   bool _death = false;
   bool _override = false;    // game color override active (Genius)
   bool _deathOn = false;     // current blink phase (avoid redundant writes)

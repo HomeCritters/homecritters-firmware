@@ -52,6 +52,14 @@ void Renderer::takeWebSnapshot() {
 void Renderer::setScreenBrightness(int pct) {
   _scrBright = constrain(pct, 20, 100);
   if (!_displayOff) _lcd.setBrightness(map(_scrBright, 0, 100, 0, 255));
+  // NVS write is debounced (flushNvs): a portal slider drag fires this dozens
+  // of times and each write blocks the render loop on a flash commit.
+  _nvsDirtyAt = millis() | 1;
+}
+
+void Renderer::flushNvs() {
+  if (!_nvsDirtyAt || millis() - _nvsDirtyAt < 2000) return;
+  _nvsDirtyAt = 0;
   Preferences p;
   p.begin("disp", false);
   p.putInt("scr", _scrBright);

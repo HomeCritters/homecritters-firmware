@@ -195,6 +195,14 @@ void AudioPlayer::applyGain() {
 void AudioPlayer::setVolume(int pct) {
   _volume = constrain(pct, 0, 100);
   applyGain();
+  // NVS write is debounced (flushNvs): a portal slider drag fires this dozens
+  // of times and each write blocks the render loop on a flash commit.
+  _nvsDirtyAt = millis() | 1;
+}
+
+void AudioPlayer::flushNvs() {
+  if (!_nvsDirtyAt || millis() - _nvsDirtyAt < 2000) return;
+  _nvsDirtyAt = 0;
   Preferences p;
   p.begin("audio", false);
   p.putInt("vol", _volume);

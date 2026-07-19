@@ -69,9 +69,10 @@ class AudioPlayer {
   // Live output loudness 0..255 (post-gain PCM envelope) - party LED beat.
   int mediaLevel() const;
 
-  // Volume 0..100 (persisted to NVS, perceptual curve).
+  // Volume 0..100 (applied now, NVS via flushNvs; perceptual curve).
   void setVolume(int pct);
   int volume() const { return _volume; }
+  void flushNvs();  // debounced persist - call every loop
 
   // Mic ADC gain step 0..7 (0/6/.../42 dB) - live tuning during bring-up.
   void setMicGain(int step);
@@ -83,6 +84,7 @@ class AudioPlayer {
   void applyGain();
 
   int _volume = 80;
+  unsigned long _nvsDirtyAt = 0;  // 0 = clean; else millis() of last change
 
   static void taskTrampoline(void* arg);
   void taskLoop();

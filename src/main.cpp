@@ -826,6 +826,11 @@ void loop() {
     pet.save();
     lastSaveMs = now;
   }
+  // Debounced settings persists (volume / LED / screen brightness): the
+  // sliders apply instantly in RAM, flash gets ONE write 2s after the drag.
+  audio.flushNvs();
+  led.flushNvs();
+  renderer.flushNvs();
 
   // Battery: sample every few seconds (ADC read) and share with the portal.
   static unsigned long lastBattMs = 0;

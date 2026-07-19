@@ -204,7 +204,9 @@ void Weather::saveNvs() {
 }
 
 void Weather::setLocation(float lat, float lon, const char* city) {
-  // Bound to real-world coordinates (inputs arrive from WS/serial/HA).
+  // Park the fetch task first so it never reads a half-updated pair, then
+  // bound to real-world coordinates (inputs arrive from WS/serial/HA).
+  _hasLoc = false;
   _lat = constrain(lat, -90.0f, 90.0f);
   _lon = constrain(lon, -180.0f, 180.0f);
   // ASCII-only for the display font (portal already transliterates; belt
@@ -266,6 +268,9 @@ void Weather::taskLoop() {
 }
 
 bool Weather::fetchOnce() {
+  // Atomic loads AFTER the _hasLoc check in taskLoop: the pair is coherent
+  // (setLocation stores lat/lon before flipping _hasLoc).
+  const float lat = _lat, lon = _lon;
   char url[256];
   snprintf(url, sizeof(url),
            "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"
@@ -273,7 +278,7 @@ bool Weather::fetchOnce() {
            "&daily=weather_code,temperature_2m_max,temperature_2m_min,"
            "precipitation_probability_max"
            "&timezone=auto&forecast_days=%d",
-           _lat, _lon, MAX_DAYS);
+           lat, lon, MAX_DAYS);
 
   esp_http_client_config_t cfg = {};
   cfg.url = url;

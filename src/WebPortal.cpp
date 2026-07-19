@@ -255,7 +255,10 @@ void WebPortal::pumpMic() {
   // muted OR night mode = hard gates: nothing leaves the device
   if (!_micOn || _micClient < 0 || _micMuted || _fullSleep) return;
   uint8_t buf[640];  // one 20ms frame per send (320 samples * 2 bytes)
-  for (int i = 0; i < 8; i++) {   // cap the work per loop iteration
+  // Cap at 4 frames per loop iteration: the producer makes 1 frame per 20ms
+  // and the render loop runs ~every 30ms, so 4 keeps up with any backlog
+  // while halving the worst-case time spent in TCP sends per frame drawn.
+  for (int i = 0; i < 4; i++) {
     if (_micRing.fill() < sizeof(buf)) break;
     _micRing.readAvail(buf, sizeof(buf));
     if (!_ws.sendBIN((uint8_t)_micClient, buf, sizeof(buf))) {
