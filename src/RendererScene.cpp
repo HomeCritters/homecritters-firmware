@@ -794,12 +794,11 @@ void Renderer::drawJuninaDecor(bool night) {
                                     rgb565(90, 200, 110), rgb565(90, 140, 250)};
   const unsigned long ms = millis();
   // --- two flag garlands: cabin->pine and pine->pine (a real arraial). The
-  // left end ties to the CABIN ROOF TIP (52,90) and rises to the pine; a
-  // gentle sag and skipping the first flag keep the bunting off the roof
-  // (it used to either float above the cabin or droop over it). ---
+  // left end ties to the CABIN ROOF TIP - measured at (52,71) with GROUND_Y=108
+  // (the peak = by - wallH - 15 = 108 - 22 - 15). ---
   const uint16_t rope = rgb565(120, 96, 70);
   struct GL { int16_t x0, y0, x1, y1; uint8_t sag, flagFrom; };
-  static const GL garlands[2] = {{52, 90, 90, 68, 4, 3}, {90, 68, 210, 62, 12, 1}};
+  static const GL garlands[2] = {{52, 71, 90, 68, 4, 1}, {90, 68, 210, 62, 12, 1}};
   for (const auto& gl : garlands) {
     int px = gl.x0, py = gl.y0;
     for (int i = 1; i <= 10; i++) {
