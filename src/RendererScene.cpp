@@ -486,23 +486,30 @@ void Renderer::drawHat(FerretActor& f) {
 
   int ax, ay;  // head-top in 1x sprite coords
   if (!accessoryAnchor(an, f.faceLeft(), f.frameIndex(), &ax, &ay)) return;
-  const int hx = f.x() + (int)(ax * 2.5f);  // head-top center on screen
-  const int hy = f.y() + (int)(ay * 2.5f);
 
+  // Tilted hats (santa/witch/nightcap tips, authored leaning RIGHT) must
+  // flop BACKWARD, away from the face: right-facing ferret wears the
+  // mirrored (left-leaning) variant and vice versa. Symmetric hats
+  // (party/straw) just pick either.
   const bool L = f.faceLeft();
   const uint16_t* spr;
   int w, hgt;
   switch (h) {
-    // Nightcap flops AWAY from the face (the lying sprite faces right, so
-    // use the mirrored cap - preview showed the cone covering his eyes).
     case HAT_SLEEP: spr = hat_sleep_l; w = hat_sleep_w; hgt = hat_sleep_h; break;
-    case HAT_PARTY: spr = L ? hat_party_l : hat_party; w = hat_party_w; hgt = hat_party_h; break;
-    case HAT_SANTA: spr = L ? hat_santa_l : hat_santa; w = hat_santa_w; hgt = hat_santa_h; break;
-    case HAT_PALHA: spr = L ? hat_palha_l : hat_palha; w = hat_palha_w; hgt = hat_palha_h; break;
-    default:        spr = L ? hat_bruxa_l : hat_bruxa; w = hat_bruxa_w; hgt = hat_bruxa_h; break;
+    case HAT_PARTY: spr = hat_party; w = hat_party_w; hgt = hat_party_h; break;
+    case HAT_SANTA: spr = L ? hat_santa : hat_santa_l; w = hat_santa_w; hgt = hat_santa_h; break;
+    case HAT_PALHA: spr = hat_palha; w = hat_palha_w; hgt = hat_palha_h; break;
+    default:        spr = L ? hat_bruxa : hat_bruxa_l; w = hat_bruxa_w; hgt = hat_bruxa_h; break;
   }
-  // Brim sits ON the head: overlap the anchor by ~6px so it hugs the fur.
-  _canvas.pushImage(hx - w / 2, hy - hgt + 6, w, hgt, spr, (uint16_t)0xF81F);
+  // Position in 1x SPRITE space and scale once: the hat lands on the same
+  // 2.5px pixel lattice as the ferret. Screen-space placement drifted by
+  // sub-grid fractions per frame, which read as the hat floating.
+  const int w1 = (int)roundf(w / 2.5f), h1 = (int)roundf(hgt / 2.5f);
+  const int x1 = ax - w1 / 2;
+  const int y1 = ay - h1 + 2;  // brim overlaps the skull by 2 source px
+  _canvas.pushImage(f.x() + (int)roundf(x1 * 2.5f),
+                    f.y() + (int)roundf(y1 * 2.5f), w, hgt, spr,
+                    (uint16_t)0xF81F);
 }
 
 // Christmas: colored lights blinking along the cabin roof + a star on the
