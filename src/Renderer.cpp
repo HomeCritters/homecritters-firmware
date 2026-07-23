@@ -40,24 +40,38 @@ void Renderer::begin() {
 void Renderer::beginScreen(uint16_t bg) { _canvas.fillScreen(bg); }
 void Renderer::endScreen() { _canvas.pushSprite(0, 0); }
 
-// RLE-encode the current canvas for the portal's live screen (see header).
-size_t Renderer::encodeScreenRle(uint8_t* out, size_t cap) const {
+// Delta-encode the canvas for the portal's live screen (see header): emit
+// only rows that changed vs the previous sent frame.
+size_t Renderer::encodeScreen(uint8_t* out, size_t cap, bool full) {
   const uint8_t* px = (const uint8_t*)_canvas.getBuffer();
   if (!px || !out) return 0;
-  const int N = SCREEN_W * SCREEN_H;
+  const int stride = SCREEN_W * 2;  // bytes per row
+  if (!_prevFrame) {
+    _prevFrame = (uint8_t*)ps_malloc(SCREEN_W * SCREEN_H * 2);
+    full = true;  // no baseline yet
+  }
   size_t o = 0;
-  int i = 0;
-  while (i < N) {
-    const uint8_t b0 = px[2 * i], b1 = px[2 * i + 1];
-    int run = 1;
-    while (i + run < N && run < 255 &&
-           px[2 * (i + run)] == b0 && px[2 * (i + run) + 1] == b1)
-      run++;
-    if (o + 3 > cap) return 0;  // pathological frame: caller skips it
-    out[o++] = (uint8_t)run;
-    out[o++] = b0;
-    out[o++] = b1;
-    i += run;
+  for (int r = 0; r < SCREEN_H; r++) {
+    const uint8_t* row = px + r * stride;
+    uint8_t* prow = _prevFrame ? _prevFrame + r * stride : nullptr;
+    if (!full && prow && memcmp(row, prow, stride) == 0) continue;  // unchanged
+    if (o + 1 > cap) return 0;
+    out[o++] = (uint8_t)r;  // 0..239
+    // RLE this row's 240 pixels (runs never cross the row boundary).
+    int i = 0;
+    while (i < SCREEN_W) {
+      const uint8_t b0 = row[2 * i], b1 = row[2 * i + 1];
+      int run = 1;
+      while (i + run < SCREEN_W && run < 255 &&
+             row[2 * (i + run)] == b0 && row[2 * (i + run) + 1] == b1)
+        run++;
+      if (o + 3 > cap) return 0;
+      out[o++] = (uint8_t)run;
+      out[o++] = b0;
+      out[o++] = b1;
+      i += run;
+    }
+    if (prow) memcpy(prow, row, stride);  // this row is now the baseline
   }
   return o;
 }

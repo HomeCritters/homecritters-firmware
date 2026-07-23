@@ -264,6 +264,7 @@ class WebPortal {
   // Live screen viewer (portal): the socket watching, its keepalive stamp,
   // and the PSRAM encode buffer. -1 = nobody watching.
   int _screenClient = -1;
+  bool _screenFull = true;  // next frame must be a full (non-delta) send
   unsigned long _screenReqAt = 0;
   unsigned long _screenLastFrame = 0;
   uint8_t* _screenBuf = nullptr;

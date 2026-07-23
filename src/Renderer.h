@@ -104,12 +104,17 @@ class Renderer {
   const uint16_t* webSnapshot() const { return _snap; }
   void clearWebSnapshot() { _snapReady = false; }
 
-  // Live screen streaming: RLE-encode the finished canvas (RGB565, bytes as
-  // stored - big-endian) into `out` for the portal's live view. Each run is
-  // {u8 count 1..255, u8 hi, u8 lo}. Returns bytes written, or 0 if it won't
-  // fit in cap (caller skips the frame). Called on the render thread, post-
-  // draw (the canvas holds a complete frame - same guarantee as the shot).
-  size_t encodeScreenRle(uint8_t* out, size_t cap) const;
+  // Live screen streaming for the portal. Encodes the finished canvas as a
+  // set of CHANGED ROWS vs the last sent frame (delta): most of the scene is
+  // static, so a moving-Leon frame is only ~30 rows (~2KB) instead of the
+  // whole 240 (~8KB), which lets us push a much higher frame rate. Wire
+  // format: a run of records `{u8 rowIdx, RLE of that row's 240 px}`, where
+  // each RLE run is `{u8 count 1..255, u8 hi, u8 lo}` (RGB565, big-endian as
+  // stored) and a row always sums to exactly 240 px (so the decoder knows
+  // where the next rowIdx byte begins). `full` forces every row (first frame
+  // for a new viewer). Returns bytes written, or 0 if it won't fit in cap.
+  // Render thread, post-draw. Keeps its own previous-frame buffer.
+  size_t encodeScreen(uint8_t* out, size_t cap, bool full);
 
  private:
   LGFX_BallV2& _lcd;
@@ -125,6 +130,7 @@ class Renderer {
   bool _revokeArmed = false;    // revoke button in "Confirma?" state
 
   uint16_t* _snap = nullptr;  // stable copy of the canvas for /shot.bmp
+  uint8_t* _prevFrame = nullptr;  // last streamed frame (delta base, PSRAM)
   // HTTP task (core 0) <-> render loop (core 1) handoff. Atomics, not plain
   // volatile: the render loop fills _snap and THEN stores _snapReady, and the
   // seq_cst ordering guarantees the HTTP task that sees _snapReady==true also

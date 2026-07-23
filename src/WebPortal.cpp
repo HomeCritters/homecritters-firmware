@@ -185,13 +185,17 @@ void WebPortal::pumpScreen(Renderer& renderer) {
   if (_screenClient < 0) return;
   const unsigned long now = millis();
   if (now - _screenReqAt > 10000) { _screenClient = -1; return; }  // keepalive lapsed
-  if (now - _screenLastFrame < 240) return;                        // ~4fps cap
+  if (now - _screenLastFrame < 55) return;                         // ~18fps cap
   if (!_screenBuf) {
-    _screenBuf = (uint8_t*)ps_malloc(140 * 1024);  // >2x a typical RLE frame
+    _screenBuf = (uint8_t*)ps_malloc(140 * 1024);
     if (!_screenBuf) { _screenClient = -1; return; }
   }
-  const size_t n = renderer.encodeScreenRle(_screenBuf, 140 * 1024);
-  if (n) _ws.sendBIN((uint8_t)_screenClient, _screenBuf, n);
+  // First frame for a fresh viewer must be full; deltas after that.
+  const size_t n = renderer.encodeScreen(_screenBuf, 140 * 1024, _screenFull);
+  if (n) {
+    _ws.sendBIN((uint8_t)_screenClient, _screenBuf, n);
+    _screenFull = false;
+  }
   _screenLastFrame = now;
 }
 
@@ -676,6 +680,7 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     // portal resends screen:on every ~3s as a keepalive; a dead viewer times
     // out (pumpScreen) or drops on disconnect. One viewer at a time.
     if (msg == "screen:on") {
+      if ((int)num != _screenClient) _screenFull = true;  // new viewer: full frame
       _screenClient = num;
       _screenReqAt = millis();
       return;

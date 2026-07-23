@@ -21,22 +21,30 @@ export default function LiveScreen({ open, onClose, send, setFrameHandler }) {
     const ctx = canvasRef.current.getContext('2d');
     imgDataRef.current = ctx.createImageData(W, H);
 
-    // Decode one RLE frame ({count, hi, lo} triples) into the ImageData.
+    // Decode a DELTA frame: a run of records {rowIdx, RLE of that row's 240
+    // px}. Only the rows present are updated; the ImageData (and canvas)
+    // persist between frames, so a static scene needs almost no data.
     const onFrame = (buf) => {
       const b = new Uint8Array(buf);
       const out = imgDataRef.current.data;
-      let di = 0;
-      for (let k = 0; k + 2 < b.length; k += 3) {
-        const run = b[k];
-        const v = (b[k + 1] << 8) | b[k + 2];   // RGB565, big-endian
-        const r5 = (v >> 11) & 0x1f;
-        const g6 = (v >> 5) & 0x3f;
-        const b5 = v & 0x1f;
-        const R = (r5 << 3) | (r5 >> 2);
-        const G = (g6 << 2) | (g6 >> 4);
-        const B = (b5 << 3) | (b5 >> 2);
-        for (let n = 0; n < run && di < out.length; n++) {
-          out[di++] = R; out[di++] = G; out[di++] = B; out[di++] = 255;
+      let k = 0;
+      while (k < b.length) {
+        const row = b[k++];
+        let di = row * W * 4;   // start of this row in RGBA
+        let filled = 0;
+        while (filled < W && k + 2 < b.length) {
+          const run = b[k];
+          const v = (b[k + 1] << 8) | b[k + 2];   // RGB565, big-endian
+          k += 3;
+          const r5 = (v >> 11) & 0x1f;
+          const g6 = (v >> 5) & 0x3f;
+          const b5 = v & 0x1f;
+          const R = (r5 << 3) | (r5 >> 2);
+          const G = (g6 << 2) | (g6 >> 4);
+          const B = (b5 << 3) | (b5 >> 2);
+          for (let n = 0; n < run && filled < W; n++, filled++) {
+            out[di++] = R; out[di++] = G; out[di++] = B; out[di++] = 255;
+          }
         }
       }
       ctx.putImageData(imgDataRef.current, 0, 0);
