@@ -166,8 +166,8 @@ class Renderer {
   // Festive scene decorations (RendererScene.cpp):
   void drawXmasDecor(bool night);        // cabin lights + star on the big pine
   void drawHalloweenDecor(bool night);   // carved pumpkin (glows at night)
-  void drawJuninaDecor();                // flag garland between the pines
-  void drawParty();                      // birthday balloons + confetti
+  void drawJuninaDecor(bool night);      // garland + bonfire + sky lanterns
+  void drawParty(bool night);            // cake + drifting balloons + confetti
   void drawHeader(const Pet& pet, bool wifiOn, bool micMuted, bool micLive);
   void drawMenuHandle();
   void drawRightHandle();
