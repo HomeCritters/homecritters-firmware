@@ -467,21 +467,24 @@ void Renderer::drawXmasDecor(bool night) {
     const uint16_t c = LIGHTS[i % 4];
     _canvas.fillCircle(x, y + 2, on ? 2 : 1, on ? c : lerp565(c, _p.cabinRoof, 0.6f));
   }
-  // star on the big pine (210, ~59), twinkling
-  const uint16_t gold = rgb565(250, 220, 90);
-  const int sx = 210, sy = 59;
-  const int r = ((ms / 600) % 2) ? 3 : 2;
-  _canvas.drawFastHLine(sx - r, sy, 2 * r + 1, gold);
+  // bright twinkling star crowning the big pine (210, ~59)
+  const uint16_t gold = rgb565(252, 224, 96), glow = rgb565(255, 245, 170);
+  const int sx = 210, sy = 58;
+  const int r = ((ms / 500) % 2) ? 5 : 4;
+  _canvas.fillCircle(sx, sy, 2, glow);                        // core
+  _canvas.drawFastHLine(sx - r, sy, 2 * r + 1, gold);         // 4 rays
   _canvas.drawFastVLine(sx, sy - r, 2 * r + 1, gold);
-  _canvas.drawPixel(sx - 1, sy - 1, gold); _canvas.drawPixel(sx + 1, sy - 1, gold);
-  _canvas.drawPixel(sx - 1, sy + 1, gold); _canvas.drawPixel(sx + 1, sy + 1, gold);
+  for (int d = 1; d < r - 1; d++) {                           // diagonals
+    _canvas.drawPixel(sx - d, sy - d, gold); _canvas.drawPixel(sx + d, sy - d, gold);
+    _canvas.drawPixel(sx - d, sy + d, gold); _canvas.drawPixel(sx + d, sy + d, gold);
+  }
 
   // gift boxes by the cabin door (ribbon cross + bow)
   struct G { int16_t x, y, w, h; uint16_t box, rib; };
   static const G gifts[3] = {
-      {82, 116, 10, 8, rgb565(200, 60, 70), rgb565(250, 210, 80)},
-      {94, 118, 8, 6, rgb565(80, 150, 220), rgb565(240, 240, 240)},
-      {87, 110, 7, 6, rgb565(90, 190, 110), rgb565(200, 60, 70)},
+      {56, 116, 13, 11, rgb565(200, 60, 70), rgb565(250, 210, 80)},
+      {70, 119, 10, 8, rgb565(80, 150, 220), rgb565(240, 240, 240)},
+      {60, 108, 9, 8, rgb565(90, 190, 110), rgb565(200, 60, 70)},
   };
   for (const auto& g : gifts) {
     _canvas.fillRect(g.x, g.y, g.w, g.h, g.box);
@@ -520,49 +523,58 @@ void Renderer::drawXmasDecor(bool night) {
 // witch cauldron bubbling GREEN smoke (brighter and pulsing after dark).
 void Renderer::drawHalloweenDecor(bool night) {
   const unsigned long ms = millis();
-  // --- tombstones (one straight, one tilted) ---
-  const uint16_t stone = rgb565(120, 122, 134), stoneDk = rgb565(84, 86, 98);
-  _canvas.fillRoundRect(150, 110, 10, 14, 3, stone);
-  _canvas.drawFastVLine(155, 113, 5, stoneDk);   // cross
-  _canvas.drawFastHLine(153, 115, 5, stoneDk);
-  _canvas.fillRoundRect(176, 114, 9, 11, 3, stoneDk);  // tilted, in shadow
-  _canvas.drawFastHLine(178, 118, 5, stone);
-  _canvas.drawFastHLine(178, 121, 5, stone);
-  // skull + crossed bone at the tilted grave
-  const uint16_t bone = rgb565(230, 228, 214);
-  _canvas.fillRoundRect(188, 121, 5, 4, 1, bone);
-  _canvas.drawPixel(189, 122, stoneDk); _canvas.drawPixel(191, 122, stoneDk);
-  _canvas.drawFastHLine(187, 126, 7, bone);
+  // --- graveyard cluster on the LEFT (clear of the pumpkin/cauldron) ---
+  const uint16_t stone = rgb565(140, 142, 154), stoneDk = rgb565(92, 94, 106);
+  // rounded headstone with RIP, casting a small shadow
+  _canvas.fillEllipse(40, 126, 12, 3, rgb565(20, 24, 20));          // shadow
+  _canvas.fillRoundRect(33, 104, 15, 22, 6, stone);
+  _canvas.fillRect(33, 114, 15, 12, stone);
+  _canvas.setTextColor(stoneDk);
+  _canvas.setTextSize(1);
+  _canvas.setCursor(35, 110); _canvas.print("RIP");
+  // tilted cross grave next to it
+  _canvas.fillEllipse(62, 127, 9, 3, rgb565(20, 24, 20));
+  _canvas.fillRect(60, 112, 4, 15, stoneDk);
+  _canvas.fillRect(56, 116, 12, 3, stoneDk);
+  // a clear skull sitting on the grass (readable: 6px, dark sockets + jaw)
+  const uint16_t bone = rgb565(236, 232, 216), boneDk = rgb565(40, 34, 40);
+  _canvas.fillRoundRect(78, 120, 8, 7, 3, bone);
+  _canvas.fillRect(79, 127, 6, 2, bone);                            // jaw
+  _canvas.fillRect(80, 122, 2, 2, boneDk);                          // eyes
+  _canvas.fillRect(83, 122, 2, 2, boneDk);
+  _canvas.drawFastVLine(81, 125, 2, boneDk);                        // nose
+  _canvas.drawFastVLine(82, 128, 1, boneDk);                        // tooth gap
 
-  // --- witch cauldron by the cabin, green brew ---
-  const int cx = 58, cy = 120;
-  const float pulse = 0.5f + 0.5f * sinf(ms / 600.0f);
-  const uint16_t brew = night ? lerp565(rgb565(60, 200, 80), rgb565(150, 255, 130), pulse)
-                              : rgb565(70, 160, 80);
-  if (night)  // ground glow
-    _canvas.fillEllipse(cx, cy + 4, 14, 4, lerp565(_p.ground, rgb565(60, 180, 70), 0.35f * pulse + 0.15f));
-  _canvas.fillEllipse(cx, cy, 9, 6, rgb565(38, 38, 46));      // pot
-  _canvas.fillRect(cx - 9, cy - 5, 19, 3, rgb565(52, 52, 62)); // rim
-  _canvas.drawFastHLine(cx - 7, cy - 6, 15, brew);             // brew surface
-  _canvas.drawFastVLine(cx - 6, cy + 5, 3, rgb565(30, 30, 36));  // legs
-  _canvas.drawFastVLine(cx + 6, cy + 5, 3, rgb565(30, 30, 36));
-  // bubbles popping on the surface
-  for (int i = 0; i < 2; i++) {
-    const int b = (int)((ms / 180 + i * 5) % 9);
-    if (b < 4) _canvas.drawPixel(cx - 4 + i * 7 + b, cy - 7, brew);
+  // --- witch cauldron on the RIGHT, well clear of the cabin/Leon ---
+  const int cx = 206, cy = 122;
+  const float pulse = 0.5f + 0.5f * sinf(ms / 500.0f);
+  const uint16_t brew = night ? lerp565(rgb565(70, 220, 90), rgb565(170, 255, 150), pulse)
+                              : rgb565(80, 175, 90);
+  // big ground glow so it reads as MAGIC
+  _canvas.fillEllipse(cx, cy + 5, 20, 6,
+                      lerp565(_p.ground, rgb565(70, 210, 80), (night ? 0.45f : 0.2f) * pulse + 0.18f));
+  _canvas.fillEllipse(cx, cy, 12, 8, rgb565(34, 34, 42));           // pot (bigger)
+  _canvas.fillRect(cx - 12, cy - 6, 25, 3, rgb565(50, 50, 60));     // rim
+  _canvas.drawFastHLine(cx - 10, cy - 7, 21, brew);                 // brew
+  _canvas.drawFastHLine(cx - 9, cy - 8, 19, lerp565(brew, rgb565(220, 255, 200), 0.5f));
+  _canvas.drawFastVLine(cx - 8, cy + 7, 4, rgb565(28, 28, 34));     // legs
+  _canvas.drawFastVLine(cx + 8, cy + 7, 4, rgb565(28, 28, 34));
+  for (int i = 0; i < 3; i++) {  // bubbles
+    const int b = (int)((ms / 150 + i * 5) % 10);
+    if (b < 5) _canvas.fillCircle(cx - 6 + i * 6 + b, cy - 8, 1, brew);
   }
-  // green smoke puffs rising (chimney-smoke pattern, spooky edition)
-  for (int i = 0; i < 3; i++) {
-    const int c2 = (int)((ms / 110 + i * 8) % 24);
-    if (c2 > 18) continue;
-    const int sy2 = cy - 9 - c2;
-    const int sx2 = cx + (int)(3.0f * sinf(ms / 700.0f + i * 2.0f));
-    _canvas.fillCircle(sx2, sy2, c2 < 10 ? 1 : 2,
-                       lerp565(brew, _p.skyBottom, c2 / 24.0f));
+  // thick green smoke column rising and fading
+  for (int i = 0; i < 4; i++) {
+    const int c2 = (int)((ms / 90 + i * 7) % 32);
+    if (c2 > 26) continue;
+    const int sy2 = cy - 10 - c2;
+    const int sx2 = cx + (int)(4.0f * sinf(ms / 650.0f + i * 1.7f));
+    _canvas.fillCircle(sx2, sy2, c2 < 12 ? 2 : 3,
+                       lerp565(brew, _p.skyBottom, c2 / 32.0f));
   }
 
-  // --- the carved pumpkin (kept from v1) ---
-  const int px = 112, py = 120;
+  // --- the carved pumpkin, centered ---
+  const int px = 120, py = 122;
   const uint16_t orange = rgb565(232, 120, 34), rib = rgb565(190, 88, 22);
   _canvas.fillEllipse(px, py, 10, 8, orange);
   _canvas.drawFastVLine(px - 4, py - 6, 12, rib);
@@ -603,44 +615,56 @@ void Renderer::drawJuninaDecor(bool night) {
     px = x; py = y;
   }
 
-  // --- bonfire (fogueira): crossed logs + flickering flames + sparks ---
-  const int fx = 146, fy = 120;
-  const uint16_t log_ = _p.treeTrunk;
-  if (night) {  // warm ground glow, breathing with the fire
-    const float g = 0.25f + 0.15f * sinf(ms / 300.0f);
-    _canvas.fillEllipse(fx, fy + 3, 16, 5, lerp565(_p.ground, rgb565(240, 140, 40), g));
+  // --- BONFIRE (fogueira): the centerpiece - a real bright fire on the
+  // right, clear of Leon's usual paths. Big flames, layered core, sparks. ---
+  const int fx = 200, fy = 128;
+  const uint16_t log_ = _p.treeTrunk, logHi = lerp565(_p.treeTrunk, rgb565(150, 100, 60), 0.5f);
+  // warm ground glow (day too, stronger at night), breathing with the fire
+  const float g = (night ? 0.45f : 0.22f) + 0.18f * sinf(ms / 260.0f);
+  _canvas.fillEllipse(fx, fy + 2, 22, 6, lerp565(_p.ground, rgb565(250, 150, 50), g));
+  // stacked logs (thicker, two-tone)
+  _canvas.fillRect(fx - 12, fy, 24, 4, log_);
+  _canvas.drawLine(fx - 11, fy + 3, fx + 9, fy - 3, logHi);
+  _canvas.drawLine(fx - 9, fy - 3, fx + 11, fy + 3, logHi);
+  // big layered flame: outer, mid, hot yellow core - each tongue flickers
+  static const uint16_t FIRE[4] = {rgb565(210, 60, 20), rgb565(245, 120, 30),
+                                    rgb565(252, 180, 50), rgb565(255, 235, 150)};
+  for (int layer = 0; layer < 4; layer++) {
+    const int spread = 11 - layer * 2;
+    const int base = 14 - layer * 2;              // outer tallest
+    for (int i = -1; i <= 1; i++) {
+      const int flick = (int)((ms / 80 + (i + 2) * 29 + layer * 13) % 6);
+      const int h = base + flick;
+      const int bx2 = fx + i * spread / 2;
+      _canvas.fillTriangle(bx2 - spread / 3 - 1, fy, bx2 + spread / 3 + 1, fy,
+                           bx2 + (int)(2.0f * sinf(ms / 220.0f + i + layer)), fy - h,
+                           FIRE[layer]);
+    }
   }
-  _canvas.drawLine(fx - 8, fy + 4, fx + 8, fy - 1, log_);
-  _canvas.drawLine(fx - 8, fy - 1, fx + 8, fy + 4, log_);
-  _canvas.drawLine(fx - 9, fy + 5, fx + 7, fy, log_);
-  // three flame tongues, each flickering on its own clock
-  static const uint16_t FIRE[3] = {rgb565(240, 110, 30), rgb565(250, 170, 40),
-                                   rgb565(255, 225, 110)};
-  for (int i = 0; i < 3; i++) {
-    const int h = 6 + (int)((ms / 90 + i * 37) % 5) + (i == 1 ? 3 : 0);
-    const int bx2 = fx - 4 + i * 4;
-    _canvas.fillTriangle(bx2 - 2, fy, bx2 + 2, fy, bx2, fy - h, FIRE[i]);
-  }
-  _canvas.fillTriangle(fx - 1, fy, fx + 1, fy, fx, fy - 4, FIRE[2]);  // hot core
   // rising sparks
-  for (int i = 0; i < 2; i++) {
-    const int c2 = (int)((ms / 70 + i * 11) % 18);
-    if (c2 > 13) continue;
-    _canvas.drawPixel(fx - 2 + i * 4 + (int)(2.0f * sinf(ms / 200.0f + i)),
-                      fy - 10 - c2, FIRE[1]);
+  for (int i = 0; i < 4; i++) {
+    const int c2 = (int)((ms / 60 + i * 13) % 26);
+    if (c2 > 20) continue;
+    _canvas.drawPixel(fx - 6 + i * 4 + (int)(3.0f * sinf(ms / 180.0f + i)),
+                      fy - 16 - c2, c2 < 10 ? FIRE[3] : FIRE[1]);
   }
 
-  // --- paper lanterns drifting up (3, looping like the chimney smoke) ---
-  for (int i = 0; i < 3; i++) {
-    const int cyc = (int)((ms / 45 + i * 260) % 780);  // ~35s full climb
-    const int by2 = 118 - cyc / 6;                     // grass -> sky
-    if (by2 < -10) continue;
-    const int bx2 = 36 + i * 78 + (int)(5.0f * sinf(ms / 1400.0f + i * 2.2f));
-    const uint16_t c = FLAGS[(i * 2 + 1) % 4];
-    _canvas.fillEllipse(bx2, by2, 3, 4, c);                       // paper body
-    _canvas.fillRect(bx2 - 1, by2 + 4, 3, 1, lerp565(c, rgb565(40, 30, 20), 0.5f));
-    if (night && (ms / 160 + i) % 3)                              // inner flame
-      _canvas.drawPixel(bx2, by2 + 3, rgb565(255, 230, 120));
+  // --- paper sky lanterns (baloezinhos): bigger, warm, glowing, drifting
+  // up across the whole sky ---
+  for (int i = 0; i < 4; i++) {
+    const int cyc = (int)((ms / 40 + i * 230) % 920);
+    const int by2 = 122 - cyc / 6;
+    if (by2 < -12) continue;
+    const int bx2 = 30 + i * 58 + (int)(7.0f * sinf(ms / 1500.0f + i * 2.0f));
+    const uint16_t c = FLAGS[(i * 3 + 1) % 4];
+    const float lit = (night && (ms / 140 + i) % 4) ? 1.0f : 0.5f;
+    if (night)  // soft halo
+      _canvas.fillEllipse(bx2, by2, 5, 6, lerp565(_p.skyBottom, c, 0.35f * lit));
+    _canvas.fillEllipse(bx2, by2 - 1, 4, 5, c);          // paper body (bigger)
+    _canvas.drawFastHLine(bx2 - 2, by2 + 4, 5, lerp565(c, rgb565(40, 30, 20), 0.6f));
+    _canvas.drawPixel(bx2, by2 + 3, rgb565(255, 235, 140));  // flame
+    _canvas.drawPixel(bx2 - 3, by2 + 5, rgb565(120, 100, 70));  // strings
+    _canvas.drawPixel(bx2 + 3, by2 + 5, rgb565(120, 100, 70));
   }
 }
 
@@ -683,6 +707,8 @@ void Renderer::drawParty(bool night) {
   _canvas.drawPixel(kx + 7, ky + 2, frost);
   _canvas.fillRect(kx - 7, ky - 8, 15, 6, tier2);                // top tier
   _canvas.fillRect(kx - 7, ky - 8, 15, 2, frost);
+  for (int i = 0; i < 3; i++)  // frosting dots on the bottom tier
+    _canvas.fillCircle(kx - 8 + i * 8, ky - 1, 1, rgb565(255, 120, 160));
   // three candles with flickering flames
   for (int i = 0; i < 3; i++) {
     const int cx2 = kx - 4 + i * 4;
