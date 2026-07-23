@@ -28,6 +28,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(false);
   const [wxForce, setWxForce] = useState('');    // dev panel: forced weather
+  const [festForce, setFestForce] = useState(''); // dev panel: forced festive theme
   const [shotSrc, setShotSrc] = useState(null);  // /shot.bmp?... while open
   const [shotLoading, setShotLoading] = useState(false);
   const takeShot = useCallback(async () => {
@@ -190,6 +191,7 @@ export default function App() {
             vol={vol} setVol={setVol} volDirty={volDirty}
             ledBright={ledBright} setLedBright={setLedBright} ledDirty={ledDirty}
             wxForce={wxForce} setWxForce={setWxForce}
+            festForce={festForce} setFestForce={setFestForce}
             topInfo={topInfo} onTopRefresh={requestTop}
           />
         )}

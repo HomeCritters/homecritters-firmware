@@ -747,6 +747,20 @@ static void loopWeatherFx(unsigned long now) {
 // (needs a synced clock; without it nothing shows) checked once a minute; the
 // fest: debug command forces a look for testing/screenshots (like wxset:).
 static void loopFestive(unsigned long now) {
+  // Portal dev panel can force a theme (fest:) and set the birthday (bday:).
+  const int freq = web.consumeFestSet();
+  if (freq != -2) g_festDebug = freq;
+  char bd[6];
+  if (web.consumeBirthday(bd, sizeof(bd))) {
+    strlcpy(g_bdayDate, bd, sizeof(g_bdayDate));
+    Preferences p;
+    p.begin("pet", false);
+    p.putString("bday", g_bdayDate);
+    p.end();
+    web.setBirthday(g_bdayDate);
+    Serial.printf("[bday] aniversario do Leon: %s\n", g_bdayDate);
+  }
+
   static unsigned long nextAt = 0;
   static int sangOnDay = -1;  // yday we already sang parabens on
   if (now < nextAt) return;
@@ -993,6 +1007,7 @@ void setup() {
     String b = p.getString("bday", "07-09");
     p.end();
     strlcpy(g_bdayDate, b.c_str(), sizeof(g_bdayDate));
+    web.setBirthday(g_bdayDate);  // seed the portal/HA field
   }
 
   // Night-mode sound settings (persisted).

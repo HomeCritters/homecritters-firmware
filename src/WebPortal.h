@@ -86,6 +86,20 @@ class WebPortal {
   // Dev panel: pending "wxset:" from the portal (-2 = none pending; -1 =
   // back to real weather; else a forced WMO code). Consumed by main.
   int consumeWxSet() { const int v = _wxSetReq; _wxSetReq = -2; return v; }
+  // Dev panel: pending "fest:" from the portal (-2 = none; -1 = auto/calendar;
+  // 0-3 = forced Fest; 9 = birthday preview). Consumed by main.
+  int consumeFestSet() { const int v = _festSetReq; _festSetReq = -2; return v; }
+  // Pet birthday "MM-DD" pushed by main into the state JSON; portal/HA set it
+  // with "bday:MM-DD" (consumed by main, which persists to NVS).
+  void setBirthday(const char* mmdd) {
+    if (strcmp(_bday, mmdd) != 0) { strlcpy(_bday, mmdd, sizeof(_bday)); _dirty = true; }
+  }
+  bool consumeBirthday(char* out, size_t n) {  // "" = none pending
+    if (!_bdayReq[0]) return false;
+    strlcpy(out, _bdayReq, n);
+    _bdayReq[0] = 0;
+    return true;
+  }
   void setMicMuted(bool muted);
   // Voice UI state, driven by the main loop's state machine (idle|listening|
   // thinking|speaking). Reflected in the WS state so the portal/HA can mirror
@@ -187,6 +201,9 @@ class WebPortal {
   HaPanel* _ha = nullptr;   // HA control panel model (SCREEN_HA)
   Weather* _weather = nullptr;  // real-weather model (wxloc / wxCity)
   volatile int _wxSetReq = -2;  // pending forced weather (dev panel)
+  volatile int _festSetReq = -2;  // pending forced festive theme (dev panel)
+  char _bday[6] = "07-09";       // pet birthday MM-DD (reported by main)
+  char _bdayReq[6] = {0};        // pending "bday:" set (consumed by main)
   std::function<void(Action)> _onAction;
   bool _serverUp = false;
   volatile bool _configuring = false;  // written on core 1, read by the core-0 http task

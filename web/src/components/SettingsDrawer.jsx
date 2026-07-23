@@ -4,7 +4,8 @@ import {
   Slider, Space, Switch, Typography,
 } from 'antd';
 import {
-  IDLE_OPTIONS, MENU_TIMEOUT_OPTIONS, TZ_OPTIONS, WX_FORCE_OPTIONS,
+  FEST_FORCE_OPTIONS, IDLE_OPTIONS, MENU_TIMEOUT_OPTIONS, TZ_OPTIONS,
+  WX_FORCE_OPTIONS,
 } from '../options.js';
 
 const { Text } = Typography;
@@ -135,12 +136,15 @@ export default function SettingsDrawer({
   name, setName, nameDirty,
   vol, setVol, volDirty,
   ledBright, setLedBright, ledDirty,
-  wxForce, setWxForce,
+  wxForce, setWxForce, festForce, setFestForce,
   topInfo, onTopRefresh,
 }) {
   // City search is transient UI: it lives (and resets) with the drawer.
   const [citySearch, setCitySearch] = useState('');
   const [cityResults, setCityResults] = useState([]);
+  // Birthday draft mirrors the device value until the user edits it.
+  const [bday, setBday] = useState(state?.bday || '');
+  useEffect(() => { setBday(state?.bday || ''); }, [state?.bday]);
   const [citySearching, setCitySearching] = useState(false);
 
   return (
@@ -172,6 +176,32 @@ export default function SettingsDrawer({
           Salvar
         </Button>
       </Space.Compact>
+
+      <div style={{ marginTop: 20 }}>
+        <Text strong>🎂 Aniversário</Text>
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2, marginBottom: 6 }}>
+          No dia, o Leon ganha bolo, balões e "Parabéns pra Você".
+        </Text>
+        <Space.Compact style={{ width: '100%' }}>
+          <Input
+            type="date"
+            // The device stores MM-DD (year-agnostic); the date input needs a
+            // full date, so we pin a dummy year for editing and strip it back.
+            value={bday ? `2000-${bday}` : ''}
+            onChange={(e) => {
+              const v = e.target.value;  // yyyy-mm-dd
+              setBday(v ? v.slice(5) : '');
+            }}
+          />
+          <Button
+            type="primary"
+            disabled={!/^\d{2}-\d{2}$/.test(bday)}
+            onClick={() => send('bday:' + bday)}
+          >
+            Salvar
+          </Button>
+        </Space.Compact>
+      </div>
 
       <div style={{ marginTop: 28 }}>
         <Text strong>Volume: {vol}%</Text>
@@ -444,6 +474,19 @@ export default function SettingsDrawer({
         >
           ⚡ Raio agora
         </Button>
+
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 12, marginBottom: 4 }}>
+          Força um tema festivo na cena (não altera o calendário real).
+        </Text>
+        <Select
+          style={{ width: '100%' }}
+          value={festForce}
+          options={FEST_FORCE_OPTIONS}
+          onChange={(v) => {
+            setFestForce(v);
+            send('fest:' + (v || 'auto'));
+          }}
+        />
         <TopPanel topInfo={topInfo} onRefresh={onTopRefresh} />
       </div>
     </Drawer>

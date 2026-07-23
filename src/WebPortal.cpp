@@ -665,6 +665,19 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
       if (_renderer) _renderer->triggerBolt();
       return;
     }
+    // Dev panel: force a festive theme (natal|halloween|junina|bday|off|auto).
+    if (msg.startsWith("fest:")) {
+      const String f = msg.substring(5);
+      _festSetReq = f == "natal" ? 1 : f == "halloween" ? 2 : f == "junina" ? 3
+                  : f == "bday" ? 9 : f == "off" ? 0 : -1;  // -1 = auto
+      return;
+    }
+    // Pet birthday MM-DD (dev panel / HA). Validated + persisted by main.
+    if (msg.startsWith("bday:")) {
+      const String d = msg.substring(5);
+      if (d.length() == 5 && d[2] == '-') strlcpy(_bdayReq, d.c_str(), sizeof(_bdayReq));
+      return;
+    }
     // Dev panel: Linux-top style snapshot. The 1.1s CPU sample runs on its
     // own one-shot core-0 task (never on this render thread); handle() sends
     // the "top:{...}" reply when it lands.
@@ -1002,7 +1015,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,\"micMuted\":%s,"
            "\"micOn\":%s,\"micClient\":%d,\"assistOn\":%s,\"micLive\":%s,"
-           "\"wxCity\":\"%s\","
+           "\"wxCity\":\"%s\",\"bday\":\"%s\","
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
@@ -1016,7 +1029,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _micMuted ? "true" : "false",
            _micOn ? "true" : "false", _micClient, _assistOn ? "true" : "false",
            micLive() ? "true" : "false",
-           _weather ? _weather->city() : "",
+           _weather ? _weather->city() : "", _bday,
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,
