@@ -178,6 +178,23 @@ void WebPortal::topTask(void* arg) {
   vTaskDelete(nullptr);
 }
 
+// Live screen: RLE-encode the finished canvas and push it to the watching
+// socket. Render thread, post-draw (serviceShots). Rate-limited to ~4fps and
+// self-terminating when the viewer's keepalive lapses.
+void WebPortal::pumpScreen(Renderer& renderer) {
+  if (_screenClient < 0) return;
+  const unsigned long now = millis();
+  if (now - _screenReqAt > 10000) { _screenClient = -1; return; }  // keepalive lapsed
+  if (now - _screenLastFrame < 240) return;                        // ~4fps cap
+  if (!_screenBuf) {
+    _screenBuf = (uint8_t*)ps_malloc(140 * 1024);  // >2x a typical RLE frame
+    if (!_screenBuf) { _screenClient = -1; return; }
+  }
+  const size_t n = renderer.encodeScreenRle(_screenBuf, 140 * 1024);
+  if (n) _ws.sendBIN((uint8_t)_screenClient, _screenBuf, n);
+  _screenLastFrame = now;
+}
+
 // ---- HTTP + WebSocket servers ----
 void WebPortal::handle() {
   if (!_serverUp && connected()) startServer();
@@ -461,6 +478,7 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     _wsPairing[num] = false;
     _wsConnAt[num] = 0;
     if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
+    if ((int)num == _screenClient) _screenClient = -1;  // viewer gone
     if ((int)num == _assistClient) { _assistOn = false; _assistClient = -1; }
     if (was) _clientsDirty = true;  // refresh the connections list
   } else if (type == WStype_TEXT) {
@@ -652,6 +670,18 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
         _topClient = num;
         xTaskCreatePinnedToCore(topTask, "top", 4096, this, 1, nullptr, 0);
       }
+      return;
+    }
+    // Live screen stream: this socket wants the canvas mirrored (~4fps). The
+    // portal resends screen:on every ~3s as a keepalive; a dead viewer times
+    // out (pumpScreen) or drops on disconnect. One viewer at a time.
+    if (msg == "screen:on") {
+      _screenClient = num;
+      _screenReqAt = millis();
+      return;
+    }
+    if (msg == "screen:off") {
+      if ((int)num == _screenClient) _screenClient = -1;
       return;
     }
     // Pipeline liveness from the satellite: assist:on when a wake/STT stage

@@ -40,6 +40,28 @@ void Renderer::begin() {
 void Renderer::beginScreen(uint16_t bg) { _canvas.fillScreen(bg); }
 void Renderer::endScreen() { _canvas.pushSprite(0, 0); }
 
+// RLE-encode the current canvas for the portal's live screen (see header).
+size_t Renderer::encodeScreenRle(uint8_t* out, size_t cap) const {
+  const uint8_t* px = (const uint8_t*)_canvas.getBuffer();
+  if (!px || !out) return 0;
+  const int N = SCREEN_W * SCREEN_H;
+  size_t o = 0;
+  int i = 0;
+  while (i < N) {
+    const uint8_t b0 = px[2 * i], b1 = px[2 * i + 1];
+    int run = 1;
+    while (i + run < N && run < 255 &&
+           px[2 * (i + run)] == b0 && px[2 * (i + run) + 1] == b1)
+      run++;
+    if (o + 3 > cap) return 0;  // pathological frame: caller skips it
+    out[o++] = (uint8_t)run;
+    out[o++] = b0;
+    out[o++] = b1;
+    i += run;
+  }
+  return o;
+}
+
 // Copy the finished canvas into the stable snapshot buffer (render thread).
 void Renderer::takeWebSnapshot() {
   const void* buf = _canvas.getBuffer();

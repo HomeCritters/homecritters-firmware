@@ -38,6 +38,10 @@ class WebPortal {
              Clock* clock, Renderer* renderer, HaPanel* ha,
              std::function<void(Action)> onAction);
   void handle();               // call every loop (when connected)
+  // Live screen stream: if a viewer asked for it (screen:on), RLE-encode the
+  // finished canvas and push it over the WS (~4fps). Call post-render, on the
+  // render thread (serviceShots). No-op when no viewer.
+  void pumpScreen(Renderer& renderer);
   // Request a state broadcast. Coalesced: handle() sends at most one every
   // few ms no matter how many requests pile up (spam-clicking the portal
   // must not turn into a burst of synchronous TCP writes).
@@ -257,6 +261,12 @@ class WebPortal {
   int _topClient = -1;
   char _topJson[832] = {0};
   static void topTask(void* arg);
+  // Live screen viewer (portal): the socket watching, its keepalive stamp,
+  // and the PSRAM encode buffer. -1 = nobody watching.
+  int _screenClient = -1;
+  unsigned long _screenReqAt = 0;
+  unsigned long _screenLastFrame = 0;
+  uint8_t* _screenBuf = nullptr;
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   volatile bool _fullSleep = false;  // actual mode, reported by main (night
                                      // mode also HARD-gates the mic: no

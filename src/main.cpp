@@ -168,6 +168,7 @@ static void serviceShots() {
     renderer.takeWebSnapshot();     // copy for the HTTP /shot.bmp handler
     audio.playCamera();
   }
+  web.pumpScreen(renderer);  // live screen stream to the portal (no-op if idle)
 }
 
 static bool g_doodleWasDead = false;

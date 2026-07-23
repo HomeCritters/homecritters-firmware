@@ -104,6 +104,13 @@ class Renderer {
   const uint16_t* webSnapshot() const { return _snap; }
   void clearWebSnapshot() { _snapReady = false; }
 
+  // Live screen streaming: RLE-encode the finished canvas (RGB565, bytes as
+  // stored - big-endian) into `out` for the portal's live view. Each run is
+  // {u8 count 1..255, u8 hi, u8 lo}. Returns bytes written, or 0 if it won't
+  // fit in cap (caller skips the frame). Called on the render thread, post-
+  // draw (the canvas holds a complete frame - same guarantee as the shot).
+  size_t encodeScreenRle(uint8_t* out, size_t cap) const;
+
  private:
   LGFX_BallV2& _lcd;
   LGFX_Sprite  _canvas;

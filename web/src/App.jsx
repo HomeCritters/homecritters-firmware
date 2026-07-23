@@ -10,6 +10,7 @@ import { GamePad, BallPad, SimonPad } from './components/GamePads.jsx';
 import { BatteryTag } from './components/Widgets.jsx';
 import SettingsDrawer from './components/SettingsDrawer.jsx';
 import { PairingModal, ShotModal } from './components/Modals.jsx';
+import LiveScreen from './components/LiveScreen.jsx';
 
 const { Title, Text } = Typography;
 
@@ -18,13 +19,14 @@ const { Title, Text } = Typography;
 // are memoized and the heavy drawer/modals are mounted only while open.
 export default function App() {
   const {
-    state, online, clients, needToken, topInfo, send, requestTop,
+    state, online, clients, needToken, topInfo, send, requestTop, setFrameHandler,
     name, setName, nameDirty,
     vol, setVol, volDirty,
     ledBright, setLedBright, ledDirty,
   } = useDeviceSocket();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
   const [wxForce, setWxForce] = useState('');    // dev panel: forced weather
   const [shotSrc, setShotSrc] = useState(null);  // /shot.bmp?... while open
   const [shotLoading, setShotLoading] = useState(false);
@@ -64,6 +66,16 @@ export default function App() {
               <BatteryTag pct={state.battery} />
             </div>
           )}
+          <Button
+            shape="circle"
+            size="large"
+            disabled={!online}
+            onClick={() => setLiveOpen(true)}
+            style={{ position: 'absolute', right: 88, top: 0 }}
+            title="Tela ao vivo"
+          >
+            📺
+          </Button>
           <Button
             shape="circle"
             size="large"
@@ -179,6 +191,14 @@ export default function App() {
             ledBright={ledBright} setLedBright={setLedBright} ledDirty={ledDirty}
             wxForce={wxForce} setWxForce={setWxForce}
             topInfo={topInfo} onTopRefresh={requestTop}
+          />
+        )}
+        {liveOpen && (
+          <LiveScreen
+            open
+            onClose={() => setLiveOpen(false)}
+            send={send}
+            setFrameHandler={setFrameHandler}
           />
         )}
         {needToken && <PairingModal open send={send} />}

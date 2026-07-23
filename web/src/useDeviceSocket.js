@@ -27,6 +27,9 @@ export function useDeviceSocket() {
   const wsRef = useRef(null);
   const gotState = useRef(false);
   const autoTz = useRef(false);
+  // Live screen: a component registers a handler here; when a binary RLE
+  // frame arrives we hand it over (raw ArrayBuffer) to decode onto a canvas.
+  const frameCb = useRef(null);
 
   useEffect(() => {
     let ws;
@@ -36,6 +39,7 @@ export function useDeviceSocket() {
     let retryMs = 1500;
     const connect = () => {
       ws = new WebSocket(`ws://${location.hostname}:81/`);
+      ws.binaryType = 'arraybuffer';  // live screen frames arrive as binary
       wsRef.current = ws;
       let opened = false;
       const cnonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
@@ -59,6 +63,10 @@ export function useDeviceSocket() {
         retryMs = Math.min(retryMs * 2, 30000);
       };
       ws.onmessage = (ev) => {
+        if (ev.data instanceof ArrayBuffer) {
+          if (frameCb.current) frameCb.current(ev.data);  // live screen frame
+          return;
+        }
         if (typeof ev.data === 'string') {
           // Challenge-response (F-Sec 2): prove we know the token without
           // sending it, and require the device to prove itself back (mutual).
@@ -136,9 +144,11 @@ export function useDeviceSocket() {
     if (s && s.readyState === WebSocket.OPEN) s.send(m);
   }, []);
   const requestTop = useCallback(() => send('top'), [send]);
+  // Live screen: register/clear the frame handler (LiveScreen owns decoding).
+  const setFrameHandler = useCallback((fn) => { frameCb.current = fn; }, []);
 
   return {
-    state, online, clients, needToken, topInfo, send, requestTop,
+    state, online, clients, needToken, topInfo, send, requestTop, setFrameHandler,
     name, setName, nameDirty,
     vol, setVol, volDirty,
     ledBright, setLedBright, ledDirty,
