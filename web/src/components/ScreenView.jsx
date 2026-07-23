@@ -8,9 +8,10 @@ import React, { useEffect, useRef } from 'react';
 const W = 240;
 const H = 240;
 
-const ScreenView = React.memo(function ScreenView({ send, setFrameHandler, online, size = 220 }) {
+const ScreenView = React.memo(function ScreenView({ send, setFrameHandler, online, size = 220, onFps }) {
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
+  const frameTimes = useRef([]);
 
   useEffect(() => {
     if (!online) return undefined;
@@ -43,6 +44,15 @@ const ScreenView = React.memo(function ScreenView({ send, setFrameHandler, onlin
         }
       }
       ctx.putImageData(imgRef.current, 0, 0);
+      // rolling fps over the last second, reported at most 1x/s
+      const nowT = performance.now();
+      const t = frameTimes.current;
+      t.push(nowT);
+      while (t.length && nowT - t[0] > 1000) t.shift();
+      if (onFps && (!onFps.lastAt || nowT - onFps.lastAt > 1000)) {
+        onFps.lastAt = nowT;
+        onFps(t.length);
+      }
     };
 
     setFrameHandler(onFrame);
@@ -52,8 +62,9 @@ const ScreenView = React.memo(function ScreenView({ send, setFrameHandler, onlin
       clearInterval(ka);
       send('screen:off');
       setFrameHandler(null);
+      if (onFps) onFps(0);
     };
-  }, [online, send, setFrameHandler]);
+  }, [online, send, setFrameHandler, onFps]);
 
   return (
     <div

@@ -282,6 +282,7 @@ class WebPortal {
   bool _screenFull = true;  // next frame must be a full (non-delta) send
   unsigned long _screenReqAt = 0;
   unsigned long _screenLastFrame = 0;
+  unsigned long _screenGap = 55;  // adaptive: stretches after big frames
   uint8_t* _screenBuf = nullptr;
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   volatile bool _fullSleep = false;  // actual mode, reported by main (night

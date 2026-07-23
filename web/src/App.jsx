@@ -25,6 +25,8 @@ export default function App() {
   } = useDeviceSocket();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fps, setFps] = useState(0);
+  const onFps = useCallback((v) => setFps(v), []);
   const [wxForce, setWxForce] = useState('');    // dev panel: forced weather
   const [festForce, setFestForce] = useState(''); // dev panel: forced festive theme
   const [shotSrc, setShotSrc] = useState(null);  // /shot.bmp?... while open
@@ -86,15 +88,15 @@ export default function App() {
           <Title level={2} style={{ margin: '0 0 8px' }}>
             {state ? state.name : 'Furão'} {state && (state.sleeping ? '😴' : '😊')}
           </Title>
-          {/* The pet's live screen (mirrors the device 1:1) - not a game */}
-          {!playing && !playingBall && !playingSimon && (
-            <ScreenView
-              send={send}
-              setFrameHandler={setFrameHandler}
-              online={online}
-              size={220}
-            />
-          )}
+          {/* The device's live screen, always visible (smaller in games so
+              the controller keeps room) */}
+          <ScreenView
+            send={send}
+            setFrameHandler={setFrameHandler}
+            online={online}
+            size={playing || playingBall || playingSimon ? 150 : 220}
+            onFps={onFps}
+          />
         </div>
 
         {playing ? (
@@ -166,6 +168,11 @@ export default function App() {
 
         <div style={{ textAlign: 'center', marginTop: 14 }}>
           <Badge status={online ? 'success' : 'error'} text={online ? 'Ao vivo' : 'Reconectando…'} />
+          {online && fps > 0 && (
+            <Text type="secondary" style={{ fontSize: 12, marginLeft: 10 }}>
+              📺 {fps} fps
+            </Text>
+          )}
         </div>
 
         {/* Heavy subtrees are mounted only while open: the ~10Hz state push

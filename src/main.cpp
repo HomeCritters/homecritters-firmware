@@ -749,7 +749,11 @@ static void loopWeatherFx(unsigned long now) {
 static void loopFestive(unsigned long now) {
   // Portal dev panel can force a theme (fest:) and set the birthday (bday:).
   const int freq = web.consumeFestSet();
-  if (freq != -2) g_festDebug = freq;
+  static unsigned long nextAt = 0;
+  if (freq != -2) {
+    g_festDebug = freq;
+    nextAt = 0;  // apply NOW - waiting up to 60s read as "theme doesn't work"
+  }
   char bd[6];
   if (web.consumeBirthday(bd, sizeof(bd))) {
     strlcpy(g_bdayDate, bd, sizeof(g_bdayDate));
@@ -761,7 +765,6 @@ static void loopFestive(unsigned long now) {
     Serial.printf("[bday] aniversario do Leon: %s\n", g_bdayDate);
   }
 
-  static unsigned long nextAt = 0;
   static int sangOnDay = -1;  // yday we already sang parabens on
   if (now < nextAt) return;
   nextAt = now + 60000;

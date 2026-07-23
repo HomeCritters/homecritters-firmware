@@ -178,23 +178,36 @@ void WebPortal::topTask(void* arg) {
 }
 
 // Live screen: RLE-encode the finished canvas and push it to the watching
-// socket. Render thread, post-draw (serviceShots). Rate-limited to ~4fps and
-// self-terminating when the viewer's keepalive lapses.
+// socket. Render thread, post-draw (serviceShots). Self-terminating when the
+// viewer's keepalive lapses. Two protections keep this from starving the
+// loop (and with it the port-80 WebServer, which shares it): a failed send
+// drops the viewer immediately (a zombie socket otherwise blocks the loop up
+// to the lib's TCP timeout on EVERY frame), and pacing scales with payload -
+// high-entropy scenes (snow, disco) produce 50KB+ deltas that must not be
+// attempted at 18fps.
 void WebPortal::pumpScreen(Renderer& renderer) {
   if (_screenClient < 0) return;
   const unsigned long now = millis();
   if (now - _screenReqAt > 10000) { _screenClient = -1; return; }  // keepalive lapsed
-  if (now - _screenLastFrame < 55) return;                         // ~18fps cap
+  if (now - _screenLastFrame < _screenGap) return;
+  // 180KB covers the RLE worst case (240 rows x 721B = 173KB): a frame that
+  // doesn't fit is DROPPED, and if the scene stays that noisy a fresh viewer
+  // would never receive its first (full) frame at all.
   if (!_screenBuf) {
-    _screenBuf = (uint8_t*)ps_malloc(140 * 1024);
+    _screenBuf = (uint8_t*)ps_malloc(180 * 1024);
     if (!_screenBuf) { _screenClient = -1; return; }
   }
   // First frame for a fresh viewer must be full; deltas after that.
-  const size_t n = renderer.encodeScreen(_screenBuf, 140 * 1024, _screenFull);
+  const size_t n = renderer.encodeScreen(_screenBuf, 180 * 1024, _screenFull);
   if (n) {
-    _ws.sendBIN((uint8_t)_screenClient, _screenBuf, n);
+    if (!_ws.sendBIN((uint8_t)_screenClient, _screenBuf, n)) {
+      _screenClient = -1;  // dead/slow viewer: stop paying for it
+      return;
+    }
     _screenFull = false;
   }
+  // ~18fps for small deltas, stretched for big ones (~64KB/s budget).
+  _screenGap = n > 3500 ? (unsigned long)(n / 64) : 55;
   _screenLastFrame = now;
 }
 

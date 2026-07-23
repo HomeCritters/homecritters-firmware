@@ -51,9 +51,13 @@ size_t Renderer::encodeScreen(uint8_t* out, size_t cap, bool full) {
     full = true;  // no baseline yet
   }
   size_t o = 0;
+  bool sent[SCREEN_H];  // baseline update deferred: on overflow the frame is
+                        // dropped, and rows already encoded must NOT become
+                        // the baseline (the client never saw them)
   for (int r = 0; r < SCREEN_H; r++) {
+    sent[r] = false;
     const uint8_t* row = px + r * stride;
-    uint8_t* prow = _prevFrame ? _prevFrame + r * stride : nullptr;
+    const uint8_t* prow = _prevFrame ? _prevFrame + r * stride : nullptr;
     if (!full && prow && memcmp(row, prow, stride) == 0) continue;  // unchanged
     if (o + 1 > cap) return 0;
     out[o++] = (uint8_t)r;  // 0..239
@@ -71,8 +75,11 @@ size_t Renderer::encodeScreen(uint8_t* out, size_t cap, bool full) {
       out[o++] = b1;
       i += run;
     }
-    if (prow) memcpy(prow, row, stride);  // this row is now the baseline
+    sent[r] = true;
   }
+  if (_prevFrame)
+    for (int r = 0; r < SCREEN_H; r++)
+      if (sent[r]) memcpy(_prevFrame + r * stride, px + r * stride, stride);
   return o;
 }
 
