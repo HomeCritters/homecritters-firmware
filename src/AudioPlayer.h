@@ -74,6 +74,16 @@ class AudioPlayer {
   int volume() const { return _volume; }
   void flushNvs();  // debounced persist - call every loop
 
+  // Festive ambience (sparse, scheduled by main's loopFestive; all gated
+  // !busy() like the weather ambience - they never ride over other audio).
+  void playXmasBells();
+  void playOwl();
+  void playFireworks();
+  void playBirthday();  // the full "parabens pra voce" (once a day)
+  void playHoHoHo();    // Santa's sleigh flyby
+  void playWitch();     // witch cackle (Halloween flyby)
+  void playNyeFireworks(bool force = false);  // NYE barrage; force at midnight
+
   // Mic ADC gain step 0..7 (0/6/.../42 dB) - live tuning during bring-up.
   void setMicGain(int step);
   // Bring-up: read the mic for `ms` and print RMS/peak/DC (bypasses WS).

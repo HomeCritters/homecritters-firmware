@@ -51,6 +51,17 @@ export const WX_FORCE_OPTIONS = [
   { label: '🧊 Granizo', value: 'hail' },
 ];
 
+// Dev panel: force a festive theme (value = firmware fest: name; '' = auto).
+export const FEST_FORCE_OPTIONS = [
+  { label: '📅 Automático (data real)', value: '' },
+  { label: '🎄 Natal', value: 'natal' },
+  { label: '🎃 Halloween', value: 'halloween' },
+  { label: '🌽 Festa Junina', value: 'junina' },
+  { label: '🎆 Ano Novo', value: 'nye' },
+  { label: '🎂 Aniversário', value: 'bday' },
+  { label: '🚫 Nenhum', value: 'off' },
+];
+
 export const STATS = [
   { key: 'hunger', label: 'Fome' },
   { key: 'energy', label: 'Energia' },

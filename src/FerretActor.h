@@ -29,13 +29,6 @@ class FerretActor {
   int h() const;
   uint16_t transparentKey() const;
 
-  // Current animation (mirrored by the web portal): "idle","idle2","walk",
-  // "jump","dig","disappear","emerge","sleep" + whether it faces left.
-  const char* animName() const { return _animName; }
-  bool faceLeft() const { return _faceLeft; }
-  uint32_t animSeq() const { return _animSeq; }  // bumps on every animation change
-  float xNorm() const;  // normalized horizontal position (0..1) for the portal
-
  private:
   enum Mode { MODE_IDLE, MODE_IDLE2, MODE_WALK };
   enum Act  { ACT_NONE, ACT_EAT, ACT_JUMP, ACT_BURROW };
@@ -52,15 +45,6 @@ class FerretActor {
   unsigned long _phaseUntil = 0;   // end of the current wander phase
   unsigned long _actUntil = 0;     // end of the current action/phase
   unsigned long _lastUpdate = 0;
-  const char* _animName = "idle";
-  uint32_t _animSeq = 0;
-
-  // Switch the reported animation, counting changes (seq) so the web
-  // portal can restart its clip cleanly.
-  void setAnim(const char* n) {
-    if (n != _animName) _animSeq++;
-    _animName = n;
-  }
 
   void pickWanderPhase(unsigned long now);
   void startJump(unsigned long now);

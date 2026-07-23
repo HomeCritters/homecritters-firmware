@@ -6,6 +6,7 @@
 #include "StatusLed.h"
 #include "Renderer.h"
 #include "InputController.h"
+#include "TouchInput.h"
 #include "AudioPlayer.h"
 #include "audio/AudioCodec.h"  // mixer debug (overlayActive)
 #include "FerretActor.h"
@@ -141,6 +142,17 @@ static void handleUi(ui::UiHit hit) {
   }
 }
 
+static int g_festDebug = -1;  // serial "fest:X": -1 auto, else forced Fest (0-3), 9=bday
+// Leon's birthday, NVS "pet"/"bday" as "YYYY-MM-DD" (legacy "MM-DD" still
+// loads). Default = the project's first commit (2026-07-09). The party fires
+// on the MM-DD part; the year is only for the portal's age display. Balloons +
+// confetti all day + "parabens pra voce" once.
+static char g_bdayDate[11] = "2026-07-09";
+// The MM-DD slice of g_bdayDate (handles both the full ISO date and legacy).
+static const char* bdayMonthDay() {
+  const size_t n = strlen(g_bdayDate);
+  return n >= 10 ? g_bdayDate + 5 : g_bdayDate;  // "YYYY-MM-DD"+5 -> "MM-DD"
+}
 static bool g_shotPending = false;  // serial "shot": capture after the next render
 static int g_voiceDebug = -1;       // serial "voice:N": force a voice ring (-1 = off)
 static int g_wxDebug = -1;          // serial "wxset:X": force a scene weather (-1 = off)
@@ -164,6 +176,7 @@ static void serviceShots() {
     renderer.takeWebSnapshot();     // copy for the HTTP /shot.bmp handler
     audio.playCamera();
   }
+  web.pumpScreen(renderer);  // live screen stream to the portal (no-op if idle)
 }
 
 static bool g_doodleWasDead = false;
@@ -197,7 +210,7 @@ static void leaveDoodle() {
 // fresh tap after game over.
 static void loopDoodle(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
 
   // Horizontal target: hardware touch wins; otherwise follow the phone.
   float targetX = -1.0f;
@@ -259,7 +272,7 @@ static void leaveBall(unsigned long now) {
 
 static void loopBall(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (down && !g_touchDown) {
     g_touchDown = true;
     g_ballDragX = x; g_ballDragY = y;
@@ -327,7 +340,7 @@ static void leaveSimon(unsigned long now) {
 
 static void loopSimon(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (down && !g_touchDown) {
     g_touchDown = true;
     g_pressStartMs = now;
@@ -403,7 +416,7 @@ static void loopSimon(unsigned long now) {
 static int32_t g_gamesStartX = 0, g_gamesStartY = 0;  // where the touch began
 static void loopGamesMenu(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (down && !g_touchDown) { g_touchDown = true; g_gamesStartX = x; g_gamesStartY = y; }
   if (down) {
     g_touchX = x; g_touchY = y;
@@ -448,7 +461,7 @@ static void loopHaPanel(unsigned long now) {
   // disconnection and the empty state says so).
   const bool loading = !haPanel.everReceived() && now - g_haOpenedMs < 8000;
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (g_haSwallow) {
     lastInteractionMs = now;  // don't let the idle auto-close fire while waiting
     if (down) { renderer.drawHaPanel(haPanel, g_haPage, loading); return; }
@@ -494,7 +507,7 @@ static void loopHaPanel(unsigned long now) {
 static int32_t g_wxStartX = 0, g_wxStartY = 0;
 static void loopWeather(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (down && !g_touchDown) { g_touchDown = true; g_wxStartX = x; g_wxStartY = y; }
   if (down) {
     g_touchX = x; g_touchY = y;
@@ -627,6 +640,39 @@ static bool consoleNavigate(const String& c) {
     Serial.printf("[wx] forced code = %d\n", g_wxDebug);
     return true;
   }
+  if (c.startsWith("fest:")) {  // force festive art: natal|halloween|junina|bday|off|auto
+    const String f = c.substring(5);
+    g_festDebug = f == "natal"     ? Renderer::FEST_NATAL
+                : f == "halloween" ? Renderer::FEST_HALLOWEEN
+                : f == "junina"    ? Renderer::FEST_JUNINA
+                : (f == "nye" || f == "anonovo") ? Renderer::FEST_NYE
+                : f == "bday"      ? 9
+                : f == "off"       ? Renderer::FEST_NONE
+                                   : -1;  // auto
+    Serial.printf("[fest] debug=%d\n", g_festDebug);
+    // apply immediately (loopFestive is throttled to 1/min)
+    renderer.setFestive(
+        g_festDebug >= 0 && g_festDebug != 9 ? (Renderer::Fest)g_festDebug
+                                             : Renderer::FEST_NONE,
+        g_festDebug == 9);
+    return true;
+  }
+  if (c.startsWith("bday:")) {  // set birthday: "YYYY-MM-DD" or legacy "MM-DD"
+    const String d = c.substring(5);
+    const bool full = d.length() == 10 && d[4] == '-' && d[7] == '-';
+    const bool legacy = d.length() == 5 && d[2] == '-';
+    if (full || legacy) {
+      strlcpy(g_bdayDate, d.c_str(), sizeof(g_bdayDate));
+      Preferences p;
+      p.begin("pet", false);
+      p.putString("bday", g_bdayDate);
+      p.end();
+      web.setBirthday(g_bdayDate);
+      Serial.printf("[bday] aniversario do Leon: %s\n", g_bdayDate);
+    }
+    return true;
+  }
+  if (c == "bday") { Serial.printf("[bday] %s\n", g_bdayDate); return true; }
   if (c == "wxbolt") {  // debug: strike lightning right now (bolt + thunder)
     renderer.triggerBolt();
     return true;
@@ -706,6 +752,100 @@ static void loopWeatherFx(unsigned long now) {
     ambientAt = now + 60000 + (esp_random() % 60000);
     if (rainy) audio.playRainAmb();
     else audio.playWindAmb();
+  }
+}
+
+// Festive dates -> scene decorations + sparse themed ambience. Real calendar
+// (needs a synced clock; without it nothing shows) checked once a minute; the
+// fest: debug command forces a look for testing/screenshots (like wxset:).
+static void loopFestive(unsigned long now) {
+  // Portal dev panel can force a theme (fest:) and set the birthday (bday:).
+  const int freq = web.consumeFestSet();
+  static unsigned long nextAt = 0;
+  if (freq != -2) {
+    g_festDebug = freq;
+    nextAt = 0;  // apply NOW - waiting up to 60s read as "theme doesn't work"
+  }
+  char bd[11];
+  if (web.consumeBirthday(bd, sizeof(bd))) {
+    strlcpy(g_bdayDate, bd, sizeof(g_bdayDate));
+    Preferences p;
+    p.begin("pet", false);
+    p.putString("bday", g_bdayDate);
+    p.end();
+    web.setBirthday(g_bdayDate);
+    Serial.printf("[bday] aniversario do Leon: %s\n", g_bdayDate);
+  }
+
+  // Flyby sound cue (sleigh "ho ho ho" / witch cackle): the renderer flags
+  // the instant the flight starts; consumed EVERY tick (before the 60s
+  // throttle) so the sound lands in sync with the visual.
+  {
+    const uint8_t fly = renderer.consumeFlyby();
+    if (fly && screen == SCREEN_PET && !g_fullSleep) {
+      if (fly == 1) audio.playHoHoHo();
+      else audio.playWitch();
+    }
+  }
+
+  static int sangOnDay = -1;  // yday we already sang parabens on
+  if (now < nextAt) return;
+  nextAt = now + 60000;
+
+  Renderer::Fest fest = Renderer::FEST_NONE;
+  bool bday = false;
+  int today = -1, hour = 12, mon = 0, day = 0;
+  if (petClock.synced()) {
+    time_t t = time(nullptr);
+    struct tm lt;
+    localtime_r(&t, &lt);
+    today = lt.tm_yday;
+    hour = lt.tm_hour;
+    const int m = lt.tm_mon + 1, d = lt.tm_mday;
+    mon = m; day = d;
+    if ((m == 12 && d == 31) || (m == 1 && d == 1)) fest = Renderer::FEST_NYE;
+    else if (m == 12 && d <= 25) fest = Renderer::FEST_NATAL;
+    else if (m == 10 && d >= 24) fest = Renderer::FEST_HALLOWEEN;
+    else if (m == 6 && d >= 12 && d <= 24) fest = Renderer::FEST_JUNINA;
+    char md[6];
+    snprintf(md, sizeof(md), "%02d-%02d", m, d);
+    bday = strcmp(md, bdayMonthDay()) == 0;
+  }
+  if (g_festDebug >= 0) {  // forced (debug) overrides the calendar
+    fest = g_festDebug == 9 ? Renderer::FEST_NONE : (Renderer::Fest)g_festDebug;
+    bday = g_festDebug == 9;
+  }
+  renderer.setFestive(fest, bday);
+
+  // Parabens: once per birthday (and once per forced test).
+  if (bday && today != sangOnDay && screen == SCREEN_PET && !g_fullSleep) {
+    audio.playBirthday();
+    sangOnDay = today;
+  }
+  if (!bday) sangOnDay = -1;
+
+  // NYE midnight: the barrage fires RIGHT at the turn of the year (first
+  // tick of Jan 1st, hour 0), interrupting whatever else is sounding.
+  static int nyeBoomDay = -1;
+  if (mon == 1 && day == 1 && hour == 0 && today != nyeBoomDay && !g_fullSleep) {
+    audio.playNyeFireworks(true);
+    nyeBoomDay = today;
+  }
+
+  // Sparse themed ambience on the pet screen: bells / owl / fireworks every
+  // 2.5-5 min (the play helpers bail if anything else is sounding). The owl
+  // only hoots after dark, like a proper owl.
+  static unsigned long ambientAt = 0;
+  if (fest != Renderer::FEST_NONE && screen == SCREEN_PET && !g_fullSleep &&
+      now >= ambientAt) {
+    ambientAt = now + 150000 + (esp_random() % 150000);
+    if (fest == Renderer::FEST_NATAL) audio.playXmasBells();
+    else if (fest == Renderer::FEST_JUNINA) audio.playFireworks();
+    else if (fest == Renderer::FEST_NYE) audio.playNyeFireworks();
+    else if (fest == Renderer::FEST_HALLOWEEN &&
+             (g_festDebug >= 0 || hour >= 18 || hour < 6)) {
+      audio.playOwl();
+    }
   }
 }
 
@@ -889,13 +1029,23 @@ void setup() {
   doodle.begin();  // load the Jump! high score
   simon.begin();   // load the Genius high score
   audio.begin();  // I2C + ES8311 + I2S + audio task
-  web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, &haPanel, doAction);  // WiFi + portal
+  web.begin(&pet, &audio, &led, &petClock, &renderer, &haPanel, doAction);  // WiFi + portal
   web.setBattery(battery.percent());  // seed the portal value
   web.setWeatherModel(&weather);      // wxloc command + wxCity in the state
   // Weather fetch task (core 0); skips fetches while media streams.
   weather.begin([]() { return audio.streaming(); });
   console.begin(&pet, &battery, &audio, &led, &renderer, consoleNavigate,
                 []() { lastInteractionMs = millis(); });
+
+  // Leon's birthday (persisted; default = the project's first commit day).
+  {
+    Preferences p;
+    p.begin("pet", true);
+    String b = p.getString("bday", "2026-07-09");  // full ISO; legacy MM-DD ok
+    p.end();
+    strlcpy(g_bdayDate, b.c_str(), sizeof(g_bdayDate));
+    web.setBirthday(g_bdayDate);  // seed the portal/HA field
+  }
 
   // Night-mode sound settings (persisted).
   {
@@ -963,6 +1113,7 @@ void loop() {
   }
   wasSleeping = sleeping;
 
+  loopFestive(now);         // seasonal decorations + Leon's hat (real date)
   loopNightMode(now);       // full-sleep enter/exit + night sound settings
   loopPairingOverlay(now);  // PIN overlay mirror + cancel X
 
@@ -996,19 +1147,8 @@ void loop() {
   web.handle();
 
   ferret.update(pet, now);
-  // Mirror the pet's animation to the portal only on the pet screen; during a
-  // game the portal isn't showing the pet, so skip the extra broadcasts.
-  static uint32_t lastSeq = 0xFFFFFFFF;
-  static bool lastFlip = false;
-  if (ferret.animSeq() != lastSeq || ferret.faceLeft() != lastFlip) {
-    lastSeq = ferret.animSeq();
-    lastFlip = ferret.faceLeft();
-    // Suppress the high-rate animation mirror (~10x/s: JSON build + core-0
-    // send + phone re-render) while media is playing. Those broadcasts steal
-    // CPU/network from a live audio stream; the portal animation can freeze
-    // for the duration. Meaningful pushes (media/stat changes) still go out.
-    if (screen == SCREEN_PET && !audio.streaming()) web.pushState();
-  }
+  // (The portal used to re-render the ferret from a broadcast of anim/pos;
+  // that's gone - the portal shows the real screen via the live stream now.)
 
   led.update(pet.mood());
   loopMediaLedShow(now);  // balada rainbow / TTS cyan pulse
@@ -1128,5 +1268,7 @@ void loop() {
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
                 (uint8_t)audio.mediaKind(), voiceState, web.micMuted(), web.micLive());
   serviceShots();
-  delay(30);
+  // Faster frames while the portal mirror is watching (the stream's FPS is
+  // capped by this loop's rate); relaxed pace when nobody is.
+  delay(web.screenViewerActive() ? 15 : 30);
 }

@@ -7,7 +7,6 @@
 #include "Pet.h"
 #include "AudioPlayer.h"
 #include "StatusLed.h"
-#include "FerretActor.h"
 #include "Clock.h"
 #include "HaPanel.h"
 #include "Weather.h"
@@ -34,10 +33,17 @@ class WebPortal {
   // Phone game controller: navigation requested over WebSocket.
   enum GameNav { NAV_NONE, NAV_START, NAV_BALL, NAV_SIMON, NAV_BACK };
 
-  void begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
+  void begin(Pet* pet, AudioPlayer* audio, StatusLed* led,
              Clock* clock, Renderer* renderer, HaPanel* ha,
              std::function<void(Action)> onAction);
   void handle();               // call every loop (when connected)
+  // Live screen stream: if a viewer asked for it (screen:on), RLE-encode the
+  // finished canvas and push it over the WS (~4fps). Call post-render, on the
+  // render thread (serviceShots). No-op when no viewer.
+  void pumpScreen(Renderer& renderer);
+  // True while a portal client is watching the live screen stream - the main
+  // loop shortens its frame delay to raise the mirror's FPS.
+  bool screenViewerActive() const { return _screenClient >= 0; }
   // Request a state broadcast. Coalesced: handle() sends at most one every
   // few ms no matter how many requests pile up (spam-clicking the portal
   // must not turn into a burst of synchronous TCP writes).
@@ -82,6 +88,21 @@ class WebPortal {
   // Dev panel: pending "wxset:" from the portal (-2 = none pending; -1 =
   // back to real weather; else a forced WMO code). Consumed by main.
   int consumeWxSet() { const int v = _wxSetReq; _wxSetReq = -2; return v; }
+  // Dev panel: pending "fest:" from the portal (-2 = none; -1 = auto/calendar;
+  // 0-3 = forced Fest; 9 = birthday preview). Consumed by main.
+  int consumeFestSet() { const int v = _festSetReq; _festSetReq = -2; return v; }
+  // Pet birthday "YYYY-MM-DD" (legacy "MM-DD" still accepted) pushed by main
+  // into the state JSON; portal/HA set it with "bday:..." (consumed by main,
+  // which persists to NVS). The year enables age display in the portal.
+  void setBirthday(const char* date) {
+    if (strcmp(_bday, date) != 0) { strlcpy(_bday, date, sizeof(_bday)); _dirty = true; }
+  }
+  bool consumeBirthday(char* out, size_t n) {  // "" = none pending
+    if (!_bdayReq[0]) return false;
+    strlcpy(out, _bdayReq, n);
+    _bdayReq[0] = 0;
+    return true;
+  }
   void setMicMuted(bool muted);
   // Voice UI state, driven by the main loop's state machine (idle|listening|
   // thinking|speaking). Reflected in the WS state so the portal/HA can mirror
@@ -178,11 +199,13 @@ class WebPortal {
   StatusLed* _led = nullptr;
   Renderer* _renderer = nullptr;
   uint8_t* _bmp = nullptr;  // assembled BMP for /shot.bmp (lazy, PSRAM)
-  FerretActor* _ferret = nullptr;
   Clock* _clock = nullptr;
   HaPanel* _ha = nullptr;   // HA control panel model (SCREEN_HA)
   Weather* _weather = nullptr;  // real-weather model (wxloc / wxCity)
   volatile int _wxSetReq = -2;  // pending forced weather (dev panel)
+  volatile int _festSetReq = -2;  // pending forced festive theme (dev panel)
+  char _bday[11] = "2026-07-09"; // pet birthday YYYY-MM-DD (reported by main)
+  char _bdayReq[11] = {0};       // pending "bday:" set (consumed by main)
   std::function<void(Action)> _onAction;
   bool _serverUp = false;
   volatile bool _configuring = false;  // written on core 1, read by the core-0 http task
@@ -257,6 +280,16 @@ class WebPortal {
   int _topClient = -1;
   char _topJson[832] = {0};
   static void topTask(void* arg);
+  // Live screen viewer (portal): the socket watching, its keepalive stamp,
+  // and the PSRAM encode buffer. -1 = nobody watching.
+  int _screenClient = -1;
+  bool _screenFull = true;  // next frame must be a full (non-delta) send
+  unsigned long _screenReqAt = 0;
+  unsigned long _screenLastFrame = 0;
+  unsigned long _screenGap = 30;  // adaptive: stretches after big frames
+  unsigned long _screenPsAssert = 0;  // last WiFi-sleep-off re-assert
+  uint8_t* _screenBuf = nullptr;
+  void dropScreenViewer();  // detach + restore WiFi modem-sleep policy
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   volatile bool _fullSleep = false;  // actual mode, reported by main (night
                                      // mode also HARD-gates the mic: no

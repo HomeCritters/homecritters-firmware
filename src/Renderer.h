@@ -62,6 +62,21 @@ class Renderer {
   // a spinner while the first ha:list hasn't arrived yet (fresh subscribe).
   void drawHaPanel(HaPanel& ha, int page, bool loading = false);
 
+  // Festive: which seasonal decoration paints the scene. Driven by main's
+  // loopFestive (real date) or the fest: debug command.
+  enum Fest : uint8_t { FEST_NONE, FEST_NATAL, FEST_HALLOWEEN, FEST_JUNINA, FEST_NYE };
+  void setFestive(Fest f, bool birthday) {
+    _fest = f;
+    _bdayMode = birthday;
+  }
+  // Sky flyby just started (Santa's sleigh / the witch): main consumes this to
+  // play the matching sound in sync with the visual. 0 none, 1 sleigh, 2 witch.
+  uint8_t consumeFlyby() {
+    const uint8_t f = _flybyPending;
+    _flybyPending = 0;
+    return f;
+  }
+
   // Weather: the current WMO code tints/animates the pet scene (set each
   // frame by main; 0 = clear). temp (INT8_MIN = unknown) feeds the little
   // condition+temperature line under the idle clock.
@@ -96,6 +111,18 @@ class Renderer {
   const uint16_t* webSnapshot() const { return _snap; }
   void clearWebSnapshot() { _snapReady = false; }
 
+  // Live screen streaming for the portal. Encodes the finished canvas as a
+  // set of CHANGED ROWS vs the last sent frame (delta): most of the scene is
+  // static, so a moving-Leon frame is only ~30 rows (~2KB) instead of the
+  // whole 240 (~8KB), which lets us push a much higher frame rate. Wire
+  // format: a run of records `{u8 rowIdx, RLE of that row's 240 px}`, where
+  // each RLE run is `{u8 count 1..255, u8 hi, u8 lo}` (RGB565, big-endian as
+  // stored) and a row always sums to exactly 240 px (so the decoder knows
+  // where the next rowIdx byte begins). `full` forces every row (first frame
+  // for a new viewer). Returns bytes written, or 0 if it won't fit in cap.
+  // Render thread, post-draw. Keeps its own previous-frame buffer.
+  size_t encodeScreen(uint8_t* out, size_t cap, bool full);
+
  private:
   LGFX_BallV2& _lcd;
   LGFX_Sprite  _canvas;
@@ -110,6 +137,7 @@ class Renderer {
   bool _revokeArmed = false;    // revoke button in "Confirma?" state
 
   uint16_t* _snap = nullptr;  // stable copy of the canvas for /shot.bmp
+  uint32_t _rowHash[240] = {0};  // per-row FNV of the last streamed frame
   // HTTP task (core 0) <-> render loop (core 1) handoff. Atomics, not plain
   // volatile: the render loop fills _snap and THEN stores _snapReady, and the
   // seq_cst ordering guarantees the HTTP task that sees _snapReady==true also
@@ -120,6 +148,10 @@ class Renderer {
   // Palette active for the current frame (day or night). Set at the top
   // of draw() and read by the helpers, instead of threading a parameter.
   theme::ScenePalette _p = theme::NIGHT;
+
+  // Accessories/festive state (see setFestive).
+  Fest _fest = FEST_NONE;
+  bool _bdayMode = false;
 
   // Real-weather scene state (set by main from the Weather model).
   uint8_t _wxCode = 0;             // current WMO code (0 = clear)
@@ -151,6 +183,14 @@ class Renderer {
   void drawFireflies();     // green wanderers, clear nights only
   void drawShootingStar();  // rare streak, clear nights
   void drawButterflies();   // daytime counterpart, clear days
+  // Festive scene decorations (RendererScene.cpp):
+  void drawXmasDecor(bool night);        // cabin lights + star on the big pine
+  void drawHalloweenDecor(bool night);   // carved pumpkin (glows at night)
+  void drawJuninaDecor(bool night);      // garland + bonfire + sky lanterns
+  void drawNyeDecor(bool night);         // New Year: fireworks bursts all day
+  void drawParty(bool night);            // cake + drifting balloons + confetti
+  uint8_t _flybyPending = 0;             // 1 sleigh, 2 witch (consumeFlyby)
+  int _lastFlybyPass = -1;               // which flight cycle already flagged
   void drawHeader(const Pet& pet, bool wifiOn, bool micMuted, bool micLive);
   void drawMenuHandle();
   void drawRightHandle();

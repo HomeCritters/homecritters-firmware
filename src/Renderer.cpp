@@ -40,6 +40,58 @@ void Renderer::begin() {
 void Renderer::beginScreen(uint16_t bg) { _canvas.fillScreen(bg); }
 void Renderer::endScreen() { _canvas.pushSprite(0, 0); }
 
+// Delta-encode the canvas for the portal's live screen (see header): emit
+// only rows that changed vs the previous sent frame. Change detection uses a
+// 32-bit FNV-1a hash per row kept in INTERNAL ram (960B) instead of a full
+// 115KB PSRAM baseline: the canvas lives in PSRAM, and the old
+// memcmp-vs-baseline read ~230KB of PSRAM per frame - the hash roster halves
+// that traffic and freed the baseline buffer entirely. A hash collision would
+// leave one stale row until it next changes (odds ~2^-32 per row-frame).
+size_t Renderer::encodeScreen(uint8_t* out, size_t cap, bool full) {
+  const uint8_t* px = (const uint8_t*)_canvas.getBuffer();
+  if (!px || !out) return 0;
+  const int stride = SCREEN_W * 2;  // bytes per row
+  size_t o = 0;
+  uint32_t newHash[SCREEN_H];
+  bool sent[SCREEN_H];  // hash update deferred: on overflow the frame is
+                        // dropped, and rows already encoded must NOT become
+                        // the baseline (the client never saw them)
+  for (int r = 0; r < SCREEN_H; r++) {
+    sent[r] = false;
+    const uint8_t* row = px + r * stride;
+    // FNV-1a over the row, reading 32 bits at a time (the canvas buffer is
+    // 4-byte aligned; stride 480 is a multiple of 4).
+    uint32_t h = 2166136261u;
+    const uint32_t* w = (const uint32_t*)row;
+    for (int i = 0; i < stride / 4; i++) {
+      h ^= w[i];
+      h *= 16777619u;
+    }
+    newHash[r] = h;
+    if (!full && h == _rowHash[r]) continue;  // unchanged
+    if (o + 1 > cap) return 0;
+    out[o++] = (uint8_t)r;  // 0..239
+    // RLE this row's 240 pixels (runs never cross the row boundary).
+    int i = 0;
+    while (i < SCREEN_W) {
+      const uint8_t b0 = row[2 * i], b1 = row[2 * i + 1];
+      int run = 1;
+      while (i + run < SCREEN_W && run < 255 &&
+             row[2 * (i + run)] == b0 && row[2 * (i + run) + 1] == b1)
+        run++;
+      if (o + 3 > cap) return 0;
+      out[o++] = (uint8_t)run;
+      out[o++] = b0;
+      out[o++] = b1;
+      i += run;
+    }
+    sent[r] = true;
+  }
+  for (int r = 0; r < SCREEN_H; r++)
+    if (sent[r]) _rowHash[r] = newHash[r];
+  return o;
+}
+
 // Copy the finished canvas into the stable snapshot buffer (render thread).
 void Renderer::takeWebSnapshot() {
   const void* buf = _canvas.getBuffer();
@@ -406,7 +458,8 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     if (_flashFrames >= 5)  // first 2 frames: sky whiteout
       _canvas.fillRect(0, 0, SCREEN_W, GROUND_Y, rgb565(235, 240, 250));
   }
-  if (overcast || wisp) drawClouds(overcast ? cloudN : 1);
+  // Celestials FIRST, then clouds ON TOP of them: real clouds drift in FRONT
+  // of the sun/moon, not behind (a cloud vanishing behind the sun looked wrong).
   if (!overcast) {  // clear / mainly-clear / partly keep the celestial bodies
     if (tod == TOD_NIGHT) {
       drawStars();
@@ -417,11 +470,19 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
       drawSun();
     }
   }
+  // Cloud shapes: overcast/partly draw their full count (cloudN), mainly-clear
+  // gets one stray wisp. Partly was setting cloudN=2 but never drawing them.
+  if (overcast || partly || wisp) drawClouds((overcast || partly) ? cloudN : 1);
   if (k == WX_STORM && _flashFrames > 0) {
     _flashFrames--;
     drawLightning();
   }
   drawForest(night);
+  // Seasonal decorations attach to the forest (cabin/pines/grass).
+  if (_fest == FEST_NATAL) drawXmasDecor(night);
+  else if (_fest == FEST_HALLOWEEN) drawHalloweenDecor(night);
+  else if (_fest == FEST_JUNINA) drawJuninaDecor(night);
+  else if (_fest == FEST_NYE) drawNyeDecor(night);
   drawSparkles(night);
   // Clear-sky critters: green fireflies by night, butterflies by day
   // (weather grounds both; the party has its own light show). Clear nights
@@ -439,6 +500,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   if (party) drawDiscoFloor();
   drawHeader(pet, wifiOn, micMuted, micLive);
   drawFerret(ferret);
+  if (_bdayMode) drawParty(night);  // cake + balloons + confetti in front
   // Precipitation/haze falls IN FRONT of the pet (livelier), under the HUD.
   if (k == WX_RAIN) drawRain(inten, freezing);
   if (k == WX_STORM) drawRain(hail ? 1 : 2, false);

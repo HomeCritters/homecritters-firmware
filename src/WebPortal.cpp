@@ -8,6 +8,7 @@
 #include "NetBench.h"  // topJson (dev-panel top)
 #include <cstring>
 #include "Renderer.h"
+#include "TouchInput.h"  // portal mirror -> synthetic touch injection
 #include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
 #include "web_index.h"  // gzipped single-file React portal
 
@@ -16,14 +17,13 @@ static constexpr const char* FW_VERSION = "1.0.0";
 
 static void jsonEscape(const String& in, char* out, size_t n);  // defined below
 
-void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
+void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led,
                       Clock* clock, Renderer* renderer, HaPanel* ha,
                       std::function<void(Action)> onAction) {
   _pet = pet;
   _audio = audio;
   _led = led;
   _renderer = renderer;
-  _ferret = ferret;
   _clock = clock;
   _ha = ha;
   _onAction = onAction;
@@ -178,27 +178,73 @@ void WebPortal::topTask(void* arg) {
   vTaskDelete(nullptr);
 }
 
+// Live screen: RLE-encode the finished canvas and push it to the watching
+// socket. Render thread, post-draw (serviceShots). Self-terminating when the
+// viewer's keepalive lapses. Two protections keep this from starving the
+// loop (and with it the port-80 WebServer, which shares it): a failed send
+// drops the viewer immediately (a zombie socket otherwise blocks the loop up
+// to the lib's TCP timeout on EVERY frame), and pacing scales with payload -
+// high-entropy scenes (snow, disco) produce 50KB+ deltas that must not be
+// attempted at 18fps.
+void WebPortal::dropScreenViewer() {
+  _screenClient = -1;
+  // Restore WiFi modem-sleep unless media streaming still needs the radio hot.
+  WiFi.setSleep(!(_audio && _audio->streaming()));
+}
+
+void WebPortal::pumpScreen(Renderer& renderer) {
+  if (_screenClient < 0) return;
+  const unsigned long now = millis();
+  if (now - _screenReqAt > 10000) { dropScreenViewer(); return; }  // keepalive lapsed
+  // Modem-sleep murders streaming latency (10-100ms DTIM stalls per burst);
+  // keep it off while someone is watching. Re-asserted 1x/s because the
+  // audio pipeline flips it back on when a media stream ends.
+  if (now - _screenPsAssert > 1000) {
+    _screenPsAssert = now;
+    WiFi.setSleep(false);
+  }
+  if (now - _screenLastFrame < _screenGap) return;
+  // 180KB covers the RLE worst case (240 rows x 721B = 173KB): a frame that
+  // doesn't fit is DROPPED, and if the scene stays that noisy a fresh viewer
+  // would never receive its first (full) frame at all. +16: 14B header
+  // headroom for the lib's headerToPayload single-write path.
+  if (!_screenBuf) {
+    _screenBuf = (uint8_t*)ps_malloc(180 * 1024 + 16);
+    if (!_screenBuf) { _screenClient = -1; return; }
+  }
+  // First frame for a fresh viewer must be full; deltas after that. Encode at
+  // +14 so sendBIN(headerToPayload=true) writes ONE TCP segment straight from
+  // our buffer - no per-frame malloc+memcpy (<1400B path) and no separate
+  // header segment (>=1400B path).
+  const size_t n = renderer.encodeScreen(_screenBuf + WEBSOCKETS_MAX_HEADER_SIZE,
+                                         180 * 1024, _screenFull);
+  if (n) {
+    if (!_ws.sendBIN((uint8_t)_screenClient, _screenBuf, n, true)) {
+      dropScreenViewer();  // dead/slow viewer: stop paying for it
+      return;
+    }
+    _screenFull = false;
+  }
+  // Pace by payload with a generous budget (~256KB/s): typical 2-8KB deltas
+  // stream at the floor (render-loop limited); only true high-entropy frames
+  // (disco, heavy snow) stretch the gap to protect the loop.
+  _screenGap = n > 8000 ? (unsigned long)(n / 256) : 30;
+  _screenLastFrame = now;
+}
+
 // ---- HTTP + WebSocket servers ----
 void WebPortal::handle() {
   if (!_serverUp && connected()) startServer();
   if (!_serverUp) return;
   _ws.loop();
-  // Single broadcast point, rate-limited. Pending changes (_dirty) go out
-  // quickly but coalesced. During a game the portal shows a controller (not
-  // the pet mirror), so we only need score/heartbeat - NOT the ~10x/s position
-  // stream, which would stall the tight game loop with TCP writes.
+  // State broadcast: the portal's visuals come from the live SCREEN stream
+  // now (pumpScreen), so state is just data - stats, mood, settings, score.
+  // A pending change (_dirty) goes out quickly (coalesced); otherwise a slow
+  // heartbeat keeps the decaying stats fresh. No more high-rate mirror.
   const unsigned long now = millis();
   const bool inGame = !strcmp(_screenName, "doodle") || !strcmp(_screenName, "ball") ||
                       !strcmp(_screenName, "simon");
-  unsigned long interval;
-  if (inGame) {
-    interval = 200;  // flat ~5/s: enough for the score, light on the game loop
-  } else if (_dirty) {
-    interval = 40;   // pending change: reflect quickly (coalesced)
-  } else {
-    const bool walking = _ferret && strcmp(_ferret->animName(), "walk") == 0;
-    interval = walking ? 100 : 500;  // mirror the walking pet, else idle refresh
-  }
+  const unsigned long interval = _dirty ? 40 : (inGame ? 300 : 1000);
   if (now - _lastBroadcast >= interval) {
     broadcastState();
     _lastBroadcast = now;
@@ -461,6 +507,7 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     _wsPairing[num] = false;
     _wsConnAt[num] = 0;
     if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
+    if ((int)num == _screenClient) dropScreenViewer();  // viewer gone
     if ((int)num == _assistClient) { _assistOn = false; _assistClient = -1; }
     if (was) _clientsDirty = true;  // refresh the connections list
   } else if (type == WStype_TEXT) {
@@ -484,6 +531,23 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
         _throwNy = strtof(after + 1, nullptr);
         _throwReq = true;
         _dirty = true;  // same as the String path: coalesced state echo
+      }
+      return;
+    }
+    // Portal mirror -> synthetic touch: "touch:<1|0>:<x>:<y>" (a drag fires
+    // ~30/s, so it lives in the fast path and never echoes state). The point is
+    // injected into the SAME touch pipeline the physical screen uses, so gesture
+    // detection (tap/swipe/edge-pull) is identical across every screen.
+    if (_wsAuthed[num] && len >= 10 &&
+        strncmp((const char*)payload, "touch:", 6) == 0) {
+      char* p = (char*)payload + 6;
+      const long down = strtol(p, &p, 10);
+      if (*p == ':') {
+        const long x = strtol(p + 1, &p, 10);
+        if (*p == ':') {
+          const long y = strtol(p + 1, nullptr, 10);
+          touchinput::inject(down != 0, (int32_t)x, (int32_t)y);
+        }
       }
       return;
     }
@@ -643,6 +707,22 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
       if (_renderer) _renderer->triggerBolt();
       return;
     }
+    // Dev panel: force a festive theme (natal|halloween|junina|nye|bday|off|auto).
+    if (msg.startsWith("fest:")) {
+      const String f = msg.substring(5);
+      _festSetReq = f == "natal" ? 1 : f == "halloween" ? 2 : f == "junina" ? 3
+                  : f == "nye" ? 4 : f == "bday" ? 9 : f == "off" ? 0 : -1;  // -1 = auto
+      return;
+    }
+    // Pet birthday (dev panel / HA): "YYYY-MM-DD" or legacy "MM-DD". Validated
+    // + persisted by main.
+    if (msg.startsWith("bday:")) {
+      const String d = msg.substring(5);
+      const bool full = d.length() == 10 && d[4] == '-' && d[7] == '-';
+      const bool legacy = d.length() == 5 && d[2] == '-';
+      if (full || legacy) strlcpy(_bdayReq, d.c_str(), sizeof(_bdayReq));
+      return;
+    }
     // Dev panel: Linux-top style snapshot. The 1.1s CPU sample runs on its
     // own one-shot core-0 task (never on this render thread); handle() sends
     // the "top:{...}" reply when it lands.
@@ -652,6 +732,23 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
         _topClient = num;
         xTaskCreatePinnedToCore(topTask, "top", 4096, this, 1, nullptr, 0);
       }
+      return;
+    }
+    // Live screen stream: this socket wants the canvas mirrored. The portal
+    // resends screen:on every ~3s as a keepalive; a dead viewer times out
+    // (pumpScreen) or drops on disconnect. One viewer at a time.
+    if (msg == "screen:on") {
+      if ((int)num != _screenClient) {
+        _screenFull = true;         // new viewer: full frame
+        WiFi.setSleep(false);       // radio hot from the first frame
+        _screenPsAssert = millis();
+      }
+      _screenClient = num;
+      _screenReqAt = millis();
+      return;
+    }
+    if (msg == "screen:off") {
+      if ((int)num == _screenClient) dropScreenViewer();
       return;
     }
     // Pipeline liveness from the satellite: assist:on when a wake/STT stage
@@ -716,6 +813,7 @@ void WebPortal::applyCommand(const String& msg) {
   }
   if (msg.startsWith("name:")) {
     if (_pet) _pet->setName(msg.substring(5));
+    _dirty = true;  // push the new name to every client (and any bday text)
     return;
   }
   if (msg.startsWith("vol:")) {
@@ -967,11 +1065,10 @@ void WebPortal::stateJson(char* out, size_t n) const {
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,\"micMuted\":%s,"
            "\"micOn\":%s,\"micClient\":%d,\"assistOn\":%s,\"micLive\":%s,"
-           "\"wxCity\":\"%s\","
+           "\"wxCity\":\"%s\",\"bday\":\"%s\","
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
-           "\"anim\":\"%s\",\"seq\":%u,\"flip\":%s,\"x\":%.3f,"
            "\"hunger\":%.1f,\"energy\":%.1f,\"joy\":%.1f,\"hygiene\":%.1f}",
            _screenName, _gameScore, _battery, name,
            p.sleeping() ? "true" : "false",
@@ -981,7 +1078,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _micMuted ? "true" : "false",
            _micOn ? "true" : "false", _micClient, _assistOn ? "true" : "false",
            micLive() ? "true" : "false",
-           _weather ? _weather->city() : "",
+           _weather ? _weather->city() : "", _bday,
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,
@@ -994,9 +1091,5 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _clock ? _clock->menuTimeoutSec() : 15,
            _clock && _clock->h24() ? "true" : "false",
            (!_clock || _clock->dateDmy()) ? "true" : "false",
-           _ferret ? _ferret->animName() : "idle",
-           _ferret ? (unsigned)_ferret->animSeq() : 0u,
-           _ferret && _ferret->faceLeft() ? "true" : "false",
-           _ferret ? _ferret->xNorm() : 0.5f,
            p.hunger(), p.energy(), p.joy(), p.hygiene());
 }

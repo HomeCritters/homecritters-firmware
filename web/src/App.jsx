@@ -5,7 +5,7 @@ import {
 import { hmacSha256Hex } from './hmac.js';
 import { ACTIONS, STATS, barColor } from './options.js';
 import { useDeviceSocket } from './useDeviceSocket.js';
-import { FerretStage } from './components/Ferret.jsx';
+import ScreenView from './components/ScreenView.jsx';
 import { GamePad, BallPad, SimonPad } from './components/GamePads.jsx';
 import { BatteryTag } from './components/Widgets.jsx';
 import SettingsDrawer from './components/SettingsDrawer.jsx';
@@ -18,14 +18,17 @@ const { Title, Text } = Typography;
 // are memoized and the heavy drawer/modals are mounted only while open.
 export default function App() {
   const {
-    state, online, clients, needToken, topInfo, send, requestTop,
+    state, online, clients, needToken, topInfo, send, requestTop, setFrameHandler,
     name, setName, nameDirty,
     vol, setVol, volDirty,
     ledBright, setLedBright, ledDirty,
   } = useDeviceSocket();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fps, setFps] = useState(0);
+  const onFps = useCallback((v) => setFps(v), []);
   const [wxForce, setWxForce] = useState('');    // dev panel: forced weather
+  const [festForce, setFestForce] = useState(''); // dev panel: forced festive theme
   const [shotSrc, setShotSrc] = useState(null);  // /shot.bmp?... while open
   const [shotLoading, setShotLoading] = useState(false);
   const takeShot = useCallback(async () => {
@@ -70,7 +73,7 @@ export default function App() {
             disabled={!online}
             onClick={takeShot}
             style={{ position: 'absolute', right: 44, top: 0 }}
-            title="Print da tela do hardware"
+            title="Salvar um print da tela"
           >
             📸
           </Button>
@@ -85,13 +88,21 @@ export default function App() {
           <Title level={2} style={{ margin: '0 0 8px' }}>
             {state ? state.name : 'Furão'} {state && (state.sleeping ? '😴' : '😊')}
           </Title>
-          <FerretStage
-            anim={state ? state.anim : 'idle'}
-            flip={state ? state.flip : false}
-            x={state ? state.x : 0.5}
-            seq={state ? state.seq : 0}
-            size={96}
+          {/* The device's live screen, always visible and full-size - even in
+              games (you watch the hardware while controlling it); the pads sit
+              below and the page scrolls if needed. */}
+          <ScreenView
+            send={send}
+            setFrameHandler={setFrameHandler}
+            online={online}
+            size={220}
+            onFps={onFps}
           />
+          {online && (
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>
+              👆 Toque na tela para controlar
+            </Text>
+          )}
         </div>
 
         {playing ? (
@@ -163,6 +174,11 @@ export default function App() {
 
         <div style={{ textAlign: 'center', marginTop: 14 }}>
           <Badge status={online ? 'success' : 'error'} text={online ? 'Ao vivo' : 'Reconectando…'} />
+          {online && fps > 0 && (
+            <Text type="secondary" style={{ fontSize: 12, marginLeft: 10 }}>
+              📺 {fps} fps
+            </Text>
+          )}
         </div>
 
         {/* Heavy subtrees are mounted only while open: the ~10Hz state push
@@ -178,6 +194,7 @@ export default function App() {
             vol={vol} setVol={setVol} volDirty={volDirty}
             ledBright={ledBright} setLedBright={setLedBright} ledDirty={ledDirty}
             wxForce={wxForce} setWxForce={setWxForce}
+            festForce={festForce} setFestForce={setFestForce}
             topInfo={topInfo} onTopRefresh={requestTop}
           />
         )}

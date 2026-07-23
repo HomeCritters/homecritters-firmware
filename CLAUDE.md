@@ -159,13 +159,25 @@ portal/tools ficam aqui.
   viva), tela dedicada `drawWifiConfig()` com botão **Sair** (`cancelConfig()`).
 - **Portal web React + WebSocket** (`WebPortal`): `WebServer` (porta 80) serve
   o app React gzipado; `WebSocketsServer` (porta 81) **empurra o estado**
-  (~10x/s andando, ~2x/s parado, + push imediato quando a animação muda) e
-  recebe comandos de texto: `feed`/`pat`/`clean`/`sleep`, `name:X`, `vol:N`,
-  `clock:on|off`, `fmt:12|24`, `date:dmy|mdy`, `tz:<posix>`, `idle:<seg>`. O portal espelha a
-  **mesma animação/posição** do furão (spritesheet próprio + CSS steps), tem
-  barras 2x2, botões de ação e drawer de configurações. Comandos rodam via
+  (coalescido: 40ms se sujo, 300ms em jogo, 1s heartbeat) e recebe comandos de
+  texto: `feed`/`pat`/`clean`/`sleep`, `name:X`, `vol:N`,
+  `clock:on|off`, `fmt:12|24`, `date:dmy|mdy`, `tz:<posix>`, `idle:<seg>`,
+  `bday:YYYY-MM-DD`, `fest:<tema|auto>`. Comandos rodam via
   `doAction()`/`applyCommand()` no loop principal (thread-safe). mDNS:
-  `ferret.local`.
+  `critter.local`.
+- **Stream da tela ao vivo** (portal): `screen:on` (keepalive 3s; lapso 10s
+  derruba) / `screen:off`; frames binários **delta-RLE por linha** (registros
+  `u8 rowIdx` + runs `{u8 n, u8 hi, u8 lo}` RGB565 BE; 1º frame full).
+  Detecção de mudança por **hash FNV 32-bit por linha em RAM interna** (sem
+  baseline em PSRAM). Envio **zero-copy** (`sendBIN` com `headerToPayload`:
+  encode em `_screenBuf+14`, 1 write TCP). Pacing: 30ms floor, orçamento
+  ~256KB/s p/ frames grandes; **modem-sleep do WiFi desligado enquanto há
+  viewer** (re-assertado 1x/s; devolvido no drop). O loop do pet encurta o
+  delay (30→15ms) com viewer ativo. ~20fps na cena, ~24fps nos jogos; SFX
+  ambiente decodificando derruba fps temporariamente (decoder prio 5, core 1).
+  **O espelho é interativo**: pointer no canvas → `touch:<1|0>:x:y` →
+  `touchinput::inject` → mesmo pipeline do toque físico em TODAS as telas
+  (`touchinput::read` substitui `lcd.getTouch`; pareamento/WiFi ficam crus).
 - **Modo relógio (ocioso)**: sem interação por um tempo (config.), barras e
   botões dão lugar a um **relógio** (o furão continua passeando). Hora via
   **NTP** (3 servidores com fallback), timezone POSIX, **12/24h**. **Padrão:

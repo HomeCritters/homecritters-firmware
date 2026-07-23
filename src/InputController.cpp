@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include "GameConfig.h"
 #include "pins.h"
+#include "TouchInput.h"
 
 // Maps each bottom-arc button to its action.
 static Action actionForButton(int idx) {
@@ -68,7 +69,7 @@ InputEvent InputController::poll(LGFX_BallV2& lcd, bool menuOpen, ui::MenuPage p
 
   // --- touch: track and act on RELEASE (enables swipe vs tap) ---
   int32_t tx, ty;
-  if (lcd.getTouch(&tx, &ty)) {
+  if (touchinput::read(lcd, &tx, &ty)) {  // physical OR portal-injected touch
     if (!_touching) { _touching = true; _startX = tx; _startY = ty; }
     _lastX = tx; _lastY = ty;
   } else if (_touching) {
