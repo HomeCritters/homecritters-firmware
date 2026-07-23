@@ -461,7 +461,9 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
       drawSun();
     }
   }
-  if (overcast || wisp) drawClouds(overcast ? cloudN : 1);
+  // Cloud shapes: overcast/partly draw their full count (cloudN), mainly-clear
+  // gets one stray wisp. Partly was setting cloudN=2 but never drawing them.
+  if (overcast || partly || wisp) drawClouds((overcast || partly) ? cloudN : 1);
   if (k == WX_STORM && _flashFrames > 0) {
     _flashFrames--;
     drawLightning();
