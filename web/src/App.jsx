@@ -98,6 +98,11 @@ export default function App() {
             size={220}
             onFps={onFps}
           />
+          {online && (
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>
+              👆 Toque na tela para controlar
+            </Text>
+          )}
         </div>
 
         {playing ? (

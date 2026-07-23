@@ -66,6 +66,40 @@ const ScreenView = React.memo(function ScreenView({ send, setFrameHandler, onlin
     };
   }, [online, send, setFrameHandler, onFps]);
 
+  // --- touch control: the mirror IS the remote. Pointer down/move/up map to
+  // device coords (0..239) and go out as "touch:<1|0>:x:y"; the firmware feeds
+  // them into the same touch pipeline as the physical screen, so taps, swipes
+  // and edge-pulls all work exactly like a finger on the glass. ---
+  const lastMove = useRef(0);
+  const toDevice = (e) => {
+    const r = canvasRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(239, Math.round((e.clientX - r.left) / r.width * W)));
+    const y = Math.max(0, Math.min(239, Math.round((e.clientY - r.top) / r.height * H)));
+    return { x, y };
+  };
+  const onDown = (e) => {
+    if (!online) return;
+    const { x, y } = toDevice(e);
+    // Ignore presses that land outside the round bezel (corners) so a stray
+    // click can't kick off an edge-swipe; drags may still travel to the edge.
+    if ((x - 120) ** 2 + (y - 120) ** 2 > 118 * 118) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    send(`touch:1:${x}:${y}`);
+  };
+  const onMove = (e) => {
+    if (!online || !e.currentTarget.hasPointerCapture?.(e.pointerId)) return;
+    const now = performance.now();
+    if (now - lastMove.current < 33) return;  // ~30/s, like the game joystick
+    lastMove.current = now;
+    const { x, y } = toDevice(e);
+    send(`touch:1:${x}:${y}`);
+  };
+  const onUp = (e) => {
+    if (!online) return;
+    const { x, y } = toDevice(e);
+    send(`touch:0:${x}:${y}`);
+  };
+
   return (
     <div
       style={{
@@ -82,7 +116,14 @@ const ScreenView = React.memo(function ScreenView({ send, setFrameHandler, onlin
         ref={canvasRef}
         width={W}
         height={H}
-        style={{ width: '100%', height: '100%', imageRendering: 'pixelated' }}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        style={{
+          width: '100%', height: '100%', imageRendering: 'pixelated',
+          touchAction: 'none', userSelect: 'none', cursor: online ? 'pointer' : 'default',
+        }}
       />
     </div>
   );

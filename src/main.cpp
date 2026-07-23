@@ -6,6 +6,7 @@
 #include "StatusLed.h"
 #include "Renderer.h"
 #include "InputController.h"
+#include "TouchInput.h"
 #include "AudioPlayer.h"
 #include "audio/AudioCodec.h"  // mixer debug (overlayActive)
 #include "FerretActor.h"
@@ -209,7 +210,7 @@ static void leaveDoodle() {
 // fresh tap after game over.
 static void loopDoodle(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
 
   // Horizontal target: hardware touch wins; otherwise follow the phone.
   float targetX = -1.0f;
@@ -271,7 +272,7 @@ static void leaveBall(unsigned long now) {
 
 static void loopBall(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (down && !g_touchDown) {
     g_touchDown = true;
     g_ballDragX = x; g_ballDragY = y;
@@ -339,7 +340,7 @@ static void leaveSimon(unsigned long now) {
 
 static void loopSimon(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (down && !g_touchDown) {
     g_touchDown = true;
     g_pressStartMs = now;
@@ -415,7 +416,7 @@ static void loopSimon(unsigned long now) {
 static int32_t g_gamesStartX = 0, g_gamesStartY = 0;  // where the touch began
 static void loopGamesMenu(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (down && !g_touchDown) { g_touchDown = true; g_gamesStartX = x; g_gamesStartY = y; }
   if (down) {
     g_touchX = x; g_touchY = y;
@@ -460,7 +461,7 @@ static void loopHaPanel(unsigned long now) {
   // disconnection and the empty state says so).
   const bool loading = !haPanel.everReceived() && now - g_haOpenedMs < 8000;
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (g_haSwallow) {
     lastInteractionMs = now;  // don't let the idle auto-close fire while waiting
     if (down) { renderer.drawHaPanel(haPanel, g_haPage, loading); return; }
@@ -506,7 +507,7 @@ static void loopHaPanel(unsigned long now) {
 static int32_t g_wxStartX = 0, g_wxStartY = 0;
 static void loopWeather(unsigned long now) {
   int32_t x, y;
-  const bool down = lcd.getTouch(&x, &y);
+  const bool down = touchinput::read(lcd, &x, &y);
   if (down && !g_touchDown) { g_touchDown = true; g_wxStartX = x; g_wxStartY = y; }
   if (down) {
     g_touchX = x; g_touchY = y;

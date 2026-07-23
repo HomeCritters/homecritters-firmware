@@ -8,6 +8,7 @@
 #include "NetBench.h"  // topJson (dev-panel top)
 #include <cstring>
 #include "Renderer.h"
+#include "TouchInput.h"  // portal mirror -> synthetic touch injection
 #include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
 #include "web_index.h"  // gzipped single-file React portal
 
@@ -510,6 +511,23 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
         _throwNy = strtof(after + 1, nullptr);
         _throwReq = true;
         _dirty = true;  // same as the String path: coalesced state echo
+      }
+      return;
+    }
+    // Portal mirror -> synthetic touch: "touch:<1|0>:<x>:<y>" (a drag fires
+    // ~30/s, so it lives in the fast path and never echoes state). The point is
+    // injected into the SAME touch pipeline the physical screen uses, so gesture
+    // detection (tap/swipe/edge-pull) is identical across every screen.
+    if (_wsAuthed[num] && len >= 10 &&
+        strncmp((const char*)payload, "touch:", 6) == 0) {
+      char* p = (char*)payload + 6;
+      const long down = strtol(p, &p, 10);
+      if (*p == ':') {
+        const long x = strtol(p + 1, &p, 10);
+        if (*p == ':') {
+          const long y = strtol(p + 1, nullptr, 10);
+          touchinput::inject(down != 0, (int32_t)x, (int32_t)y);
+        }
       }
       return;
     }
