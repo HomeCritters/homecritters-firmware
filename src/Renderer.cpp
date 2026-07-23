@@ -449,7 +449,8 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     if (_flashFrames >= 5)  // first 2 frames: sky whiteout
       _canvas.fillRect(0, 0, SCREEN_W, GROUND_Y, rgb565(235, 240, 250));
   }
-  if (overcast || wisp) drawClouds(overcast ? cloudN : 1);
+  // Celestials FIRST, then clouds ON TOP of them: real clouds drift in FRONT
+  // of the sun/moon, not behind (a cloud vanishing behind the sun looked wrong).
   if (!overcast) {  // clear / mainly-clear / partly keep the celestial bodies
     if (tod == TOD_NIGHT) {
       drawStars();
@@ -460,6 +461,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
       drawSun();
     }
   }
+  if (overcast || wisp) drawClouds(overcast ? cloudN : 1);
   if (k == WX_STORM && _flashFrames > 0) {
     _flashFrames--;
     drawLightning();

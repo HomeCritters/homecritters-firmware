@@ -142,9 +142,16 @@ static void handleUi(ui::UiHit hit) {
 }
 
 static int g_festDebug = -1;  // serial "fest:X": -1 auto, else forced Fest (0-3), 9=bday
-// Leon's birthday, NVS "pet"/"bday" as "MM-DD" (default 07-09: the project's
-// first commit). Balloons + confetti all day + "parabens pra voce" once.
-static char g_bdayDate[6] = "07-09";
+// Leon's birthday, NVS "pet"/"bday" as "YYYY-MM-DD" (legacy "MM-DD" still
+// loads). Default = the project's first commit (2026-07-09). The party fires
+// on the MM-DD part; the year is only for the portal's age display. Balloons +
+// confetti all day + "parabens pra voce" once.
+static char g_bdayDate[11] = "2026-07-09";
+// The MM-DD slice of g_bdayDate (handles both the full ISO date and legacy).
+static const char* bdayMonthDay() {
+  const size_t n = strlen(g_bdayDate);
+  return n >= 10 ? g_bdayDate + 5 : g_bdayDate;  // "YYYY-MM-DD"+5 -> "MM-DD"
+}
 static bool g_shotPending = false;  // serial "shot": capture after the next render
 static int g_voiceDebug = -1;       // serial "voice:N": force a voice ring (-1 = off)
 static int g_wxDebug = -1;          // serial "wxset:X": force a scene weather (-1 = off)
@@ -648,14 +655,17 @@ static bool consoleNavigate(const String& c) {
         g_festDebug == 9);
     return true;
   }
-  if (c.startsWith("bday:")) {  // set Leon's birthday (MM-DD, NVS)
+  if (c.startsWith("bday:")) {  // set birthday: "YYYY-MM-DD" or legacy "MM-DD"
     const String d = c.substring(5);
-    if (d.length() == 5 && d[2] == '-') {
+    const bool full = d.length() == 10 && d[4] == '-' && d[7] == '-';
+    const bool legacy = d.length() == 5 && d[2] == '-';
+    if (full || legacy) {
       strlcpy(g_bdayDate, d.c_str(), sizeof(g_bdayDate));
       Preferences p;
       p.begin("pet", false);
       p.putString("bday", g_bdayDate);
       p.end();
+      web.setBirthday(g_bdayDate);
       Serial.printf("[bday] aniversario do Leon: %s\n", g_bdayDate);
     }
     return true;
@@ -754,7 +764,7 @@ static void loopFestive(unsigned long now) {
     g_festDebug = freq;
     nextAt = 0;  // apply NOW - waiting up to 60s read as "theme doesn't work"
   }
-  char bd[6];
+  char bd[11];
   if (web.consumeBirthday(bd, sizeof(bd))) {
     strlcpy(g_bdayDate, bd, sizeof(g_bdayDate));
     Preferences p;
@@ -784,7 +794,7 @@ static void loopFestive(unsigned long now) {
     else if (m == 6 && d >= 12 && d <= 24) fest = Renderer::FEST_JUNINA;
     char md[6];
     snprintf(md, sizeof(md), "%02d-%02d", m, d);
-    bday = strcmp(md, g_bdayDate) == 0;
+    bday = strcmp(md, bdayMonthDay()) == 0;
   }
   if (g_festDebug >= 0) {  // forced (debug) overrides the calendar
     fest = g_festDebug == 9 ? Renderer::FEST_NONE : (Renderer::Fest)g_festDebug;
@@ -1007,7 +1017,7 @@ void setup() {
   {
     Preferences p;
     p.begin("pet", true);
-    String b = p.getString("bday", "07-09");
+    String b = p.getString("bday", "2026-07-09");  // full ISO; legacy MM-DD ok
     p.end();
     strlcpy(g_bdayDate, b.c_str(), sizeof(g_bdayDate));
     web.setBirthday(g_bdayDate);  // seed the portal/HA field

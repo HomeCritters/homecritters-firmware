@@ -88,13 +88,14 @@ export default function App() {
           <Title level={2} style={{ margin: '0 0 8px' }}>
             {state ? state.name : 'Furão'} {state && (state.sleeping ? '😴' : '😊')}
           </Title>
-          {/* The device's live screen, always visible (smaller in games so
-              the controller keeps room) */}
+          {/* The device's live screen, always visible and full-size - even in
+              games (you watch the hardware while controlling it); the pads sit
+              below and the page scrolls if needed. */}
           <ScreenView
             send={send}
             setFrameHandler={setFrameHandler}
             online={online}
-            size={playing || playingBall || playingSimon ? 150 : 220}
+            size={220}
             onFps={onFps}
           />
         </div>

@@ -676,10 +676,13 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
                   : f == "bday" ? 9 : f == "off" ? 0 : -1;  // -1 = auto
       return;
     }
-    // Pet birthday MM-DD (dev panel / HA). Validated + persisted by main.
+    // Pet birthday (dev panel / HA): "YYYY-MM-DD" or legacy "MM-DD". Validated
+    // + persisted by main.
     if (msg.startsWith("bday:")) {
       const String d = msg.substring(5);
-      if (d.length() == 5 && d[2] == '-') strlcpy(_bdayReq, d.c_str(), sizeof(_bdayReq));
+      const bool full = d.length() == 10 && d[4] == '-' && d[7] == '-';
+      const bool legacy = d.length() == 5 && d[2] == '-';
+      if (full || legacy) strlcpy(_bdayReq, d.c_str(), sizeof(_bdayReq));
       return;
     }
     // Dev panel: Linux-top style snapshot. The 1.1s CPU sample runs on its
@@ -768,6 +771,7 @@ void WebPortal::applyCommand(const String& msg) {
   }
   if (msg.startsWith("name:")) {
     if (_pet) _pet->setName(msg.substring(5));
+    _dirty = true;  // push the new name to every client (and any bday text)
     return;
   }
   if (msg.startsWith("vol:")) {

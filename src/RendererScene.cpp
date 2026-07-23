@@ -9,6 +9,19 @@
 using namespace theme;
 using namespace ui;
 
+// One Christmas string-light bulb, IDENTICAL treatment on the cabin eave and
+// the tree so they read as the same set: a lit 2px bulb with a soft glow, or a
+// dim dot when off. Only the "off" background differs (roof vs foliage).
+static void fairyBulb(LGFX_Sprite& cv, int x, int y, uint16_t c, bool on,
+                      uint16_t skyBottom, uint16_t dimBg) {
+  if (on) {
+    cv.fillCircle(x, y, 1, c);                             // 2px bulb
+    cv.drawPixel(x, y - 2, lerp565(c, skyBottom, 0.45f));  // glow
+  } else {
+    cv.drawPixel(x, y, lerp565(c, dimBg, 0.6f));           // dim (never gone)
+  }
+}
+
 void Renderer::drawSky() {
   // Vertical gradient from the top of the sky down to the ground line.
   for (int y = 0; y < GROUND_Y; y++) {
@@ -483,12 +496,7 @@ void Renderer::drawXmasDecor(bool night) {
     px = x; py = y;
     const bool on = ((ms / 400) + i) % 3 != 0;
     const uint16_t c = FAIRY[(i * 3) % 8];  // spread colors along the string
-    if (on) {
-      _canvas.fillCircle(x, y, 1, c);                              // 2px bulb
-      _canvas.drawPixel(x, y - 2, lerp565(c, _p.skyBottom, 0.45f));  // glow
-    } else {
-      _canvas.drawPixel(x, y, lerp565(c, _p.cabinRoof, 0.6f));     // dim
-    }
+    fairyBulb(_canvas, x, y, c, on, _p.skyBottom, _p.cabinRoof);
   }
   // --- the big pine (210) becomes a decorated Christmas tree: baubles
   // hung across the foliage + blinking fairy lights + a star on top. The
@@ -512,14 +520,11 @@ void Renderer::drawXmasDecor(bool night) {
       {-10, 92, 1}, {5, 94, 0}, {13, 96, 1}, {-6, 98, 0}};
   for (int i = 0; i < 8; i++) {
     const int lx = tx + lights[i].dx, ly = lights[i].dy;
-    const bool on = ((ms / 380) + i) % 3 != 0;
-    const uint16_t c = FAIRY[(i * 5 + 2) % 8];  // different phase than the cabin
-    if (on) {
-      _canvas.fillCircle(lx, ly, 1, c);                          // 2px bulb
-      _canvas.drawPixel(lx, ly - 2, lerp565(c, _p.skyBottom, 0.45f));  // glow
-    } else {
-      _canvas.drawPixel(lx, ly, lerp565(c, _p.treeNear, 0.65f)); // dim
-    }
+    // Same bulb + same blink cadence (ms/400) as the cabin - only the color
+    // phase and the dim background (foliage) differ.
+    const bool on = ((ms / 400) + i) % 3 != 0;
+    const uint16_t c = FAIRY[(i * 5 + 2) % 8];
+    fairyBulb(_canvas, lx, ly, c, on, _p.skyBottom, _p.treeNear);
   }
   // bright twinkling star on top (~59)
   const uint16_t gold = rgb565(252, 224, 96), glow = rgb565(255, 245, 170);
@@ -548,28 +553,37 @@ void Renderer::drawXmasDecor(bool night) {
     _canvas.drawPixel(g.x + g.w / 2 + 1, g.y - 1, g.rib);
   }
 
-  // Santa's sleigh crossing the sky: an 8s flight every ~40s, right to left
-  // (classic silhouette over the moon), with Rudolph's nose blinking red.
-  const unsigned long cyc = ms % 40000;
+  // Santa's sleigh crossing the sky: an 8s flight every ~40s. The route varies
+  // per pass (alternating direction, height and bob) and the whole rig FACES
+  // the way it travels - reindeer up front, Rudolph's nose leading, sleigh
+  // trailing behind. Direction is derived from the pass index (deterministic:
+  // no rand(), which would break cron/resume).
+  const unsigned long PERIOD = 40000;
+  const int pass = (int)(ms / PERIOD);
+  const unsigned long cyc = ms % PERIOD;
   if (cyc < 8000) {
     const float t = cyc / 8000.0f;
-    const int fx = 260 - (int)(300 * t);           // right -> left
-    const int fy = 34 + (int)(6.0f * sinf(t * 6.28f));
+    const bool rightward = (pass % 2) == 1;         // alternate R->L and L->R
+    const int s = rightward ? 1 : -1;              // travel / facing sign
+    const int fx = rightward ? (-40 + (int)(300 * t)) : (260 - (int)(300 * t));
+    const int fy = 26 + (pass % 3) * 8 +
+                   (int)((4 + (pass % 2) * 3) * sinf(t * 6.28f));  // varied height + bob
     const uint16_t sil = night ? rgb565(20, 16, 28) : rgb565(60, 54, 70);
-    // three reindeer (front) + harness + sleigh (back)
+    // three reindeer ahead of fx (lead furthest along the travel direction)
     for (int i = 0; i < 3; i++) {
-      const int rx = fx - i * 9, ry = fy + (i % 2);
-      _canvas.fillRect(rx, ry, 5, 2, sil);            // body
-      _canvas.drawPixel(rx + 4, ry - 1, sil);         // head
-      _canvas.drawPixel(rx + 5, ry - 2, sil);         // antler
-      _canvas.drawFastVLine(rx + 1, ry + 2, 2, sil);  // legs
-      _canvas.drawFastVLine(rx + 3, ry + 2, 2, sil);
+      const int rx = fx + s * (i * 9), ry = fy + (i % 2);
+      _canvas.fillRect(rx - 2, ry, 5, 2, sil);        // body
+      _canvas.drawPixel(rx + s * 3, ry - 1, sil);     // head (points forward)
+      _canvas.drawPixel(rx + s * 4, ry - 2, sil);     // antler
+      _canvas.drawFastVLine(rx - 1, ry + 2, 2, sil);  // legs
+      _canvas.drawFastVLine(rx + 1, ry + 2, 2, sil);
     }
-    if ((ms / 250) % 2)  // Rudolph's nose
-      _canvas.drawPixel(fx + 5, fy, rgb565(255, 60, 50));
-    _canvas.drawLine(fx - 3, fy + 1, fx - 26, fy + 3, sil);  // harness
-    _canvas.fillRect(fx - 32, fy + 1, 7, 3, sil);            // sleigh box
-    _canvas.drawFastHLine(fx - 33, fy + 4, 9, sil);          // runner
+    if ((ms / 250) % 2)  // Rudolph's nose, leading the team
+      _canvas.drawPixel(fx + s * (2 * 9 + 4), fy, rgb565(255, 60, 50));
+    // harness + sleigh trailing BEHIND fx (opposite the travel direction)
+    _canvas.drawLine(fx - s * 4, fy + 1, fx - s * 26, fy + 3, sil);      // harness
+    _canvas.fillRect(fx + (rightward ? -38 : 26), fy + 1, 7, 3, sil);   // sleigh box
+    _canvas.drawFastHLine(fx + (rightward ? -39 : 25), fy + 4, 9, sil); // runner
   }
 }
 
@@ -577,27 +591,38 @@ void Renderer::drawXmasDecor(bool night) {
 // witch cauldron bubbling GREEN smoke (brighter and pulsing after dark).
 void Renderer::drawHalloweenDecor(bool night) {
   const unsigned long ms = millis();
-  // --- graveyard cluster on the LEFT (clear of the pumpkin/cauldron) ---
+  // --- graveyard cluster on the LEFT (raised + spread out so the pieces
+  // breathe; clear of the pumpkin/cauldron) ---
   const uint16_t stone = rgb565(140, 142, 154), stoneDk = rgb565(92, 94, 106);
-  // rounded headstone with RIP, casting a small shadow
-  _canvas.fillEllipse(40, 126, 12, 3, rgb565(20, 24, 20));          // shadow
-  _canvas.fillRoundRect(33, 104, 15, 22, 6, stone);
-  _canvas.fillRect(33, 114, 15, 12, stone);
-  _canvas.setTextColor(stoneDk);
-  _canvas.setTextSize(1);
-  _canvas.setCursor(35, 110); _canvas.print("RIP");
-  // tilted cross grave next to it
-  _canvas.fillEllipse(62, 127, 9, 3, rgb565(20, 24, 20));
-  _canvas.fillRect(60, 112, 4, 15, stoneDk);
-  _canvas.fillRect(56, 116, 12, 3, stoneDk);
-  // a clear skull sitting on the grass (readable: 6px, dark sockets + jaw)
+  // rounded headstone, casting a small shadow
+  _canvas.fillEllipse(35, 121, 12, 3, rgb565(20, 24, 20));          // shadow
+  _canvas.fillRoundRect(28, 98, 15, 22, 6, stone);
+  _canvas.fillRect(28, 108, 15, 12, stone);
+  // "RIP" hand-pixeled 3x5 so it fits inside the 15px stone (textSize 1 = 18px
+  // overflowed the edge). Rows are 3-bit masks, MSB = leftmost pixel.
+  static const uint8_t RIP[3][5] = {
+      {0b110, 0b101, 0b110, 0b101, 0b101},  // R
+      {0b111, 0b010, 0b010, 0b010, 0b111},  // I
+      {0b110, 0b101, 0b110, 0b100, 0b100},  // P
+  };
+  for (int gl = 0; gl < 3; gl++)
+    for (int gy = 0; gy < 5; gy++)
+      for (int gx = 0; gx < 3; gx++)
+        if (RIP[gl][gy] & (1 << (2 - gx)))
+          _canvas.drawPixel(30 + gl * 4 + gx, 104 + gy, stoneDk);
+  // tilted cross grave, moved right + up
+  _canvas.fillEllipse(56, 122, 9, 3, rgb565(20, 24, 20));
+  _canvas.fillRect(54, 104, 4, 16, stoneDk);
+  _canvas.fillRect(50, 108, 12, 3, stoneDk);
+  // a clear skull sitting on the grass (readable: dark sockets + jaw), spread
+  // further right so it doesn't crowd the cross
   const uint16_t bone = rgb565(236, 232, 216), boneDk = rgb565(40, 34, 40);
-  _canvas.fillRoundRect(78, 120, 8, 7, 3, bone);
-  _canvas.fillRect(79, 127, 6, 2, bone);                            // jaw
-  _canvas.fillRect(80, 122, 2, 2, boneDk);                          // eyes
-  _canvas.fillRect(83, 122, 2, 2, boneDk);
-  _canvas.drawFastVLine(81, 125, 2, boneDk);                        // nose
-  _canvas.drawFastVLine(82, 128, 1, boneDk);                        // tooth gap
+  _canvas.fillRoundRect(84, 114, 8, 7, 3, bone);
+  _canvas.fillRect(85, 121, 6, 2, bone);                            // jaw
+  _canvas.fillRect(86, 116, 2, 2, boneDk);                          // eyes
+  _canvas.fillRect(89, 116, 2, 2, boneDk);
+  _canvas.drawFastVLine(87, 119, 2, boneDk);                        // nose
+  _canvas.drawFastVLine(88, 122, 1, boneDk);                        // tooth gap
 
   // --- witch cauldron on the RIGHT, well clear of the cabin/Leon ---
   const int cx = 206, cy = 122;
@@ -611,11 +636,32 @@ void Renderer::drawHalloweenDecor(bool night) {
   _canvas.fillRect(cx - 12, cy - 6, 25, 3, rgb565(50, 50, 60));     // rim
   _canvas.drawFastHLine(cx - 10, cy - 7, 21, brew);                 // brew
   _canvas.drawFastHLine(cx - 9, cy - 8, 19, lerp565(brew, rgb565(220, 255, 200), 0.5f));
-  _canvas.drawFastVLine(cx - 8, cy + 7, 4, rgb565(28, 28, 34));     // legs
-  _canvas.drawFastVLine(cx + 8, cy + 7, 4, rgb565(28, 28, 34));
+  // three clawed cast-iron feet splaying outward, each ending in a ball
+  const uint16_t iron = rgb565(28, 28, 34);
+  for (int f = -1; f <= 1; f++) {
+    const int fx2 = cx + f * 8;
+    _canvas.drawFastVLine(fx2, cy + 6, 3, iron);   // leg
+    _canvas.drawPixel(fx2 + f, cy + 9, iron);      // outward curve
+    _canvas.fillCircle(fx2 + f, cy + 10, 1, iron); // ball foot
+  }
   for (int i = 0; i < 3; i++) {  // bubbles
     const int b = (int)((ms / 150 + i * 5) % 10);
     if (b < 5) _canvas.fillCircle(cx - 6 + i * 6 + b, cy - 8, 1, brew);
+  }
+  // occasional POP: a bubble swells on the surface then bursts into a little
+  // green flash of flying sparks (wandering site, all deterministic on ms).
+  const int ep = (int)((ms / 80) % 22);                     // ~1.8s pop cycle
+  const int ex = cx - 6 + (int)((ms / 1760) % 3) * 6;       // wandering pop site
+  const uint16_t flash = lerp565(brew, rgb565(235, 255, 215), 0.75f);
+  if (ep < 4) {
+    _canvas.fillCircle(ex, cy - 8, ep < 2 ? 1 : 2, flash);  // swelling bubble
+  } else if (ep < 9) {
+    const int r = ep - 3;                                    // 1..5 expanding
+    _canvas.drawPixel(ex - r, cy - 8, flash);
+    _canvas.drawPixel(ex + r, cy - 8, flash);
+    _canvas.drawPixel(ex, cy - 8 - r, flash);
+    _canvas.drawPixel(ex - r / 2, cy - 9, lerp565(flash, _p.skyBottom, r / 6.0f));
+    _canvas.drawPixel(ex + r / 2, cy - 9, lerp565(flash, _p.skyBottom, r / 6.0f));
   }
   // thick green smoke column rising and fading
   for (int i = 0; i < 4; i++) {

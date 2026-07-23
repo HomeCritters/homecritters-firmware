@@ -88,10 +88,11 @@ class WebPortal {
   // Dev panel: pending "fest:" from the portal (-2 = none; -1 = auto/calendar;
   // 0-3 = forced Fest; 9 = birthday preview). Consumed by main.
   int consumeFestSet() { const int v = _festSetReq; _festSetReq = -2; return v; }
-  // Pet birthday "MM-DD" pushed by main into the state JSON; portal/HA set it
-  // with "bday:MM-DD" (consumed by main, which persists to NVS).
-  void setBirthday(const char* mmdd) {
-    if (strcmp(_bday, mmdd) != 0) { strlcpy(_bday, mmdd, sizeof(_bday)); _dirty = true; }
+  // Pet birthday "YYYY-MM-DD" (legacy "MM-DD" still accepted) pushed by main
+  // into the state JSON; portal/HA set it with "bday:..." (consumed by main,
+  // which persists to NVS). The year enables age display in the portal.
+  void setBirthday(const char* date) {
+    if (strcmp(_bday, date) != 0) { strlcpy(_bday, date, sizeof(_bday)); _dirty = true; }
   }
   bool consumeBirthday(char* out, size_t n) {  // "" = none pending
     if (!_bdayReq[0]) return false;
@@ -200,8 +201,8 @@ class WebPortal {
   Weather* _weather = nullptr;  // real-weather model (wxloc / wxCity)
   volatile int _wxSetReq = -2;  // pending forced weather (dev panel)
   volatile int _festSetReq = -2;  // pending forced festive theme (dev panel)
-  char _bday[6] = "07-09";       // pet birthday MM-DD (reported by main)
-  char _bdayReq[6] = {0};        // pending "bday:" set (consumed by main)
+  char _bday[11] = "2026-07-09"; // pet birthday YYYY-MM-DD (reported by main)
+  char _bdayReq[11] = {0};       // pending "bday:" set (consumed by main)
   std::function<void(Action)> _onAction;
   bool _serverUp = false;
   volatile bool _configuring = false;  // written on core 1, read by the core-0 http task

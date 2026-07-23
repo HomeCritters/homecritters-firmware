@@ -180,27 +180,36 @@ export default function SettingsDrawer({
       <div style={{ marginTop: 20 }}>
         <Text strong>🎂 Aniversário</Text>
         <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2, marginBottom: 6 }}>
-          No dia, o Leon ganha bolo, balões e "Parabéns pra Você".
+          {`No dia, o ${state?.name || 'bichinho'} ganha bolo, balões e "Parabéns pra Você".`}
         </Text>
         <Space.Compact style={{ width: '100%' }}>
           <Input
             type="date"
-            // The device stores MM-DD (year-agnostic); the date input needs a
-            // full date, so we pin a dummy year for editing and strip it back.
-            value={bday ? `2000-${bday}` : ''}
-            onChange={(e) => {
-              const v = e.target.value;  // yyyy-mm-dd
-              setBday(v ? v.slice(5) : '');
-            }}
+            // Full date incl. year (used for the age below); the device stores
+            // YYYY-MM-DD and fires the party on the MM-DD part.
+            value={/^\d{4}-\d{2}-\d{2}$/.test(bday) ? bday : (/^\d{2}-\d{2}$/.test(bday) ? `2026-${bday}` : '')}
+            onChange={(e) => setBday(e.target.value)}
           />
           <Button
             type="primary"
-            disabled={!/^\d{2}-\d{2}$/.test(bday)}
+            disabled={!/^\d{4}-\d{2}-\d{2}$/.test(bday)}
             onClick={() => send('bday:' + bday)}
           >
             Salvar
           </Button>
         </Space.Compact>
+        {/^\d{4}-\d{2}-\d{2}$/.test(bday) && (() => {
+          const [y, m, d] = bday.split('-').map(Number);
+          const now = new Date();
+          let age = now.getFullYear() - y;
+          if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age -= 1;
+          return (
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 6 }}>
+              {age > 0 ? `${state?.name || 'Ele'} tem ${age} ano${age > 1 ? 's' : ''} 🎂`
+                       : `${state?.name || 'Ele'} nasceu esse ano 🎂`}
+            </Text>
+          );
+        })()}
       </div>
 
       <div style={{ marginTop: 28 }}>
