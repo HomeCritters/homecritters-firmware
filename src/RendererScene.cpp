@@ -454,9 +454,19 @@ void Renderer::drawFerret(FerretActor& ferret) {
 // Christmas: blinking lights on the cabin roof, a star on the big pine,
 // gift boxes by the door and - the magic - Santa's sleigh silhouette flying
 // across the sky every ~40s (red nose blinking).
+// Shared festive fairy-light palette (8 colors) - used on both the cabin
+// eave and the tree so they read as one set of string lights.
+static const uint16_t FAIRY[8] = {
+    rgb565(240, 60, 60),   // red
+    rgb565(80, 220, 100),  // green
+    rgb565(90, 150, 250),  // blue
+    rgb565(250, 210, 80),  // yellow
+    rgb565(240, 120, 200), // pink
+    rgb565(120, 230, 230), // cyan
+    rgb565(250, 150, 60),  // orange
+    rgb565(190, 130, 240), // purple
+};
 void Renderer::drawXmasDecor(bool night) {
-  static const uint16_t LIGHTS[4] = {rgb565(235, 60, 60), rgb565(80, 220, 100),
-                                     rgb565(90, 140, 250), rgb565(250, 210, 80)};
   const unsigned long ms = millis();
   // Fairy-light string hung along the eave: same look as the tree lights -
   // small 1px bulbs with a soft glow when lit, dim (not gone) when off, on a
@@ -472,12 +482,12 @@ void Renderer::drawXmasDecor(bool night) {
     if (i) _canvas.drawLine(px, py, x, y, lerp565(_p.cabinRoof, _p.skyBottom, 0.3f));
     px = x; py = y;
     const bool on = ((ms / 400) + i) % 3 != 0;
-    const uint16_t c = LIGHTS[i % 4];
+    const uint16_t c = FAIRY[(i * 3) % 8];  // spread colors along the string
     if (on) {
-      _canvas.drawPixel(x, y - 1, lerp565(c, _p.skyBottom, 0.5f));  // glow
-      _canvas.drawPixel(x, y, c);
+      _canvas.fillCircle(x, y, 1, c);                              // 2px bulb
+      _canvas.drawPixel(x, y - 2, lerp565(c, _p.skyBottom, 0.45f));  // glow
     } else {
-      _canvas.drawPixel(x, y, lerp565(c, _p.cabinRoof, 0.65f));     // dim
+      _canvas.drawPixel(x, y, lerp565(c, _p.cabinRoof, 0.6f));     // dim
     }
   }
   // --- the big pine (210) becomes a decorated Christmas tree: baubles
@@ -501,12 +511,15 @@ void Renderer::drawXmasDecor(bool night) {
       {1, 68, 0}, {-5, 80, 1}, {7, 82, 1}, {-3, 90, 0},
       {-10, 92, 1}, {5, 94, 0}, {13, 96, 1}, {-6, 98, 0}};
   for (int i = 0; i < 8; i++) {
+    const int lx = tx + lights[i].dx, ly = lights[i].dy;
     const bool on = ((ms / 380) + i) % 3 != 0;
-    const uint16_t c = i % 2 ? rgb565(255, 220, 120) : rgb565(255, 150, 90);
-    _canvas.drawPixel(tx + lights[i].dx, lights[i].dy,
-                      on ? c : lerp565(c, _p.treeNear, 0.7f));
-    if (on) _canvas.drawPixel(tx + lights[i].dx, lights[i].dy - 1,
-                              lerp565(c, _p.skyBottom, 0.5f));  // tiny glow
+    const uint16_t c = FAIRY[(i * 5 + 2) % 8];  // different phase than the cabin
+    if (on) {
+      _canvas.fillCircle(lx, ly, 1, c);                          // 2px bulb
+      _canvas.drawPixel(lx, ly - 2, lerp565(c, _p.skyBottom, 0.45f));  // glow
+    } else {
+      _canvas.drawPixel(lx, ly, lerp565(c, _p.treeNear, 0.65f)); // dim
+    }
   }
   // bright twinkling star on top (~59)
   const uint16_t gold = rgb565(252, 224, 96), glow = rgb565(255, 245, 170);
