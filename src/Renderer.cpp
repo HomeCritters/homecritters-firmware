@@ -443,9 +443,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   if (party) drawDiscoFloor();
   drawHeader(pet, wifiOn, micMuted, micLive);
   drawFerret(ferret);
-  if (ferret.inBed()) drawBlanket(ferret);  // tucked in: blanket over the sprite
-  drawHat(ferret);                          // nightcap/party/festive (may no-op)
-  if (_bdayMode) drawParty();               // balloons + confetti in front
+  if (_bdayMode) drawParty();  // balloons + confetti in front
   // Precipitation/haze falls IN FRONT of the pet (livelier), under the HUD.
   if (k == WX_RAIN) drawRain(inten, freezing);
   if (k == WX_STORM) drawRain(hail ? 1 : 2, false);

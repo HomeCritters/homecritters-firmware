@@ -1,6 +1,5 @@
 #include "Renderer.h"
 #include "RendererShared.h"
-#include "accessory_sprites.h"  // bed/blanket/hats (base-sprite style)
 
 // Renderer partial: the magic-forest scene - sky/celestials, forest, cabin,
 // creatures (fireflies/butterflies/shooting star), the weather FX painted
@@ -449,68 +448,8 @@ void Renderer::drawFerret(FerretActor& ferret) {
                     fr, ferret.transparentKey());
 }
 
-// ---- Accessories & festive art ---------------------------------------------
-// All procedural (house style): the bed/blanket/hats anchor to the ferret's
-// frame (x(), y(), faceLeft(), animName()) so they ride every animation.
-
-// Striped blanket sprite over the sleeping body (tail side), with a gentle
-// 1px "breathing" ride so it feels alive.
-void Renderer::drawBlanket(FerretActor& f) {
-  const int breathe = ((millis() / 900) % 2) ? 1 : 0;
-  _canvas.pushImage(f.x() + 8, 111 + breathe, acc_blanket_w, acc_blanket_h,
-                    acc_blanket, (uint16_t)0xF81F);
-}
-
-// Hats: pixel-art sprites in the base style, anchored to the HEAD-TOP of the
-// exact current frame (anchors scanned from the sprite sheet - the hat rides
-// every bob of the walk and the whole jump arc).
-void Renderer::drawHat(FerretActor& f) {
-  // No hat mid-burrow (the head is underground). And during the jump's
-  // somersault (frames 1-4, head tumbling) the hat "pops off" - cartoon
-  // physics beats a hat glued to a flipping skull.
-  const char* an = f.animName();
-  if (!strcmp(an, "disappear") || !strcmp(an, "emerge")) return;
-  if (!strcmp(an, "jump")) {
-    const uint8_t fi = f.frameIndex();
-    if (fi >= 1 && fi <= 4) return;
-  }
-
-  // Which hat right now? Nightcap wins while tucked in.
-  Hat h = HAT_NONE;
-  if (f.inBed()) h = HAT_SLEEP;
-  else if (_bdayMode) h = HAT_PARTY;
-  else if (_fest == FEST_NATAL) h = HAT_SANTA;
-  else if (_fest == FEST_JUNINA) h = HAT_PALHA;
-  else if (_fest == FEST_HALLOWEEN) h = HAT_BRUXA;
-  if (h == HAT_NONE) return;
-
-  int ax, ay;  // head-top in 1x sprite coords
-  if (!accessoryAnchor(an, f.faceLeft(), f.frameIndex(), &ax, &ay)) return;
-
-  // Tilted hats (santa/witch/nightcap tips, authored leaning RIGHT) must
-  // flop BACKWARD, away from the face: right-facing ferret wears the
-  // mirrored (left-leaning) variant and vice versa. Symmetric hats
-  // (party/straw) just pick either.
-  const bool L = f.faceLeft();
-  const uint16_t* spr;
-  int w, hgt;
-  switch (h) {
-    case HAT_SLEEP: spr = hat_sleep_l; w = hat_sleep_w; hgt = hat_sleep_h; break;
-    case HAT_PARTY: spr = hat_party; w = hat_party_w; hgt = hat_party_h; break;
-    case HAT_SANTA: spr = L ? hat_santa : hat_santa_l; w = hat_santa_w; hgt = hat_santa_h; break;
-    case HAT_PALHA: spr = hat_palha; w = hat_palha_w; hgt = hat_palha_h; break;
-    default:        spr = L ? hat_bruxa : hat_bruxa_l; w = hat_bruxa_w; hgt = hat_bruxa_h; break;
-  }
-  // Position in 1x SPRITE space and scale once: the hat lands on the same
-  // 2.5px pixel lattice as the ferret. Screen-space placement drifted by
-  // sub-grid fractions per frame, which read as the hat floating.
-  const int w1 = (int)roundf(w / 2.5f), h1 = (int)roundf(hgt / 2.5f);
-  const int x1 = ax - w1 / 2;
-  const int y1 = ay - h1 + 2;  // brim overlaps the skull by 2 source px
-  _canvas.pushImage(f.x() + (int)roundf(x1 * 2.5f),
-                    f.y() + (int)roundf(y1 * 2.5f), w, hgt, spr,
-                    (uint16_t)0xF81F);
-}
+// ---- Festive scene decorations ---------------------------------------------
+// Procedural, in the scene's own fine-grain style (cabin/mushroom family).
 
 // Christmas: colored lights blinking along the cabin roof + a star on the
 // big pine's tip. Cabin geometry mirrors drawCabin(30, GROUND_Y): eave line

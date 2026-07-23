@@ -111,13 +111,11 @@ void FerretActor::update(const Pet& pet, unsigned long now) {
 
   if (pet.sleeping()) {
     _act = ACT_NONE;
-    _inBed = true;  // accessories on (blanket + nightcap); sleeps in place
     _anim.play(CLIP_SLEEP);
     setAnim("sleep");
     _anim.update(now);
     return;
   }
-  _inBed = false;
 
   if (_act == ACT_EAT) {
     _anim.play(CLIP_DIG);

@@ -62,10 +62,8 @@ class Renderer {
   // a spinner while the first ha:list hasn't arrived yet (fresh subscribe).
   void drawHaPanel(HaPanel& ha, int page, bool loading = false);
 
-  // Accessories/festive: which hat Leon wears (besides the automatic
-  // nightcap while in bed) and which seasonal decoration paints the scene.
-  // Driven by main's loopFestive (real date) or the fest: debug command.
-  enum Hat : uint8_t { HAT_NONE, HAT_SLEEP, HAT_PARTY, HAT_SANTA, HAT_PALHA, HAT_BRUXA };
+  // Festive: which seasonal decoration paints the scene. Driven by main's
+  // loopFestive (real date) or the fest: debug command.
   enum Fest : uint8_t { FEST_NONE, FEST_NATAL, FEST_HALLOWEEN, FEST_JUNINA };
   void setFestive(Fest f, bool birthday) {
     _fest = f;
@@ -165,9 +163,7 @@ class Renderer {
   void drawFireflies();     // green wanderers, clear nights only
   void drawShootingStar();  // rare streak, clear nights
   void drawButterflies();   // daytime counterpart, clear days
-  // Accessories/festive (RendererScene.cpp):
-  void drawBlanket(FerretActor& f);      // over the sprite while inBed
-  void drawHat(FerretActor& f);          // anchored to the head, per animation
+  // Festive scene decorations (RendererScene.cpp):
   void drawXmasDecor(bool night);        // cabin lights + star on the big pine
   void drawHalloweenDecor(bool night);   // carved pumpkin (glows at night)
   void drawJuninaDecor();                // flag garland between the pines

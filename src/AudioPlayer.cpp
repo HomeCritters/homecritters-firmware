@@ -35,6 +35,10 @@
 #include "sounds/sfx_wind.h"
 #include "sounds/sfx_listen.h"
 #include "sounds/sfx_confirm.h"
+#include "sounds/sfx_natal.h"
+#include "sounds/sfx_hallow.h"
+#include "sounds/sfx_junina.h"
+#include "sounds/sfx_bday.h"
 
 // ============================================================
 // Minimal ES8311 driver (playback/DAC only).
@@ -315,6 +319,10 @@ void AudioPlayer::playBuzzer()    { playMix(sfx_buzzer_wav,  sfx_buzzer_wav_len)
 // the old !busy() gate made storms silent whenever the ambience was playing.
 void AudioPlayer::playThunder()   { playMix(sfx_thunder_wav, sfx_thunder_wav_len); }
 void AudioPlayer::playRainAmb()   { if (!busy()) play(sfx_rainamb_mp3, sfx_rainamb_mp3_len); }
+void AudioPlayer::playXmasBells() { if (!busy()) play(sfx_natal_mp3,   sfx_natal_mp3_len); }
+void AudioPlayer::playOwl()       { if (!busy()) play(sfx_hallow_mp3,  sfx_hallow_mp3_len); }
+void AudioPlayer::playFireworks() { if (!busy()) play(sfx_junina_mp3,  sfx_junina_mp3_len); }
+void AudioPlayer::playBirthday()  { if (!busy()) play(sfx_bday_mp3,    sfx_bday_mp3_len); }
 void AudioPlayer::playWindAmb()   { if (!busy()) play(sfx_wind_mp3,    sfx_wind_mp3_len); }
 void AudioPlayer::playListen()    { playMix(sfx_listen_wav,  sfx_listen_wav_len); }
 void AudioPlayer::playConfirm()   { playMix(sfx_confirm_wav, sfx_confirm_wav_len); }

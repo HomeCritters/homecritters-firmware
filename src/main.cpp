@@ -142,6 +142,9 @@ static void handleUi(ui::UiHit hit) {
 }
 
 static int g_festDebug = -1;  // serial "fest:X": -1 auto, else forced Fest (0-3), 9=bday
+// Leon's birthday, NVS "pet"/"bday" as "MM-DD" (default 07-09: the project's
+// first commit). Balloons + confetti all day + "parabens pra voce" once.
+static char g_bdayDate[6] = "07-09";
 static bool g_shotPending = false;  // serial "shot": capture after the next render
 static int g_voiceDebug = -1;       // serial "voice:N": force a voice ring (-1 = off)
 static int g_wxDebug = -1;          // serial "wxset:X": force a scene weather (-1 = off)
@@ -644,6 +647,19 @@ static bool consoleNavigate(const String& c) {
         g_festDebug == 9);
     return true;
   }
+  if (c.startsWith("bday:")) {  // set Leon's birthday (MM-DD, NVS)
+    const String d = c.substring(5);
+    if (d.length() == 5 && d[2] == '-') {
+      strlcpy(g_bdayDate, d.c_str(), sizeof(g_bdayDate));
+      Preferences p;
+      p.begin("pet", false);
+      p.putString("bday", g_bdayDate);
+      p.end();
+      Serial.printf("[bday] aniversario do Leon: %s\n", g_bdayDate);
+    }
+    return true;
+  }
+  if (c == "bday") { Serial.printf("[bday] %s\n", g_bdayDate); return true; }
   if (c == "wxbolt") {  // debug: strike lightning right now (bolt + thunder)
     renderer.triggerBolt();
     return true;
@@ -726,30 +742,59 @@ static void loopWeatherFx(unsigned long now) {
   }
 }
 
-// Festive dates -> scene decorations + Leon's hat. Real calendar (needs a
-// synced clock; without it nothing shows) checked once a minute; the fest:
-// debug command forces a look for testing/screenshots (like wxset:).
+// Festive dates -> scene decorations + sparse themed ambience. Real calendar
+// (needs a synced clock; without it nothing shows) checked once a minute; the
+// fest: debug command forces a look for testing/screenshots (like wxset:).
 static void loopFestive(unsigned long now) {
   static unsigned long nextAt = 0;
+  static int sangOnDay = -1;  // yday we already sang parabens on
   if (now < nextAt) return;
   nextAt = now + 60000;
 
   Renderer::Fest fest = Renderer::FEST_NONE;
   bool bday = false;
-  if (g_festDebug >= 0) {  // forced (debug)
-    if (g_festDebug == 9) bday = true;
-    else fest = (Renderer::Fest)g_festDebug;
-  } else if (petClock.synced()) {
+  int today = -1, hour = 12;
+  if (petClock.synced()) {
     time_t t = time(nullptr);
     struct tm lt;
     localtime_r(&t, &lt);
+    today = lt.tm_yday;
+    hour = lt.tm_hour;
     const int m = lt.tm_mon + 1, d = lt.tm_mday;
     if (m == 12 && d <= 25) fest = Renderer::FEST_NATAL;
     else if (m == 10 && d >= 24) fest = Renderer::FEST_HALLOWEEN;
     else if (m == 6 && d >= 12 && d <= 24) fest = Renderer::FEST_JUNINA;
-    // Birthday (NVS "pet"/"bday" as "MM-DD"); wired after the art approval.
+    char md[6];
+    snprintf(md, sizeof(md), "%02d-%02d", m, d);
+    bday = strcmp(md, g_bdayDate) == 0;
+  }
+  if (g_festDebug >= 0) {  // forced (debug) overrides the calendar
+    fest = g_festDebug == 9 ? Renderer::FEST_NONE : (Renderer::Fest)g_festDebug;
+    bday = g_festDebug == 9;
   }
   renderer.setFestive(fest, bday);
+
+  // Parabens: once per birthday (and once per forced test).
+  if (bday && today != sangOnDay && screen == SCREEN_PET && !g_fullSleep) {
+    audio.playBirthday();
+    sangOnDay = today;
+  }
+  if (!bday) sangOnDay = -1;
+
+  // Sparse themed ambience on the pet screen: bells / owl / fireworks every
+  // 2.5-5 min (the play helpers bail if anything else is sounding). The owl
+  // only hoots after dark, like a proper owl.
+  static unsigned long ambientAt = 0;
+  if (fest != Renderer::FEST_NONE && screen == SCREEN_PET && !g_fullSleep &&
+      now >= ambientAt) {
+    ambientAt = now + 150000 + (esp_random() % 150000);
+    if (fest == Renderer::FEST_NATAL) audio.playXmasBells();
+    else if (fest == Renderer::FEST_JUNINA) audio.playFireworks();
+    else if (fest == Renderer::FEST_HALLOWEEN &&
+             (g_festDebug >= 0 || hour >= 18 || hour < 6)) {
+      audio.playOwl();
+    }
+  }
 }
 
 // Full sleep (night mode, for HA schedule automations): screen + LED dark,
@@ -939,6 +984,15 @@ void setup() {
   weather.begin([]() { return audio.streaming(); });
   console.begin(&pet, &battery, &audio, &led, &renderer, consoleNavigate,
                 []() { lastInteractionMs = millis(); });
+
+  // Leon's birthday (persisted; default = the project's first commit day).
+  {
+    Preferences p;
+    p.begin("pet", true);
+    String b = p.getString("bday", "07-09");
+    p.end();
+    strlcpy(g_bdayDate, b.c_str(), sizeof(g_bdayDate));
+  }
 
   // Night-mode sound settings (persisted).
   {
