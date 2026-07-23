@@ -992,7 +992,7 @@ void setup() {
   doodle.begin();  // load the Jump! high score
   simon.begin();   // load the Genius high score
   audio.begin();  // I2C + ES8311 + I2S + audio task
-  web.begin(&pet, &audio, &led, &ferret, &petClock, &renderer, &haPanel, doAction);  // WiFi + portal
+  web.begin(&pet, &audio, &led, &petClock, &renderer, &haPanel, doAction);  // WiFi + portal
   web.setBattery(battery.percent());  // seed the portal value
   web.setWeatherModel(&weather);      // wxloc command + wxCity in the state
   // Weather fetch task (core 0); skips fetches while media streams.
@@ -1110,19 +1110,8 @@ void loop() {
   web.handle();
 
   ferret.update(pet, now);
-  // Mirror the pet's animation to the portal only on the pet screen; during a
-  // game the portal isn't showing the pet, so skip the extra broadcasts.
-  static uint32_t lastSeq = 0xFFFFFFFF;
-  static bool lastFlip = false;
-  if (ferret.animSeq() != lastSeq || ferret.faceLeft() != lastFlip) {
-    lastSeq = ferret.animSeq();
-    lastFlip = ferret.faceLeft();
-    // Suppress the high-rate animation mirror (~10x/s: JSON build + core-0
-    // send + phone re-render) while media is playing. Those broadcasts steal
-    // CPU/network from a live audio stream; the portal animation can freeze
-    // for the duration. Meaningful pushes (media/stat changes) still go out.
-    if (screen == SCREEN_PET && !audio.streaming()) web.pushState();
-  }
+  // (The portal used to re-render the ferret from a broadcast of anim/pos;
+  // that's gone - the portal shows the real screen via the live stream now.)
 
   led.update(pet.mood());
   loopMediaLedShow(now);  // balada rainbow / TTS cyan pulse

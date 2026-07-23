@@ -16,14 +16,13 @@ static constexpr const char* FW_VERSION = "1.0.0";
 
 static void jsonEscape(const String& in, char* out, size_t n);  // defined below
 
-void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
+void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led,
                       Clock* clock, Renderer* renderer, HaPanel* ha,
                       std::function<void(Action)> onAction) {
   _pet = pet;
   _audio = audio;
   _led = led;
   _renderer = renderer;
-  _ferret = ferret;
   _clock = clock;
   _ha = ha;
   _onAction = onAction;
@@ -204,22 +203,14 @@ void WebPortal::handle() {
   if (!_serverUp && connected()) startServer();
   if (!_serverUp) return;
   _ws.loop();
-  // Single broadcast point, rate-limited. Pending changes (_dirty) go out
-  // quickly but coalesced. During a game the portal shows a controller (not
-  // the pet mirror), so we only need score/heartbeat - NOT the ~10x/s position
-  // stream, which would stall the tight game loop with TCP writes.
+  // State broadcast: the portal's visuals come from the live SCREEN stream
+  // now (pumpScreen), so state is just data - stats, mood, settings, score.
+  // A pending change (_dirty) goes out quickly (coalesced); otherwise a slow
+  // heartbeat keeps the decaying stats fresh. No more high-rate mirror.
   const unsigned long now = millis();
   const bool inGame = !strcmp(_screenName, "doodle") || !strcmp(_screenName, "ball") ||
                       !strcmp(_screenName, "simon");
-  unsigned long interval;
-  if (inGame) {
-    interval = 200;  // flat ~5/s: enough for the score, light on the game loop
-  } else if (_dirty) {
-    interval = 40;   // pending change: reflect quickly (coalesced)
-  } else {
-    const bool walking = _ferret && strcmp(_ferret->animName(), "walk") == 0;
-    interval = walking ? 100 : 500;  // mirror the walking pet, else idle refresh
-  }
+  const unsigned long interval = _dirty ? 40 : (inGame ? 300 : 1000);
   if (now - _lastBroadcast >= interval) {
     broadcastState();
     _lastBroadcast = now;
@@ -1019,7 +1010,6 @@ void WebPortal::stateJson(char* out, size_t n) const {
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
-           "\"anim\":\"%s\",\"seq\":%u,\"flip\":%s,\"x\":%.3f,"
            "\"hunger\":%.1f,\"energy\":%.1f,\"joy\":%.1f,\"hygiene\":%.1f}",
            _screenName, _gameScore, _battery, name,
            p.sleeping() ? "true" : "false",
@@ -1042,9 +1032,5 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _clock ? _clock->menuTimeoutSec() : 15,
            _clock && _clock->h24() ? "true" : "false",
            (!_clock || _clock->dateDmy()) ? "true" : "false",
-           _ferret ? _ferret->animName() : "idle",
-           _ferret ? (unsigned)_ferret->animSeq() : 0u,
-           _ferret && _ferret->faceLeft() ? "true" : "false",
-           _ferret ? _ferret->xNorm() : 0.5f,
            p.hunger(), p.energy(), p.joy(), p.hygiene());
 }

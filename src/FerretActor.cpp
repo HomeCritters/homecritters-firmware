@@ -32,10 +32,6 @@ int FerretActor::w() const { return FERRET_FRAME_W; }
 int FerretActor::h() const { return FERRET_FRAME_H; }
 uint16_t FerretActor::transparentKey() const { return FERRET_TRANSPARENT_KEY; }
 
-float FerretActor::xNorm() const {
-  float t = (_x - X_MIN) / (X_MAX - X_MIN);
-  return t < 0 ? 0 : (t > 1 ? 1 : t);
-}
 
 void FerretActor::begin() {
   randomSeed(esp_random());
@@ -112,22 +108,18 @@ void FerretActor::update(const Pet& pet, unsigned long now) {
   if (pet.sleeping()) {
     _act = ACT_NONE;
     _anim.play(CLIP_SLEEP);
-    setAnim("sleep");
     _anim.update(now);
     return;
   }
 
   if (_act == ACT_EAT) {
     _anim.play(CLIP_DIG);
-    setAnim("dig");
     if (now >= _actUntil) endAction(now);
   } else if (_act == ACT_JUMP) {
     _anim.play(_faceLeft ? CLIP_JUMP_L : CLIP_JUMP);
-    setAnim("jump");
     if (now >= _actUntil) endAction(now);
   } else if (_act == ACT_BURROW) {
     updateBurrow(now);
-    setAnim(_burrowPhase == 0 ? "dig" : (_burrowPhase == 1 ? "disappear" : "emerge"));
   } else {
     // idle wandering
     if (now >= _phaseUntil) pickWanderPhase(now);
@@ -137,13 +129,10 @@ void FerretActor::update(const Pet& pet, unsigned long now) {
       if (_x <= X_MIN) { _x = X_MIN; _dir = 1; _faceLeft = false; }
       if (_x >= X_MAX) { _x = X_MAX; _dir = -1; _faceLeft = true; }
       _anim.play(_faceLeft ? CLIP_WALK_L : CLIP_WALK);
-      setAnim("walk");
     } else if (_mode == MODE_IDLE2) {
       _anim.play(_faceLeft ? CLIP_IDLE2_L : CLIP_IDLE2);
-      setAnim("idle2");
     } else {
       _anim.play(_faceLeft ? CLIP_IDLE_L : CLIP_IDLE);
-      setAnim("idle");
     }
   }
 

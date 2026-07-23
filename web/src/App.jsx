@@ -5,12 +5,11 @@ import {
 import { hmacSha256Hex } from './hmac.js';
 import { ACTIONS, STATS, barColor } from './options.js';
 import { useDeviceSocket } from './useDeviceSocket.js';
-import { FerretStage } from './components/Ferret.jsx';
+import ScreenView from './components/ScreenView.jsx';
 import { GamePad, BallPad, SimonPad } from './components/GamePads.jsx';
 import { BatteryTag } from './components/Widgets.jsx';
 import SettingsDrawer from './components/SettingsDrawer.jsx';
 import { PairingModal, ShotModal } from './components/Modals.jsx';
-import LiveScreen from './components/LiveScreen.jsx';
 
 const { Title, Text } = Typography;
 
@@ -26,7 +25,6 @@ export default function App() {
   } = useDeviceSocket();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [liveOpen, setLiveOpen] = useState(false);
   const [wxForce, setWxForce] = useState('');    // dev panel: forced weather
   const [festForce, setFestForce] = useState(''); // dev panel: forced festive theme
   const [shotSrc, setShotSrc] = useState(null);  // /shot.bmp?... while open
@@ -71,19 +69,9 @@ export default function App() {
             shape="circle"
             size="large"
             disabled={!online}
-            onClick={() => setLiveOpen(true)}
-            style={{ position: 'absolute', right: 88, top: 0 }}
-            title="Tela ao vivo"
-          >
-            📺
-          </Button>
-          <Button
-            shape="circle"
-            size="large"
-            disabled={!online}
             onClick={takeShot}
             style={{ position: 'absolute', right: 44, top: 0 }}
-            title="Print da tela do hardware"
+            title="Salvar um print da tela"
           >
             📸
           </Button>
@@ -98,13 +86,15 @@ export default function App() {
           <Title level={2} style={{ margin: '0 0 8px' }}>
             {state ? state.name : 'Furão'} {state && (state.sleeping ? '😴' : '😊')}
           </Title>
-          <FerretStage
-            anim={state ? state.anim : 'idle'}
-            flip={state ? state.flip : false}
-            x={state ? state.x : 0.5}
-            seq={state ? state.seq : 0}
-            size={96}
-          />
+          {/* The pet's live screen (mirrors the device 1:1) - not a game */}
+          {!playing && !playingBall && !playingSimon && (
+            <ScreenView
+              send={send}
+              setFrameHandler={setFrameHandler}
+              online={online}
+              size={220}
+            />
+          )}
         </div>
 
         {playing ? (
@@ -193,14 +183,6 @@ export default function App() {
             wxForce={wxForce} setWxForce={setWxForce}
             festForce={festForce} setFestForce={setFestForce}
             topInfo={topInfo} onTopRefresh={requestTop}
-          />
-        )}
-        {liveOpen && (
-          <LiveScreen
-            open
-            onClose={() => setLiveOpen(false)}
-            send={send}
-            setFrameHandler={setFrameHandler}
           />
         )}
         {needToken && <PairingModal open send={send} />}

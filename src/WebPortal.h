@@ -7,7 +7,6 @@
 #include "Pet.h"
 #include "AudioPlayer.h"
 #include "StatusLed.h"
-#include "FerretActor.h"
 #include "Clock.h"
 #include "HaPanel.h"
 #include "Weather.h"
@@ -34,7 +33,7 @@ class WebPortal {
   // Phone game controller: navigation requested over WebSocket.
   enum GameNav { NAV_NONE, NAV_START, NAV_BALL, NAV_SIMON, NAV_BACK };
 
-  void begin(Pet* pet, AudioPlayer* audio, StatusLed* led, FerretActor* ferret,
+  void begin(Pet* pet, AudioPlayer* audio, StatusLed* led,
              Clock* clock, Renderer* renderer, HaPanel* ha,
              std::function<void(Action)> onAction);
   void handle();               // call every loop (when connected)
@@ -196,7 +195,6 @@ class WebPortal {
   StatusLed* _led = nullptr;
   Renderer* _renderer = nullptr;
   uint8_t* _bmp = nullptr;  // assembled BMP for /shot.bmp (lazy, PSRAM)
-  FerretActor* _ferret = nullptr;
   Clock* _clock = nullptr;
   HaPanel* _ha = nullptr;   // HA control panel model (SCREEN_HA)
   Weather* _weather = nullptr;  // real-weather model (wxloc / wxCity)
