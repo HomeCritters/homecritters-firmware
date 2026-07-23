@@ -111,11 +111,26 @@ void FerretActor::update(const Pet& pet, unsigned long now) {
 
   if (pet.sleeping()) {
     _act = ACT_NONE;
-    _anim.play(CLIP_SLEEP);
-    setAnim("sleep");
+    // Sleepy ferret heads to his bed first (walks there like any wander),
+    // then curls up on the mattress. Blanket/nightcap only once inBed.
+    if (fabsf(_x - (float)BED_X) > 3.0f) {
+      _inBed = false;
+      _dir = _x < BED_X ? 1 : -1;
+      _faceLeft = _dir < 0;
+      _x += _dir * SPEED * dt;
+      _anim.play(_faceLeft ? CLIP_WALK_L : CLIP_WALK);
+      setAnim("walk");
+    } else {
+      _x = BED_X;
+      _inBed = true;
+      _faceLeft = false;
+      _anim.play(CLIP_SLEEP);
+      setAnim("sleep");
+    }
     _anim.update(now);
     return;
   }
+  _inBed = false;
 
   if (_act == ACT_EAT) {
     _anim.play(CLIP_DIG);

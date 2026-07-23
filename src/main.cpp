@@ -141,6 +141,7 @@ static void handleUi(ui::UiHit hit) {
   }
 }
 
+static int g_festDebug = -1;  // serial "fest:X": -1 auto, else forced Fest (0-3), 9=bday
 static bool g_shotPending = false;  // serial "shot": capture after the next render
 static int g_voiceDebug = -1;       // serial "voice:N": force a voice ring (-1 = off)
 static int g_wxDebug = -1;          // serial "wxset:X": force a scene weather (-1 = off)
@@ -627,6 +628,22 @@ static bool consoleNavigate(const String& c) {
     Serial.printf("[wx] forced code = %d\n", g_wxDebug);
     return true;
   }
+  if (c.startsWith("fest:")) {  // force festive art: natal|halloween|junina|bday|off|auto
+    const String f = c.substring(5);
+    g_festDebug = f == "natal"     ? Renderer::FEST_NATAL
+                : f == "halloween" ? Renderer::FEST_HALLOWEEN
+                : f == "junina"    ? Renderer::FEST_JUNINA
+                : f == "bday"      ? 9
+                : f == "off"       ? Renderer::FEST_NONE
+                                   : -1;  // auto
+    Serial.printf("[fest] debug=%d\n", g_festDebug);
+    // apply immediately (loopFestive is throttled to 1/min)
+    renderer.setFestive(
+        g_festDebug >= 0 && g_festDebug != 9 ? (Renderer::Fest)g_festDebug
+                                             : Renderer::FEST_NONE,
+        g_festDebug == 9);
+    return true;
+  }
   if (c == "wxbolt") {  // debug: strike lightning right now (bolt + thunder)
     renderer.triggerBolt();
     return true;
@@ -707,6 +724,32 @@ static void loopWeatherFx(unsigned long now) {
     if (rainy) audio.playRainAmb();
     else audio.playWindAmb();
   }
+}
+
+// Festive dates -> scene decorations + Leon's hat. Real calendar (needs a
+// synced clock; without it nothing shows) checked once a minute; the fest:
+// debug command forces a look for testing/screenshots (like wxset:).
+static void loopFestive(unsigned long now) {
+  static unsigned long nextAt = 0;
+  if (now < nextAt) return;
+  nextAt = now + 60000;
+
+  Renderer::Fest fest = Renderer::FEST_NONE;
+  bool bday = false;
+  if (g_festDebug >= 0) {  // forced (debug)
+    if (g_festDebug == 9) bday = true;
+    else fest = (Renderer::Fest)g_festDebug;
+  } else if (petClock.synced()) {
+    time_t t = time(nullptr);
+    struct tm lt;
+    localtime_r(&t, &lt);
+    const int m = lt.tm_mon + 1, d = lt.tm_mday;
+    if (m == 12 && d <= 25) fest = Renderer::FEST_NATAL;
+    else if (m == 10 && d >= 24) fest = Renderer::FEST_HALLOWEEN;
+    else if (m == 6 && d >= 12 && d <= 24) fest = Renderer::FEST_JUNINA;
+    // Birthday (NVS "pet"/"bday" as "MM-DD"); wired after the art approval.
+  }
+  renderer.setFestive(fest, bday);
 }
 
 // Full sleep (night mode, for HA schedule automations): screen + LED dark,
@@ -963,6 +1006,7 @@ void loop() {
   }
   wasSleeping = sleeping;
 
+  loopFestive(now);         // seasonal decorations + Leon's hat (real date)
   loopNightMode(now);       // full-sleep enter/exit + night sound settings
   loopPairingOverlay(now);  // PIN overlay mirror + cancel X
 

@@ -17,10 +17,19 @@
 
 class FerretActor {
  public:
+  // Where the little bed lives (sprite-left x when tucked in). The bed is
+  // permanent scene furniture (Renderer draws it); falling asleep makes the
+  // ferret WALK here before lying down.
+  static constexpr int BED_X = 140;
+
   void begin();
   void onFeed();  // trigger the eating animation
   void onPat();   // trigger a jump (petting)
   void update(const Pet& pet, unsigned long now);
+
+  // Asleep AND tucked in at the bed (blanket + nightcap are drawn only then;
+  // while walking to bed he's sleepy but still on his feet).
+  bool inBed() const { return _inBed; }
 
   const uint16_t* frame() const { return _anim.frame(); }
   int x() const { return (int)_x; }
@@ -33,6 +42,7 @@ class FerretActor {
   // "jump","dig","disappear","emerge","sleep" + whether it faces left.
   const char* animName() const { return _animName; }
   bool faceLeft() const { return _faceLeft; }
+  uint8_t frameIndex() const { return _anim.frameIndex(); }  // hat anchor lookup
   uint32_t animSeq() const { return _animSeq; }  // bumps on every animation change
   float xNorm() const;  // normalized horizontal position (0..1) for the portal
 
@@ -48,6 +58,7 @@ class FerretActor {
   float _x = 88.0f;          // top-left x (float for smooth motion)
   int _dir = 1;              // +1 right, -1 left
   bool _faceLeft = false;
+  bool _inBed = false;       // asleep at BED_X (see inBed())
 
   unsigned long _phaseUntil = 0;   // end of the current wander phase
   unsigned long _actUntil = 0;     // end of the current action/phase

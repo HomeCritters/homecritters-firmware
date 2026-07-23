@@ -39,6 +39,7 @@ class Animator {
     if (!_clip) return nullptr;
     return _clip->base + (uint32_t)_idx * _clip->stride;
   }
+  uint8_t frameIndex() const { return _idx; }  // accessory anchors (hats)
 
  private:
   const AnimClip* _clip = nullptr;

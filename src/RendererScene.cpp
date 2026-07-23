@@ -1,5 +1,6 @@
 #include "Renderer.h"
 #include "RendererShared.h"
+#include "accessory_sprites.h"  // bed/blanket/hats (base-sprite style)
 
 // Renderer partial: the magic-forest scene - sky/celestials, forest, cabin,
 // creatures (fireflies/butterflies/shooting star), the weather FX painted
@@ -446,4 +447,159 @@ void Renderer::drawFerret(FerretActor& ferret) {
   if (!fr) return;
   _canvas.pushImage(ferret.x(), ferret.y(), ferret.w(), ferret.h(),
                     fr, ferret.transparentKey());
+}
+
+// ---- Accessories & festive art ---------------------------------------------
+// All procedural (house style): the bed/blanket/hats anchor to the ferret's
+// frame (x(), y(), faceLeft(), animName()) so they ride every animation.
+
+// Little wooden bed at FerretActor::BED_X - permanent furniture, drawn BEFORE
+// the ferret so Leon lies on top of the mattress. Pixel-art sprite in the
+// ferret's own 32px/2.5x style (assets/accessory_sprites.py).
+void Renderer::drawBed() {
+  _canvas.pushImage(FerretActor::BED_X, 108, acc_bed_w, acc_bed_h, acc_bed,
+                    (uint16_t)0xF81F);
+}
+
+// Striped blanket sprite over the sleeping body (tail side), with a gentle
+// 1px "breathing" ride so it feels alive.
+void Renderer::drawBlanket(FerretActor& f) {
+  const int breathe = ((millis() / 900) % 2) ? 1 : 0;
+  _canvas.pushImage(f.x() + 4, 106 + breathe, acc_blanket_w, acc_blanket_h,
+                    acc_blanket, (uint16_t)0xF81F);
+}
+
+// Hats: pixel-art sprites in the base style, anchored to the HEAD-TOP of the
+// exact current frame (anchors scanned from the sprite sheet - the hat rides
+// every bob of the walk and the whole jump arc).
+void Renderer::drawHat(FerretActor& f) {
+  // No hat mid-burrow (the head is underground).
+  const char* an = f.animName();
+  if (!strcmp(an, "disappear") || !strcmp(an, "emerge")) return;
+
+  // Which hat right now? Nightcap wins while tucked in.
+  Hat h = HAT_NONE;
+  if (f.inBed()) h = HAT_SLEEP;
+  else if (_bdayMode) h = HAT_PARTY;
+  else if (_fest == FEST_NATAL) h = HAT_SANTA;
+  else if (_fest == FEST_JUNINA) h = HAT_PALHA;
+  else if (_fest == FEST_HALLOWEEN) h = HAT_BRUXA;
+  if (h == HAT_NONE) return;
+
+  int ax, ay;  // head-top in 1x sprite coords
+  if (!accessoryAnchor(an, f.faceLeft(), f.frameIndex(), &ax, &ay)) return;
+  const int hx = f.x() + (int)(ax * 2.5f);  // head-top center on screen
+  const int hy = f.y() + (int)(ay * 2.5f);
+
+  const bool L = f.faceLeft();
+  const uint16_t* spr;
+  int w, hgt;
+  switch (h) {
+    case HAT_SLEEP: spr = L ? hat_sleep_l : hat_sleep; w = hat_sleep_w; hgt = hat_sleep_h; break;
+    case HAT_PARTY: spr = L ? hat_party_l : hat_party; w = hat_party_w; hgt = hat_party_h; break;
+    case HAT_SANTA: spr = L ? hat_santa_l : hat_santa; w = hat_santa_w; hgt = hat_santa_h; break;
+    case HAT_PALHA: spr = L ? hat_palha_l : hat_palha; w = hat_palha_w; hgt = hat_palha_h; break;
+    default:        spr = L ? hat_bruxa_l : hat_bruxa; w = hat_bruxa_w; hgt = hat_bruxa_h; break;
+  }
+  // Brim sits ON the head: overlap the anchor by ~6px so it hugs the fur.
+  _canvas.pushImage(hx - w / 2, hy - hgt + 6, w, hgt, spr, (uint16_t)0xF81F);
+}
+
+// Christmas: colored lights blinking along the cabin roof + a star on the
+// big pine's tip. Cabin geometry mirrors drawCabin(30, GROUND_Y): eave line
+// y=86 from x=25..79, apex (52, 71); big pine tip at (210, ~60).
+void Renderer::drawXmasDecor(bool night) {
+  static const uint16_t LIGHTS[4] = {rgb565(235, 60, 60), rgb565(80, 220, 100),
+                                     rgb565(90, 140, 250), rgb565(250, 210, 80)};
+  const unsigned long ms = millis();
+  for (int i = 0; i <= 8; i++) {  // both slopes, 4+1+4 dots
+    const float t = i / 8.0f;
+    int x, y;
+    if (t <= 0.5f) { x = 25 + (int)(27 * t * 2); y = 86 - (int)(15 * t * 2); }
+    else           { x = 52 + (int)(27 * (t - 0.5f) * 2); y = 71 + (int)(15 * (t - 0.5f) * 2); }
+    const bool on = ((ms / 450) + i) % 3 != 0;  // blink in rolling phases
+    const uint16_t c = LIGHTS[i % 4];
+    _canvas.fillCircle(x, y + 2, on ? 2 : 1, on ? c : lerp565(c, _p.cabinRoof, 0.6f));
+  }
+  // star on the big pine (210, 60), twinkling
+  const uint16_t gold = rgb565(250, 220, 90);
+  const int sx = 210, sy = 59;
+  const int r = ((ms / 600) % 2) ? 3 : 2;
+  _canvas.drawFastHLine(sx - r, sy, 2 * r + 1, gold);
+  _canvas.drawFastVLine(sx, sy - r, 2 * r + 1, gold);
+  _canvas.drawPixel(sx - 1, sy - 1, gold);
+  _canvas.drawPixel(sx + 1, sy - 1, gold);
+  _canvas.drawPixel(sx - 1, sy + 1, gold);
+  _canvas.drawPixel(sx + 1, sy + 1, gold);
+}
+
+// Halloween: carved pumpkin on the grass; the face glows and pulses at night.
+void Renderer::drawHalloweenDecor(bool night) {
+  const int px = 104, py = 120;  // between cabin and bed, on the grass
+  const uint16_t orange = rgb565(232, 120, 34), rib = rgb565(190, 88, 22);
+  const uint16_t stem = rgb565(96, 128, 52);
+  _canvas.fillEllipse(px, py, 10, 8, orange);
+  _canvas.drawFastVLine(px - 4, py - 6, 12, rib);
+  _canvas.drawFastVLine(px + 4, py - 6, 12, rib);
+  _canvas.fillRect(px - 1, py - 10, 3, 3, stem);
+  // face: glowing at night (pulse), dark carving by day
+  uint16_t face;
+  if (night) {
+    const float pulse = 0.5f + 0.5f * sinf(millis() / 500.0f);
+    face = lerp565(rgb565(255, 150, 40), rgb565(255, 235, 120), pulse);
+  } else {
+    face = rgb565(70, 34, 12);
+  }
+  _canvas.fillTriangle(px - 5, py - 2, px - 2, py - 2, px - 3, py - 5, face);  // eyes
+  _canvas.fillTriangle(px + 2, py - 2, px + 5, py - 2, px + 3, py - 5, face);
+  _canvas.drawFastHLine(px - 4, py + 3, 9, face);  // zigzag mouth
+  _canvas.drawPixel(px - 2, py + 2, face);
+  _canvas.drawPixel(px + 1, py + 4, face);
+  _canvas.drawPixel(px + 3, py + 2, face);
+}
+
+// Festa junina: a sagging garland of little triangle flags strung between
+// the two front pines (tips ~(90,67) and (210,60)).
+void Renderer::drawJuninaDecor() {
+  static const uint16_t FLAGS[4] = {rgb565(235, 70, 70), rgb565(250, 210, 80),
+                                    rgb565(90, 200, 110), rgb565(90, 140, 250)};
+  const int x0 = 90, y0 = 68, x1 = 210, y1 = 62;
+  const uint16_t rope = rgb565(120, 96, 70);
+  int px = x0, py = y0;
+  for (int i = 1; i <= 10; i++) {
+    const float t = i / 10.0f;
+    const int x = x0 + (int)((x1 - x0) * t);
+    // parabolic sag, deepest (+12px) at the middle
+    const int y = y0 + (int)((y1 - y0) * t) + (int)(12 * 4 * t * (1 - t));
+    _canvas.drawLine(px, py, x, y, rope);
+    if (i < 10 && (i % 2) == 1) {  // a flag on every other segment
+      _canvas.fillTriangle(x - 3, y + 1, x + 3, y + 1, x, y + 7, FLAGS[(i / 2) % 4]);
+    }
+    px = x; py = y;
+  }
+}
+
+// Birthday: floating balloons (gentle bob) + falling confetti, in front of
+// everything except the HUD.
+void Renderer::drawParty() {
+  static const uint16_t BALLOON[3] = {rgb565(240, 84, 120), rgb565(250, 210, 80),
+                                      rgb565(90, 170, 240)};
+  const unsigned long ms = millis();
+  for (int i = 0; i < 3; i++) {
+    const int bx = 44 + i * 74;
+    const int by = 52 + (int)(4.0f * sinf(ms / 900.0f + i * 2.1f));
+    _canvas.fillEllipse(bx, by, 6, 8, BALLOON[i]);
+    _canvas.drawPixel(bx - 2, by - 3, rgb565(255, 255, 255));  // shine
+    _canvas.fillTriangle(bx - 1, by + 8, bx + 1, by + 8, bx, by + 10, BALLOON[i]);
+    // wavy string
+    for (int s = 0; s < 12; s += 2)
+      _canvas.drawPixel(bx + (int)(1.5f * sinf(ms / 700.0f + s)), by + 11 + s,
+                        rgb565(200, 200, 210));
+  }
+  // confetti: sparse colored specks drifting down (snow-style hash motion)
+  for (int i = 0; i < 14; i++) {
+    const int cx = (i * 61 + (int)(6.0f * sinf(ms / 800.0f + i))) % SCREEN_W;
+    const int cy = (int)((ms / 28 + i * 83) % (GROUND_Y + 20));
+    _canvas.drawPixel(cx, cy, BALLOON[i % 3]);
+  }
 }

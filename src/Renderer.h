@@ -62,6 +62,16 @@ class Renderer {
   // a spinner while the first ha:list hasn't arrived yet (fresh subscribe).
   void drawHaPanel(HaPanel& ha, int page, bool loading = false);
 
+  // Accessories/festive: which hat Leon wears (besides the automatic
+  // nightcap while in bed) and which seasonal decoration paints the scene.
+  // Driven by main's loopFestive (real date) or the fest: debug command.
+  enum Hat : uint8_t { HAT_NONE, HAT_SLEEP, HAT_PARTY, HAT_SANTA, HAT_PALHA, HAT_BRUXA };
+  enum Fest : uint8_t { FEST_NONE, FEST_NATAL, FEST_HALLOWEEN, FEST_JUNINA };
+  void setFestive(Fest f, bool birthday) {
+    _fest = f;
+    _bdayMode = birthday;
+  }
+
   // Weather: the current WMO code tints/animates the pet scene (set each
   // frame by main; 0 = clear). temp (INT8_MIN = unknown) feeds the little
   // condition+temperature line under the idle clock.
@@ -121,6 +131,10 @@ class Renderer {
   // of draw() and read by the helpers, instead of threading a parameter.
   theme::ScenePalette _p = theme::NIGHT;
 
+  // Accessories/festive state (see setFestive).
+  Fest _fest = FEST_NONE;
+  bool _bdayMode = false;
+
   // Real-weather scene state (set by main from the Weather model).
   uint8_t _wxCode = 0;             // current WMO code (0 = clear)
   int8_t _wxTemp = INT8_MIN;       // current temp (INT8_MIN = unknown)
@@ -151,6 +165,14 @@ class Renderer {
   void drawFireflies();     // green wanderers, clear nights only
   void drawShootingStar();  // rare streak, clear nights
   void drawButterflies();   // daytime counterpart, clear days
+  // Accessories/festive (RendererScene.cpp):
+  void drawBed();                        // permanent furniture at FerretActor::BED_X
+  void drawBlanket(FerretActor& f);      // over the sprite while inBed
+  void drawHat(FerretActor& f);          // anchored to the head, per animation
+  void drawXmasDecor(bool night);        // cabin lights + star on the big pine
+  void drawHalloweenDecor(bool night);   // carved pumpkin (glows at night)
+  void drawJuninaDecor();                // flag garland between the pines
+  void drawParty();                      // birthday balloons + confetti
   void drawHeader(const Pet& pet, bool wifiOn, bool micMuted, bool micLive);
   void drawMenuHandle();
   void drawRightHandle();

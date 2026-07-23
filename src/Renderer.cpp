@@ -422,6 +422,12 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
     drawLightning();
   }
   drawForest(night);
+  // Seasonal decorations attach to the forest (cabin/pines/grass); the bed
+  // is permanent furniture - all under the ferret.
+  if (_fest == FEST_NATAL) drawXmasDecor(night);
+  else if (_fest == FEST_HALLOWEEN) drawHalloweenDecor(night);
+  else if (_fest == FEST_JUNINA) drawJuninaDecor();
+  drawBed();
   drawSparkles(night);
   // Clear-sky critters: green fireflies by night, butterflies by day
   // (weather grounds both; the party has its own light show). Clear nights
@@ -439,6 +445,9 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   if (party) drawDiscoFloor();
   drawHeader(pet, wifiOn, micMuted, micLive);
   drawFerret(ferret);
+  if (ferret.inBed()) drawBlanket(ferret);  // tucked in: blanket over the sprite
+  drawHat(ferret);                          // nightcap/party/festive (may no-op)
+  if (_bdayMode) drawParty();               // balloons + confetti in front
   // Precipitation/haze falls IN FRONT of the pet (livelier), under the HUD.
   if (k == WX_RAIN) drawRain(inten, freezing);
   if (k == WX_STORM) drawRain(hail ? 1 : 2, false);
