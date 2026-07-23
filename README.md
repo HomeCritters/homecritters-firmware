@@ -74,6 +74,30 @@ it gifts the home location automatically.
 </tr>
 </table>
 
+### 🎉 Festive dates & birthday
+
+The forest dresses up for the calendar (real date over NTP), and each theme
+coexists with the live weather:
+
+- 🎄 **Christmas** (Dec 1–25): a decorated pine with baubles, a twinkling star
+  and fairy lights matching the cabin's, gift boxes, a snowman, a door wreath,
+  icicles and candy canes — and **Santa's sleigh flies across the sky** with a
+  jolly *"ho ho ho"*.
+- 🎃 **Halloween** (Oct 24–31): a graveyard (headstone, cross, skull), a
+  bubbling cauldron glowing green with rising smoke and little pops, a carved
+  jack-o'-lantern that lights up at night — and a **witch cackles past on her
+  broom**, trailing green sparkles.
+- 🌽 **Festa Junina** (Jun 12–24): flag garlands, a crackling bonfire, a
+  striped food stall with a lit lamp, floating paper lanterns and corn stalks.
+- 🎆 **New Year** (Dec 31 + Jan 1): fireworks bursting across the sky all day,
+  and the barrage fires **right at the stroke of midnight**.
+- 🎂 **Birthday**: on Leon's day (set once in the portal or Home Assistant) he
+  gets a cake with flickering candles, balloons drifting around, confetti and
+  *"Parabéns pra Você"*.
+
+The sleigh and the witch pass every so often at varied heights and directions,
+always facing the way they fly, each with its own sound.
+
 ### 🎮 Three mini-games
 
 Playable on the touch screen — or from your phone, with the web portal
@@ -93,8 +117,16 @@ acting as a game controller.
 ### 📱 Web portal (no app needed)
 
 The device serves a React portal from flash at `http://critter.local` —
-live stats over WebSocket, remote actions, a live mirror of Leon's
-animation, settings, screenshots, and game controllers.
+live stats over WebSocket, remote actions, settings, screenshots, and game
+controllers. The centerpiece is a **live mirror of the actual screen**: the
+firmware streams the real canvas (per-row delta encoding, ~20 fps) so you see
+exactly what's on the device, weather, festive decorations and all.
+
+And the mirror is a **remote control** — tap and swipe on it and the touches
+are injected into the same input pipeline as the physical screen, so you can
+pet Leon, hit the action buttons, open the config menu, the "Casa" panel, the
+weather screen, launch and even *steer the games* — everything, right from
+your phone.
 
 | Portal | As a game controller |
 |---|---|
