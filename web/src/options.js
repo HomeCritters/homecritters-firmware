@@ -57,6 +57,7 @@ export const FEST_FORCE_OPTIONS = [
   { label: '🎄 Natal', value: 'natal' },
   { label: '🎃 Halloween', value: 'halloween' },
   { label: '🌽 Festa Junina', value: 'junina' },
+  { label: '🎆 Ano Novo', value: 'nye' },
   { label: '🎂 Aniversário', value: 'bday' },
   { label: '🚫 Nenhum', value: 'off' },
 ];

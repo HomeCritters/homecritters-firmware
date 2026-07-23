@@ -645,6 +645,7 @@ static bool consoleNavigate(const String& c) {
     g_festDebug = f == "natal"     ? Renderer::FEST_NATAL
                 : f == "halloween" ? Renderer::FEST_HALLOWEEN
                 : f == "junina"    ? Renderer::FEST_JUNINA
+                : (f == "nye" || f == "anonovo") ? Renderer::FEST_NYE
                 : f == "bday"      ? 9
                 : f == "off"       ? Renderer::FEST_NONE
                                    : -1;  // auto
@@ -776,13 +777,24 @@ static void loopFestive(unsigned long now) {
     Serial.printf("[bday] aniversario do Leon: %s\n", g_bdayDate);
   }
 
+  // Flyby sound cue (sleigh "ho ho ho" / witch cackle): the renderer flags
+  // the instant the flight starts; consumed EVERY tick (before the 60s
+  // throttle) so the sound lands in sync with the visual.
+  {
+    const uint8_t fly = renderer.consumeFlyby();
+    if (fly && screen == SCREEN_PET && !g_fullSleep) {
+      if (fly == 1) audio.playHoHoHo();
+      else audio.playWitch();
+    }
+  }
+
   static int sangOnDay = -1;  // yday we already sang parabens on
   if (now < nextAt) return;
   nextAt = now + 60000;
 
   Renderer::Fest fest = Renderer::FEST_NONE;
   bool bday = false;
-  int today = -1, hour = 12;
+  int today = -1, hour = 12, mon = 0, day = 0;
   if (petClock.synced()) {
     time_t t = time(nullptr);
     struct tm lt;
@@ -790,7 +802,9 @@ static void loopFestive(unsigned long now) {
     today = lt.tm_yday;
     hour = lt.tm_hour;
     const int m = lt.tm_mon + 1, d = lt.tm_mday;
-    if (m == 12 && d <= 25) fest = Renderer::FEST_NATAL;
+    mon = m; day = d;
+    if ((m == 12 && d == 31) || (m == 1 && d == 1)) fest = Renderer::FEST_NYE;
+    else if (m == 12 && d <= 25) fest = Renderer::FEST_NATAL;
     else if (m == 10 && d >= 24) fest = Renderer::FEST_HALLOWEEN;
     else if (m == 6 && d >= 12 && d <= 24) fest = Renderer::FEST_JUNINA;
     char md[6];
@@ -810,6 +824,14 @@ static void loopFestive(unsigned long now) {
   }
   if (!bday) sangOnDay = -1;
 
+  // NYE midnight: the barrage fires RIGHT at the turn of the year (first
+  // tick of Jan 1st, hour 0), interrupting whatever else is sounding.
+  static int nyeBoomDay = -1;
+  if (mon == 1 && day == 1 && hour == 0 && today != nyeBoomDay && !g_fullSleep) {
+    audio.playNyeFireworks(true);
+    nyeBoomDay = today;
+  }
+
   // Sparse themed ambience on the pet screen: bells / owl / fireworks every
   // 2.5-5 min (the play helpers bail if anything else is sounding). The owl
   // only hoots after dark, like a proper owl.
@@ -819,6 +841,7 @@ static void loopFestive(unsigned long now) {
     ambientAt = now + 150000 + (esp_random() % 150000);
     if (fest == Renderer::FEST_NATAL) audio.playXmasBells();
     else if (fest == Renderer::FEST_JUNINA) audio.playFireworks();
+    else if (fest == Renderer::FEST_NYE) audio.playNyeFireworks();
     else if (fest == Renderer::FEST_HALLOWEEN &&
              (g_festDebug >= 0 || hour >= 18 || hour < 6)) {
       audio.playOwl();

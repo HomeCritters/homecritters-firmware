@@ -80,6 +80,9 @@ class AudioPlayer {
   void playOwl();
   void playFireworks();
   void playBirthday();  // the full "parabens pra voce" (once a day)
+  void playHoHoHo();    // Santa's sleigh flyby
+  void playWitch();     // witch cackle (Halloween flyby)
+  void playNyeFireworks(bool force = false);  // NYE barrage; force at midnight
 
   // Mic ADC gain step 0..7 (0/6/.../42 dB) - live tuning during bring-up.
   void setMicGain(int step);

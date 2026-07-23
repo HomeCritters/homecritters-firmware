@@ -64,10 +64,17 @@ class Renderer {
 
   // Festive: which seasonal decoration paints the scene. Driven by main's
   // loopFestive (real date) or the fest: debug command.
-  enum Fest : uint8_t { FEST_NONE, FEST_NATAL, FEST_HALLOWEEN, FEST_JUNINA };
+  enum Fest : uint8_t { FEST_NONE, FEST_NATAL, FEST_HALLOWEEN, FEST_JUNINA, FEST_NYE };
   void setFestive(Fest f, bool birthday) {
     _fest = f;
     _bdayMode = birthday;
+  }
+  // Sky flyby just started (Santa's sleigh / the witch): main consumes this to
+  // play the matching sound in sync with the visual. 0 none, 1 sleigh, 2 witch.
+  uint8_t consumeFlyby() {
+    const uint8_t f = _flybyPending;
+    _flybyPending = 0;
+    return f;
   }
 
   // Weather: the current WMO code tints/animates the pet scene (set each
@@ -180,7 +187,10 @@ class Renderer {
   void drawXmasDecor(bool night);        // cabin lights + star on the big pine
   void drawHalloweenDecor(bool night);   // carved pumpkin (glows at night)
   void drawJuninaDecor(bool night);      // garland + bonfire + sky lanterns
+  void drawNyeDecor(bool night);         // New Year: fireworks bursts all day
   void drawParty(bool night);            // cake + drifting balloons + confetti
+  uint8_t _flybyPending = 0;             // 1 sleigh, 2 witch (consumeFlyby)
+  int _lastFlybyPass = -1;               // which flight cycle already flagged
   void drawHeader(const Pet& pet, bool wifiOn, bool micMuted, bool micLive);
   void drawMenuHandle();
   void drawRightHandle();

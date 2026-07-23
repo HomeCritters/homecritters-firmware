@@ -707,11 +707,11 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
       if (_renderer) _renderer->triggerBolt();
       return;
     }
-    // Dev panel: force a festive theme (natal|halloween|junina|bday|off|auto).
+    // Dev panel: force a festive theme (natal|halloween|junina|nye|bday|off|auto).
     if (msg.startsWith("fest:")) {
       const String f = msg.substring(5);
       _festSetReq = f == "natal" ? 1 : f == "halloween" ? 2 : f == "junina" ? 3
-                  : f == "bday" ? 9 : f == "off" ? 0 : -1;  // -1 = auto
+                  : f == "nye" ? 4 : f == "bday" ? 9 : f == "off" ? 0 : -1;  // -1 = auto
       return;
     }
     // Pet birthday (dev panel / HA): "YYYY-MM-DD" or legacy "MM-DD". Validated

@@ -482,6 +482,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   if (_fest == FEST_NATAL) drawXmasDecor(night);
   else if (_fest == FEST_HALLOWEEN) drawHalloweenDecor(night);
   else if (_fest == FEST_JUNINA) drawJuninaDecor(night);
+  else if (_fest == FEST_NYE) drawNyeDecor(night);
   drawSparkles(night);
   // Clear-sky critters: green fireflies by night, butterflies by day
   // (weather grounds both; the party has its own light show). Clear nights
