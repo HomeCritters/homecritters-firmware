@@ -458,14 +458,27 @@ void Renderer::drawXmasDecor(bool night) {
   static const uint16_t LIGHTS[4] = {rgb565(235, 60, 60), rgb565(80, 220, 100),
                                      rgb565(90, 140, 250), rgb565(250, 210, 80)};
   const unsigned long ms = millis();
-  for (int i = 0; i <= 8; i++) {  // both roof slopes, 4+1+4 dots
+  // Fairy-light string hung along the eave: same look as the tree lights -
+  // small 1px bulbs with a soft glow when lit, dim (not gone) when off, on a
+  // faint wire. (The old version was big blobs with no glow - it clashed
+  // with the tree.)
+  int px = 0, py = 0;
+  for (int i = 0; i <= 8; i++) {  // both roof slopes, 4+1+4 bulbs
     const float t = i / 8.0f;
     int x, y;
     if (t <= 0.5f) { x = 25 + (int)(27 * t * 2); y = 86 - (int)(15 * t * 2); }
     else           { x = 52 + (int)(27 * (t - 0.5f) * 2); y = 71 + (int)(15 * (t - 0.5f) * 2); }
-    const bool on = ((ms / 450) + i) % 3 != 0;
+    y += 2;
+    if (i) _canvas.drawLine(px, py, x, y, lerp565(_p.cabinRoof, _p.skyBottom, 0.3f));
+    px = x; py = y;
+    const bool on = ((ms / 400) + i) % 3 != 0;
     const uint16_t c = LIGHTS[i % 4];
-    _canvas.fillCircle(x, y + 2, on ? 2 : 1, on ? c : lerp565(c, _p.cabinRoof, 0.6f));
+    if (on) {
+      _canvas.drawPixel(x, y - 1, lerp565(c, _p.skyBottom, 0.5f));  // glow
+      _canvas.drawPixel(x, y, c);
+    } else {
+      _canvas.drawPixel(x, y, lerp565(c, _p.cabinRoof, 0.65f));     // dim
+    }
   }
   // --- the big pine (210) becomes a decorated Christmas tree: baubles
   // hung across the foliage + blinking fairy lights + a star on top. The
