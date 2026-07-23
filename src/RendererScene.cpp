@@ -594,10 +594,11 @@ void Renderer::drawHalloweenDecor(bool night) {
   // --- graveyard cluster on the LEFT (raised + spread out so the pieces
   // breathe; clear of the pumpkin/cauldron) ---
   const uint16_t stone = rgb565(140, 142, 154), stoneDk = rgb565(92, 94, 106);
-  // rounded headstone, casting a small shadow
-  _canvas.fillEllipse(35, 121, 12, 3, rgb565(20, 24, 20));          // shadow
-  _canvas.fillRoundRect(28, 98, 15, 22, 6, stone);
-  _canvas.fillRect(28, 108, 15, 12, stone);
+  // rounded headstone, casting a small shadow (raised 1px so it clears the
+  // forest mushroom that sits on the grass just below)
+  _canvas.fillEllipse(35, 120, 12, 3, rgb565(20, 24, 20));          // shadow
+  _canvas.fillRoundRect(28, 97, 15, 22, 6, stone);
+  _canvas.fillRect(28, 107, 15, 12, stone);
   // "RIP" hand-pixeled 3x5 so it fits inside the 15px stone (textSize 1 = 18px
   // overflowed the edge). Rows are 3-bit masks, MSB = leftmost pixel.
   static const uint8_t RIP[3][5] = {
@@ -609,11 +610,11 @@ void Renderer::drawHalloweenDecor(bool night) {
     for (int gy = 0; gy < 5; gy++)
       for (int gx = 0; gx < 3; gx++)
         if (RIP[gl][gy] & (1 << (2 - gx)))
-          _canvas.drawPixel(30 + gl * 4 + gx, 104 + gy, stoneDk);
-  // tilted cross grave, moved right + up
-  _canvas.fillEllipse(56, 122, 9, 3, rgb565(20, 24, 20));
-  _canvas.fillRect(54, 104, 4, 16, stoneDk);
-  _canvas.fillRect(50, 108, 12, 3, stoneDk);
+          _canvas.drawPixel(30 + gl * 4 + gx, 103 + gy, stoneDk);
+  // tilted cross grave, moved right + up (also 1px up, off the mushroom)
+  _canvas.fillEllipse(56, 121, 9, 3, rgb565(20, 24, 20));
+  _canvas.fillRect(54, 103, 4, 16, stoneDk);
+  _canvas.fillRect(50, 107, 12, 3, stoneDk);
   // a clear skull sitting on the grass (readable: dark sockets + jaw), spread
   // further right so it doesn't crowd the cross
   const uint16_t bone = rgb565(236, 232, 216), boneDk = rgb565(40, 34, 40);
