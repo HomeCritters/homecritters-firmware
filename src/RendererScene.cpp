@@ -793,10 +793,12 @@ void Renderer::drawJuninaDecor(bool night) {
   static const uint16_t FLAGS[4] = {rgb565(235, 70, 70), rgb565(250, 210, 80),
                                     rgb565(90, 200, 110), rgb565(90, 140, 250)};
   const unsigned long ms = millis();
-  // --- two flag garlands: cabin->pine and pine->pine (a real arraial) ---
+  // --- two flag garlands: cabin->pine and pine->pine (a real arraial). The
+  // left end anchors on the CABIN ROOF PEAK (~52,90) - it used to float ~24px
+  // above the roof. ---
   const uint16_t rope = rgb565(120, 96, 70);
   struct GL { int16_t x0, y0, x1, y1; uint8_t sag; };
-  static const GL garlands[2] = {{52, 64, 90, 68, 10}, {90, 68, 210, 62, 12}};
+  static const GL garlands[2] = {{52, 89, 90, 68, 10}, {90, 68, 210, 62, 12}};
   for (const auto& gl : garlands) {
     int px = gl.x0, py = gl.y0;
     for (int i = 1; i <= 10; i++) {
@@ -810,9 +812,11 @@ void Renderer::drawJuninaDecor(bool night) {
     }
   }
 
-  // --- barraquinha (striped festival stall) center-left, with a lit lamp ---
+  // --- barraquinha (striped festival stall) center-left, with a lit lamp.
+  // Base raised above Leon's foot line (FLOOR_Y) so he passes cleanly in
+  // front instead of clipping through it. ---
   {
-    const int bx = 96, bg = 128;  // left edge, ground line
+    const int bx = 96, bg = 114;  // left edge, base line (above Leon's feet)
     const uint16_t post = rgb565(140, 105, 70);
     const uint16_t red = rgb565(215, 70, 70), wht = rgb565(246, 240, 230);
     _canvas.fillEllipse(bx + 14, bg + 1, 17, 3, rgb565(24, 30, 22));  // shadow
