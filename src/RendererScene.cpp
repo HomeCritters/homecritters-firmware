@@ -467,14 +467,42 @@ void Renderer::drawXmasDecor(bool night) {
     const uint16_t c = LIGHTS[i % 4];
     _canvas.fillCircle(x, y + 2, on ? 2 : 1, on ? c : lerp565(c, _p.cabinRoof, 0.6f));
   }
-  // bright twinkling star crowning the big pine (210, ~59)
+  // --- the big pine (210) becomes a decorated Christmas tree: baubles
+  // hung across the foliage + blinking fairy lights + a star on top. The
+  // tree spans roughly y 60..108, widening toward the base. ---
+  const int tx = 210;
+  static const uint16_t BAUBLE[4] = {rgb565(220, 50, 60), rgb565(240, 200, 70),
+                                     rgb565(80, 150, 230), rgb565(230, 230, 240)};
+  // baubles: placed within the triangular silhouette (half-width grows with y)
+  struct O { int8_t dx, dy, c; };
+  static const O baubles[7] = {
+      {-3, 72, 0}, {4, 78, 1}, {-7, 86, 2}, {3, 88, 3},
+      {-1, 94, 0}, {9, 96, 1}, {-12, 98, 3}};
+  for (const auto& o : baubles) {
+    _canvas.fillCircle(tx + o.dx, o.dy, 2, BAUBLE[o.c]);
+    _canvas.drawPixel(tx + o.dx - 1, o.dy - 1, rgb565(255, 255, 255));  // highlight
+    _canvas.drawPixel(tx + o.dx, o.dy - 2, _p.treeTrunk);               // cap
+  }
+  // fairy lights: little dots blinking in rolling phases across the tree
+  static const O lights[8] = {
+      {1, 68, 0}, {-5, 80, 1}, {7, 82, 1}, {-3, 90, 0},
+      {-10, 92, 1}, {5, 94, 0}, {13, 96, 1}, {-6, 98, 0}};
+  for (int i = 0; i < 8; i++) {
+    const bool on = ((ms / 380) + i) % 3 != 0;
+    const uint16_t c = i % 2 ? rgb565(255, 220, 120) : rgb565(255, 150, 90);
+    _canvas.drawPixel(tx + lights[i].dx, lights[i].dy,
+                      on ? c : lerp565(c, _p.treeNear, 0.7f));
+    if (on) _canvas.drawPixel(tx + lights[i].dx, lights[i].dy - 1,
+                              lerp565(c, _p.skyBottom, 0.5f));  // tiny glow
+  }
+  // bright twinkling star on top (~59)
   const uint16_t gold = rgb565(252, 224, 96), glow = rgb565(255, 245, 170);
-  const int sx = 210, sy = 58;
+  const int sx = tx, sy = 58;
   const int r = ((ms / 500) % 2) ? 5 : 4;
-  _canvas.fillCircle(sx, sy, 2, glow);                        // core
-  _canvas.drawFastHLine(sx - r, sy, 2 * r + 1, gold);         // 4 rays
+  _canvas.fillCircle(sx, sy, 2, glow);
+  _canvas.drawFastHLine(sx - r, sy, 2 * r + 1, gold);
   _canvas.drawFastVLine(sx, sy - r, 2 * r + 1, gold);
-  for (int d = 1; d < r - 1; d++) {                           // diagonals
+  for (int d = 1; d < r - 1; d++) {
     _canvas.drawPixel(sx - d, sy - d, gold); _canvas.drawPixel(sx + d, sy - d, gold);
     _canvas.drawPixel(sx - d, sy + d, gold); _canvas.drawPixel(sx + d, sy + d, gold);
   }
@@ -709,14 +737,24 @@ void Renderer::drawParty(bool night) {
   _canvas.fillRect(kx - 7, ky - 8, 15, 2, frost);
   for (int i = 0; i < 3; i++)  // frosting dots on the bottom tier
     _canvas.fillCircle(kx - 8 + i * 8, ky - 1, 1, rgb565(255, 120, 160));
-  // three candles with flickering flames
+  // three candles with LIVE flames: each sways side to side on its own
+  // clock and twinkles through warm tones (never fully out - a real flame
+  // flickers in brightness, it doesn't blink off).
   for (int i = 0; i < 3; i++) {
     const int cx2 = kx - 4 + i * 4;
-    _canvas.drawFastVLine(cx2, ky - 12, 4, BALLOON[i]);
-    if ((ms / 130 + i * 2) % 4) {
-      _canvas.drawPixel(cx2, ky - 13, rgb565(255, 230, 120));
-      if (night) _canvas.drawPixel(cx2, ky - 14, rgb565(255, 180, 60));
-    }
+    _canvas.drawFastVLine(cx2, ky - 12, 4, BALLOON[i]);         // wax stick
+    _canvas.drawPixel(cx2, ky - 13, rgb565(60, 60, 70));        // wick
+    // sway: the tip leans -1/0/+1 px, each candle out of phase
+    const float sway = sinf(ms / 260.0f + i * 2.1f);
+    const int tipx = cx2 + (int)roundf(sway);
+    // twinkle: brightness rides a fast flicker, tinting the flame body
+    const float tw = 0.5f + 0.5f * sinf(ms / 90.0f + i * 3.7f);
+    const uint16_t hot = lerp565(rgb565(250, 150, 40), rgb565(255, 240, 170), tw);
+    if (night)  // soft glow halo around the flame
+      _canvas.fillCircle(tipx, ky - 15, 2, lerp565(_p.skyBottom, rgb565(255, 190, 90), 0.5f));
+    _canvas.drawPixel(cx2, ky - 14, rgb565(255, 120, 40));      // base (steady)
+    _canvas.drawPixel(tipx, ky - 15, hot);                      // mid
+    _canvas.drawPixel(tipx, ky - 16, lerp565(hot, rgb565(255, 255, 210), 0.6f));  // tip
   }
 
   // --- confetti raining over the whole scene ---
