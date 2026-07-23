@@ -423,11 +423,11 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
   }
   drawForest(night);
   // Seasonal decorations attach to the forest (cabin/pines/grass); the bed
-  // is permanent furniture - all under the ferret.
+  // spawns under Leon only while he naps.
   if (_fest == FEST_NATAL) drawXmasDecor(night);
   else if (_fest == FEST_HALLOWEEN) drawHalloweenDecor(night);
   else if (_fest == FEST_JUNINA) drawJuninaDecor();
-  drawBed();
+  if (ferret.inBed()) drawBed(ferret);
   drawSparkles(night);
   // Clear-sky critters: green fireflies by night, butterflies by day
   // (weather grounds both; the party has its own light show). Clear nights

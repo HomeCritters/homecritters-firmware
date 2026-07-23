@@ -17,18 +17,13 @@
 
 class FerretActor {
  public:
-  // Where the little bed lives (sprite-left x when tucked in). The bed is
-  // permanent scene furniture (Renderer draws it); falling asleep makes the
-  // ferret WALK here before lying down.
-  static constexpr int BED_X = 140;
-
   void begin();
   void onFeed();  // trigger the eating animation
   void onPat();   // trigger a jump (petting)
   void update(const Pet& pet, unsigned long now);
 
-  // Asleep AND tucked in at the bed (blanket + nightcap are drawn only then;
-  // while walking to bed he's sleepy but still on his feet).
+  // Asleep (the bed spawns right under him wherever the nap starts; the
+  // Renderer draws bed + blanket + nightcap only then).
   bool inBed() const { return _inBed; }
 
   const uint16_t* frame() const { return _anim.frame(); }

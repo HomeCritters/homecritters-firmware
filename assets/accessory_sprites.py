@@ -32,103 +32,120 @@ TRANSPARENT_KEY = 0xF81F
 TAG_RE = re.compile(r"\(([^)]+)\)\s*(\d+)\.ase")
 
 # ---------------------------------------------------------------- palette --
+# Style rules extracted from ferret-sprite-sheet.png: a FULL 1px outline in
+# the sheet's near-black rgb(47,47,46) around every shape, and two tones per
+# material (like the fur's 105/130 pair). K = that outline color.
 PAL = {
     ".": None,                 # transparent
-    "D": (74, 48, 32),         # wood dark (bed frame)
+    "K": (47, 47, 46),         # OUTLINE (the sheet's near-black)
+    "D": (74, 48, 32),         # wood dark (bed frame shade)
     "W": (122, 82, 50),        # wood mid
     "M": (214, 198, 168),      # mattress cream
+    "m": (181, 172, 148),      # mattress shade
     "P": (240, 234, 218),      # pillow white
     "V": (146, 54, 66),        # blanket wine
+    "v": (112, 40, 50),        # blanket wine shade
     "C": (226, 208, 178),      # blanket cream stripe
     "R": (206, 44, 50),        # santa red
+    "r": (160, 32, 40),        # santa red shade
     "S": (246, 246, 246),      # snow white
     "p": (238, 88, 124),       # party pink
     "b": (86, 168, 232),       # party blue
     "y": (248, 214, 92),       # party/star yellow
     "t": (226, 192, 100),      # straw
+    "u": (196, 158, 72),       # straw shade
     "n": (122, 82, 44),        # straw band brown
     "X": (98, 54, 138),        # witch purple
+    "x": (72, 38, 104),        # witch purple shade
     "O": (232, 140, 44),       # witch band orange
 }
 
 # ------------------------------------------------------------- pixel maps --
+# Every sprite follows the sheet's rule: full K outline, two tones/material.
 # Bed, side view, headboard on the RIGHT (Leon's head lands on the pillow).
 BED = """
-............................DDD.
-............................DWD.
-............................DWD.
-DDD.........................DWD.
-DWD..................PPPPPPPDWD.
-DWDMMMMMMMMMMMMMMMMMMPPPPPPPDWD.
-DWDMMMMMMMMMMMMMMMMMMMMMMMMMDWD.
-DWWWWWWWWWWWWWWWWWWWWWWWWWWWWWD.
-DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD.
-.DD.........................DD..
-.DD.........................DD..
+............................KKKK
+............................KWWK
+............................KWWK
+.KKK........................KWWK
+.KWWK..............KKKKKKK..KWWK
+.KWWKKKKKKKKKKKKKKKPPPPPPKK.KWWK
+.KWKMMMMMMMMMMMMMMMPPPPPPPKKKWWK
+.KWKMMMMMMMMMMMMMMMMMMMMmmmMKWWK
+.KWWWWWWWWWWWWWWWWWWWWWWWWWWWWWK
+.KDDDDDDDDDDDDDDDDDDDDDDDDDDDDDK
+.KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK
+..KDDK....................KDDK..
+..KKKK....................KKKK..
 """
 
-# Blanket over the body (tail side), stripes; slightly draped bottom edge.
+# Blanket: smaller now (covers the rear half of the body, not the whole
+# ferret), wine with a cream stripe and a shaded hem.
 BLANKET = """
-.CCCCCCCCCCCCCCCCCC.
-CVVVVVVVVVVVVVVVVVVC
-CVVVVVVVVVVVVVVVVVVC
-CCCCCCCCCCCCCCCCCCCC
-CVVVVVVVVVVVVVVVVVVC
-CVVVVVVVVVVVVVVVVVVC
-.CCCCCCCCCCCCCCCCC..
+.KKKKKKKKKKKKK.
+KVVVVVVVVVVVVVK
+KCCCCCCCCCCCCCK
+KVVVVVVVVVVVVVK
+KvvvvvvvvvvvvvK
+.KKKKKKKKKKKKK.
 """
 
-# Nightcap: floppy cone flopping right, cream brim + pompom.
+# Nightcap: floppy wine cone flopping right, cream brim + pompom.
 HAT_SLEEP = """
-..........CC
-.......VVVCC
-.....VVVVV..
-....VVVVV...
-..VVVVVV....
-.VVVVVV.....
-CCCCCCCC....
+.........KKK
+........KCCK
+.....KKKVKK.
+....KVVVK...
+...KVVvK....
+..KVVvK.....
+.KCCCCCK....
+.KKKKKKK....
 """
 
 # Party hat: striped cone + yellow pompom.
 HAT_PARTY = """
-....yy....
-....pp....
-...bbbb...
-...pppp...
-..bbbbbb..
-..pppppp..
-.bbbbbbbb.
+....KK...
+...KyyK..
+...KppK..
+..KbbbbK.
+..KppppK.
+.KbbbbbbK
+.KKKKKKKK
 """
 
-# Santa: red cone bent right, white brim + pompom.
+# Santa: red cone bent right, white brim + white pompom.
 HAT_SANTA = """
-.........SS
-......RRRSS
-....RRRRR..
-...RRRRR...
-..RRRRR....
-.RRRRRR....
-SSSSSSSSS..
+........KK.
+.......KSSK
+....KKKRSSK
+...KRRRRKK.
+..KRRRrK...
+.KRRRrK....
+KSSSSSSK...
+KKKKKKKK...
 """
 
-# Straw hat: short crown + wide brim with a brown band.
+# Straw hat: short crown, brown band, wide brim.
 HAT_PALHA = """
-....tttttt....
-....tttttt....
-....nnnnnn....
-tttttttttttttt
-.tttttttttttt.
+.....KKKKK.....
+....KttttuK....
+....KnnnnnK....
+KKKKKttttuKKKKK
+KtttuuuuuuutttK
+.KKKKKKKKKKKKK.
 """
 
 # Witch hat: crooked purple cone, orange band, wide brim.
 HAT_BRUXA = """
-.........XX...
-.......XXXX...
-......XXXX....
-.....XXXX.....
-....XXXXX.....
-....OOOOO.....
-XXXXXXXXXXXXXX
+.........KK....
+........KXK....
+.......KXXK....
+......KXXK.....
+.....KXXXK.....
+....KXXXxK.....
+....KOOOOK.....
+KKKKXXXXXxKKKK.
+.KKKKKKKKKKKKK.
 """
 
 SPRITES = {
@@ -190,40 +207,26 @@ def emit_sprite(name, art, mirror, out):
 
 
 def scan_anchors():
-    """Head-top anchor per frame, straight from the sheet: centroid-x of the
-    opaque pixels in the top 3 opaque rows + the topmost y (1x coords)."""
-    meta = json.load(open(JSON_PATH))
-    frames = {}
-    for fname, fr in meta["frames"].items():
-        m = TAG_RE.search(fname)
-        if m:
-            frames.setdefault(m.group(1), []).append((int(m.group(2)), fr["frame"]))
-    sheet = Image.open(PNG_PATH).convert("RGBA")
-
+    """Head-top anchors, HAND-READ frame by frame from magnified grids of the
+    sprite sheet (the automatic topmost-pixel scan confused the shoulder hump
+    with the ears and pulled hats off-center). Right-facing (ax, ay) = center
+    between the ears, 1x sprite coords; mirrored variants flip ax."""
+    MANUAL = {
+        "idle":  [(24, 19)] * 8,
+        "idle2": [(24, 19)] * 4 + [(24, 20)] * 4,
+        "walk":  [(24, 16), (25, 17), (26, 20), (25, 21),
+                  (23, 17), (25, 18), (25, 20), (25, 19)],
+        "jump":  [(20, 15), (16, 8), (21, 16), (19, 22),
+                  (17, 22), (23, 22), (24, 21), (24, 20)],
+        "dig":   [(23, 19), (24, 18), (25, 19), (27, 22),
+                  (27, 23), (27, 23), (27, 23), (27, 23)],
+        "sleep": [(22, 22)] * 8,
+    }
     anchors = {}
-    for tag, ident, mirrored in ANIMS:
-        lst = sorted(frames[tag])
-        pts = []
-        for _, fr in lst:
-            img = sheet.crop((fr["x"], fr["y"], fr["x"] + fr["w"], fr["y"] + fr["h"]))
-            w, h = img.size
-            top = None
-            xs = []
-            for y in range(h):
-                row = [x for x in range(w) if img.getpixel((x, y))[3] >= 128]
-                if row:
-                    if top is None:
-                        top = y
-                    if y < top + 3:
-                        xs.extend(row)
-                    else:
-                        break
-            ax = round(sum(xs) / len(xs)) if xs else w // 2
-            ay = top if top is not None else 0
-            if mirrored:
-                ax = w - 1 - ax
-            pts.append((ax, ay))
-        anchors[ident] = pts
+    for base, pts in MANUAL.items():
+        anchors[base] = pts
+        if base in ("idle", "idle2", "walk", "jump"):
+            anchors[base + "_l"] = [(31 - x, y) for x, y in pts]
     return anchors
 
 

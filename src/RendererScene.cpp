@@ -456,8 +456,8 @@ void Renderer::drawFerret(FerretActor& ferret) {
 // Little wooden bed at FerretActor::BED_X - permanent furniture, drawn BEFORE
 // the ferret so Leon lies on top of the mattress. Pixel-art sprite in the
 // ferret's own 32px/2.5x style (assets/accessory_sprites.py).
-void Renderer::drawBed() {
-  _canvas.pushImage(FerretActor::BED_X, 108, acc_bed_w, acc_bed_h, acc_bed,
+void Renderer::drawBed(FerretActor& f) {
+  _canvas.pushImage(f.x(), 103, acc_bed_w, acc_bed_h, acc_bed,
                     (uint16_t)0xF81F);
 }
 
@@ -465,7 +465,7 @@ void Renderer::drawBed() {
 // 1px "breathing" ride so it feels alive.
 void Renderer::drawBlanket(FerretActor& f) {
   const int breathe = ((millis() / 900) % 2) ? 1 : 0;
-  _canvas.pushImage(f.x() + 4, 106 + breathe, acc_blanket_w, acc_blanket_h,
+  _canvas.pushImage(f.x() + 8, 111 + breathe, acc_blanket_w, acc_blanket_h,
                     acc_blanket, (uint16_t)0xF81F);
 }
 
@@ -495,7 +495,9 @@ void Renderer::drawHat(FerretActor& f) {
   const uint16_t* spr;
   int w, hgt;
   switch (h) {
-    case HAT_SLEEP: spr = L ? hat_sleep_l : hat_sleep; w = hat_sleep_w; hgt = hat_sleep_h; break;
+    // Nightcap flops AWAY from the face (the lying sprite faces right, so
+    // use the mirrored cap - preview showed the cone covering his eyes).
+    case HAT_SLEEP: spr = hat_sleep_l; w = hat_sleep_w; hgt = hat_sleep_h; break;
     case HAT_PARTY: spr = L ? hat_party_l : hat_party; w = hat_party_w; hgt = hat_party_h; break;
     case HAT_SANTA: spr = L ? hat_santa_l : hat_santa; w = hat_santa_w; hgt = hat_santa_h; break;
     case HAT_PALHA: spr = L ? hat_palha_l : hat_palha; w = hat_palha_w; hgt = hat_palha_h; break;
