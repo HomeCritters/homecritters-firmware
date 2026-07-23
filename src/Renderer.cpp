@@ -41,24 +41,34 @@ void Renderer::beginScreen(uint16_t bg) { _canvas.fillScreen(bg); }
 void Renderer::endScreen() { _canvas.pushSprite(0, 0); }
 
 // Delta-encode the canvas for the portal's live screen (see header): emit
-// only rows that changed vs the previous sent frame.
+// only rows that changed vs the previous sent frame. Change detection uses a
+// 32-bit FNV-1a hash per row kept in INTERNAL ram (960B) instead of a full
+// 115KB PSRAM baseline: the canvas lives in PSRAM, and the old
+// memcmp-vs-baseline read ~230KB of PSRAM per frame - the hash roster halves
+// that traffic and freed the baseline buffer entirely. A hash collision would
+// leave one stale row until it next changes (odds ~2^-32 per row-frame).
 size_t Renderer::encodeScreen(uint8_t* out, size_t cap, bool full) {
   const uint8_t* px = (const uint8_t*)_canvas.getBuffer();
   if (!px || !out) return 0;
   const int stride = SCREEN_W * 2;  // bytes per row
-  if (!_prevFrame) {
-    _prevFrame = (uint8_t*)ps_malloc(SCREEN_W * SCREEN_H * 2);
-    full = true;  // no baseline yet
-  }
   size_t o = 0;
-  bool sent[SCREEN_H];  // baseline update deferred: on overflow the frame is
+  uint32_t newHash[SCREEN_H];
+  bool sent[SCREEN_H];  // hash update deferred: on overflow the frame is
                         // dropped, and rows already encoded must NOT become
                         // the baseline (the client never saw them)
   for (int r = 0; r < SCREEN_H; r++) {
     sent[r] = false;
     const uint8_t* row = px + r * stride;
-    const uint8_t* prow = _prevFrame ? _prevFrame + r * stride : nullptr;
-    if (!full && prow && memcmp(row, prow, stride) == 0) continue;  // unchanged
+    // FNV-1a over the row, reading 32 bits at a time (the canvas buffer is
+    // 4-byte aligned; stride 480 is a multiple of 4).
+    uint32_t h = 2166136261u;
+    const uint32_t* w = (const uint32_t*)row;
+    for (int i = 0; i < stride / 4; i++) {
+      h ^= w[i];
+      h *= 16777619u;
+    }
+    newHash[r] = h;
+    if (!full && h == _rowHash[r]) continue;  // unchanged
     if (o + 1 > cap) return 0;
     out[o++] = (uint8_t)r;  // 0..239
     // RLE this row's 240 pixels (runs never cross the row boundary).
@@ -77,9 +87,8 @@ size_t Renderer::encodeScreen(uint8_t* out, size_t cap, bool full) {
     }
     sent[r] = true;
   }
-  if (_prevFrame)
-    for (int r = 0; r < SCREEN_H; r++)
-      if (sent[r]) memcpy(_prevFrame + r * stride, px + r * stride, stride);
+  for (int r = 0; r < SCREEN_H; r++)
+    if (sent[r]) _rowHash[r] = newHash[r];
   return o;
 }
 

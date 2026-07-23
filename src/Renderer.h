@@ -130,7 +130,7 @@ class Renderer {
   bool _revokeArmed = false;    // revoke button in "Confirma?" state
 
   uint16_t* _snap = nullptr;  // stable copy of the canvas for /shot.bmp
-  uint8_t* _prevFrame = nullptr;  // last streamed frame (delta base, PSRAM)
+  uint32_t _rowHash[240] = {0};  // per-row FNV of the last streamed frame
   // HTTP task (core 0) <-> render loop (core 1) handoff. Atomics, not plain
   // volatile: the render loop fills _snap and THEN stores _snapReady, and the
   // seq_cst ordering guarantees the HTTP task that sees _snapReady==true also

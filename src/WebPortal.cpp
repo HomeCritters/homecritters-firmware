@@ -186,29 +186,49 @@ void WebPortal::topTask(void* arg) {
 // to the lib's TCP timeout on EVERY frame), and pacing scales with payload -
 // high-entropy scenes (snow, disco) produce 50KB+ deltas that must not be
 // attempted at 18fps.
+void WebPortal::dropScreenViewer() {
+  _screenClient = -1;
+  // Restore WiFi modem-sleep unless media streaming still needs the radio hot.
+  WiFi.setSleep(!(_audio && _audio->streaming()));
+}
+
 void WebPortal::pumpScreen(Renderer& renderer) {
   if (_screenClient < 0) return;
   const unsigned long now = millis();
-  if (now - _screenReqAt > 10000) { _screenClient = -1; return; }  // keepalive lapsed
+  if (now - _screenReqAt > 10000) { dropScreenViewer(); return; }  // keepalive lapsed
+  // Modem-sleep murders streaming latency (10-100ms DTIM stalls per burst);
+  // keep it off while someone is watching. Re-asserted 1x/s because the
+  // audio pipeline flips it back on when a media stream ends.
+  if (now - _screenPsAssert > 1000) {
+    _screenPsAssert = now;
+    WiFi.setSleep(false);
+  }
   if (now - _screenLastFrame < _screenGap) return;
   // 180KB covers the RLE worst case (240 rows x 721B = 173KB): a frame that
   // doesn't fit is DROPPED, and if the scene stays that noisy a fresh viewer
-  // would never receive its first (full) frame at all.
+  // would never receive its first (full) frame at all. +16: 14B header
+  // headroom for the lib's headerToPayload single-write path.
   if (!_screenBuf) {
-    _screenBuf = (uint8_t*)ps_malloc(180 * 1024);
+    _screenBuf = (uint8_t*)ps_malloc(180 * 1024 + 16);
     if (!_screenBuf) { _screenClient = -1; return; }
   }
-  // First frame for a fresh viewer must be full; deltas after that.
-  const size_t n = renderer.encodeScreen(_screenBuf, 180 * 1024, _screenFull);
+  // First frame for a fresh viewer must be full; deltas after that. Encode at
+  // +14 so sendBIN(headerToPayload=true) writes ONE TCP segment straight from
+  // our buffer - no per-frame malloc+memcpy (<1400B path) and no separate
+  // header segment (>=1400B path).
+  const size_t n = renderer.encodeScreen(_screenBuf + WEBSOCKETS_MAX_HEADER_SIZE,
+                                         180 * 1024, _screenFull);
   if (n) {
-    if (!_ws.sendBIN((uint8_t)_screenClient, _screenBuf, n)) {
-      _screenClient = -1;  // dead/slow viewer: stop paying for it
+    if (!_ws.sendBIN((uint8_t)_screenClient, _screenBuf, n, true)) {
+      dropScreenViewer();  // dead/slow viewer: stop paying for it
       return;
     }
     _screenFull = false;
   }
-  // ~18fps for small deltas, stretched for big ones (~64KB/s budget).
-  _screenGap = n > 3500 ? (unsigned long)(n / 64) : 55;
+  // Pace by payload with a generous budget (~256KB/s): typical 2-8KB deltas
+  // stream at the floor (render-loop limited); only true high-entropy frames
+  // (disco, heavy snow) stretch the gap to protect the loop.
+  _screenGap = n > 8000 ? (unsigned long)(n / 256) : 30;
   _screenLastFrame = now;
 }
 
@@ -487,7 +507,7 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
     _wsPairing[num] = false;
     _wsConnAt[num] = 0;
     if ((int)num == _micClient) { _micOn = false; _micClient = -1; }
-    if ((int)num == _screenClient) _screenClient = -1;  // viewer gone
+    if ((int)num == _screenClient) dropScreenViewer();  // viewer gone
     if ((int)num == _assistClient) { _assistOn = false; _assistClient = -1; }
     if (was) _clientsDirty = true;  // refresh the connections list
   } else if (type == WStype_TEXT) {
@@ -714,17 +734,21 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
       }
       return;
     }
-    // Live screen stream: this socket wants the canvas mirrored (~4fps). The
-    // portal resends screen:on every ~3s as a keepalive; a dead viewer times
-    // out (pumpScreen) or drops on disconnect. One viewer at a time.
+    // Live screen stream: this socket wants the canvas mirrored. The portal
+    // resends screen:on every ~3s as a keepalive; a dead viewer times out
+    // (pumpScreen) or drops on disconnect. One viewer at a time.
     if (msg == "screen:on") {
-      if ((int)num != _screenClient) _screenFull = true;  // new viewer: full frame
+      if ((int)num != _screenClient) {
+        _screenFull = true;         // new viewer: full frame
+        WiFi.setSleep(false);       // radio hot from the first frame
+        _screenPsAssert = millis();
+      }
       _screenClient = num;
       _screenReqAt = millis();
       return;
     }
     if (msg == "screen:off") {
-      if ((int)num == _screenClient) _screenClient = -1;
+      if ((int)num == _screenClient) dropScreenViewer();
       return;
     }
     // Pipeline liveness from the satellite: assist:on when a wake/STT stage

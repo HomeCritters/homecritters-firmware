@@ -41,6 +41,9 @@ class WebPortal {
   // finished canvas and push it over the WS (~4fps). Call post-render, on the
   // render thread (serviceShots). No-op when no viewer.
   void pumpScreen(Renderer& renderer);
+  // True while a portal client is watching the live screen stream - the main
+  // loop shortens its frame delay to raise the mirror's FPS.
+  bool screenViewerActive() const { return _screenClient >= 0; }
   // Request a state broadcast. Coalesced: handle() sends at most one every
   // few ms no matter how many requests pile up (spam-clicking the portal
   // must not turn into a burst of synchronous TCP writes).
@@ -283,8 +286,10 @@ class WebPortal {
   bool _screenFull = true;  // next frame must be a full (non-delta) send
   unsigned long _screenReqAt = 0;
   unsigned long _screenLastFrame = 0;
-  unsigned long _screenGap = 55;  // adaptive: stretches after big frames
+  unsigned long _screenGap = 30;  // adaptive: stretches after big frames
+  unsigned long _screenPsAssert = 0;  // last WiFi-sleep-off re-assert
   uint8_t* _screenBuf = nullptr;
+  void dropScreenViewer();  // detach + restore WiFi modem-sleep policy
   volatile int _fullSleepReq = -1;   // pending fullsleep command (-1 none)
   volatile bool _fullSleep = false;  // actual mode, reported by main (night
                                      // mode also HARD-gates the mic: no

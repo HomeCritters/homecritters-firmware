@@ -1245,5 +1245,7 @@ void loop() {
                 led.brightness(), web.connected(), ip.c_str(), clockActive, petClock,
                 (uint8_t)audio.mediaKind(), voiceState, web.micMuted(), web.micLive());
   serviceShots();
-  delay(30);
+  // Faster frames while the portal mirror is watching (the stream's FPS is
+  // capped by this loop's rate); relaxed pace when nobody is.
+  delay(web.screenViewerActive() ? 15 : 30);
 }
