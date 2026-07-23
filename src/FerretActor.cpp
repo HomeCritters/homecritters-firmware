@@ -111,14 +111,7 @@ void FerretActor::update(const Pet& pet, unsigned long now) {
 
   if (pet.sleeping()) {
     _act = ACT_NONE;
-    // The bed pops up right where the nap begins (owner's call - no walking
-    // across the scene first). Clamp so the 80px bed fits on screen.
-    if (!_inBed) {
-      if (_x < 8) _x = 8;
-      if (_x > 152) _x = 152;
-      _inBed = true;
-      _faceLeft = false;
-    }
+    _inBed = true;  // accessories on (blanket + nightcap); sleeps in place
     _anim.play(CLIP_SLEEP);
     setAnim("sleep");
     _anim.update(now);

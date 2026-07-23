@@ -166,7 +166,6 @@ class Renderer {
   void drawShootingStar();  // rare streak, clear nights
   void drawButterflies();   // daytime counterpart, clear days
   // Accessories/festive (RendererScene.cpp):
-  void drawBed(FerretActor& f);          // spawns under him for the nap
   void drawBlanket(FerretActor& f);      // over the sprite while inBed
   void drawHat(FerretActor& f);          // anchored to the head, per animation
   void drawXmasDecor(bool night);        // cabin lights + star on the big pine

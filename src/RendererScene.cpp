@@ -453,14 +453,6 @@ void Renderer::drawFerret(FerretActor& ferret) {
 // All procedural (house style): the bed/blanket/hats anchor to the ferret's
 // frame (x(), y(), faceLeft(), animName()) so they ride every animation.
 
-// Little wooden bed at FerretActor::BED_X - permanent furniture, drawn BEFORE
-// the ferret so Leon lies on top of the mattress. Pixel-art sprite in the
-// ferret's own 32px/2.5x style (assets/accessory_sprites.py).
-void Renderer::drawBed(FerretActor& f) {
-  _canvas.pushImage(f.x(), 103, acc_bed_w, acc_bed_h, acc_bed,
-                    (uint16_t)0xF81F);
-}
-
 // Striped blanket sprite over the sleeping body (tail side), with a gentle
 // 1px "breathing" ride so it feels alive.
 void Renderer::drawBlanket(FerretActor& f) {
@@ -473,9 +465,15 @@ void Renderer::drawBlanket(FerretActor& f) {
 // exact current frame (anchors scanned from the sprite sheet - the hat rides
 // every bob of the walk and the whole jump arc).
 void Renderer::drawHat(FerretActor& f) {
-  // No hat mid-burrow (the head is underground).
+  // No hat mid-burrow (the head is underground). And during the jump's
+  // somersault (frames 1-4, head tumbling) the hat "pops off" - cartoon
+  // physics beats a hat glued to a flipping skull.
   const char* an = f.animName();
   if (!strcmp(an, "disappear") || !strcmp(an, "emerge")) return;
+  if (!strcmp(an, "jump")) {
+    const uint8_t fi = f.frameIndex();
+    if (fi >= 1 && fi <= 4) return;
+  }
 
   // Which hat right now? Nightcap wins while tucked in.
   Hat h = HAT_NONE;

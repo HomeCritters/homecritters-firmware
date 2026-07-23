@@ -55,6 +55,8 @@ PAL = {
     "t": (226, 192, 100),      # straw
     "u": (196, 158, 72),       # straw shade
     "n": (122, 82, 44),        # straw band brown
+    "A": (150, 198, 238),      # nightcap light blue
+    "a": (108, 156, 205),      # nightcap blue shade
     "X": (98, 54, 138),        # witch purple
     "x": (72, 38, 104),        # witch purple shade
     "O": (232, 140, 44),       # witch band orange
@@ -62,23 +64,6 @@ PAL = {
 
 # ------------------------------------------------------------- pixel maps --
 # Every sprite follows the sheet's rule: full K outline, two tones/material.
-# Bed, side view, headboard on the RIGHT (Leon's head lands on the pillow).
-BED = """
-............................KKKK
-............................KWWK
-............................KWWK
-.KKK........................KWWK
-.KWWK..............KKKKKKK..KWWK
-.KWWKKKKKKKKKKKKKKKPPPPPPKK.KWWK
-.KWKMMMMMMMMMMMMMMMPPPPPPPKKKWWK
-.KWKMMMMMMMMMMMMMMMMMMMMmmmMKWWK
-.KWWWWWWWWWWWWWWWWWWWWWWWWWWWWWK
-.KDDDDDDDDDDDDDDDDDDDDDDDDDDDDDK
-.KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK
-..KDDK....................KDDK..
-..KKKK....................KKKK..
-"""
-
 # Blanket: smaller now (covers the rear half of the body, not the whole
 # ferret), wine with a cream stripe and a shaded hem.
 BLANKET = """
@@ -90,15 +75,15 @@ KvvvvvvvvvvvvvK
 .KKKKKKKKKKKKK.
 """
 
-# Nightcap: floppy wine cone flopping right, cream brim + pompom.
+# Nightcap: floppy LIGHT BLUE cone flopping right, white brim + pompom.
 HAT_SLEEP = """
 .........KKK
-........KCCK
-.....KKKVKK.
-....KVVVK...
-...KVVvK....
-..KVVvK.....
-.KCCCCCK....
+........KSSK
+.....KKKAKK.
+....KAAAK...
+...KAAaK....
+..KAAaK.....
+.KSSSSSK....
 .KKKKKKK....
 """
 
@@ -149,7 +134,6 @@ KKKKXXXXXxKKKK.
 """
 
 SPRITES = {
-    "acc_bed": (BED, False),
     "acc_blanket": (BLANKET, False),
     "hat_sleep": (HAT_SLEEP, True),   # True = also emit a mirrored _l variant
     "hat_party": (HAT_PARTY, True),
@@ -207,26 +191,46 @@ def emit_sprite(name, art, mirror, out):
 
 
 def scan_anchors():
-    """Head-top anchors, HAND-READ frame by frame from magnified grids of the
-    sprite sheet (the automatic topmost-pixel scan confused the shoulder hump
-    with the ears and pulled hats off-center). Right-facing (ax, ay) = center
-    between the ears, 1x sprite coords; mirrored variants flip ax."""
-    MANUAL = {
-        "idle":  [(24, 19)] * 8,
-        "idle2": [(24, 19)] * 4 + [(24, 20)] * 4,
-        "walk":  [(24, 16), (25, 17), (26, 20), (25, 21),
-                  (23, 17), (25, 18), (25, 20), (25, 19)],
-        "jump":  [(20, 15), (16, 8), (21, 16), (19, 22),
-                  (17, 22), (23, 22), (24, 21), (24, 20)],
-        "dig":   [(23, 19), (24, 18), (25, 19), (27, 22),
-                  (27, 23), (27, 23), (27, 23), (27, 23)],
-        "sleep": [(22, 22)] * 8,
-    }
+    """Pixel-exact head anchors from the EARS: rgb(249,137,112) only exists
+    on the inner ears and the nose. Per frame: take the pink pixels within
+    3px of the topmost pink row (= the ears; the nose sits lower), head
+    center = midpoint of that cluster, skull top = topmost opaque pixel in
+    those columns. Deterministic - no eyeballing."""
+    PINK = (249, 137, 112)
+    meta = json.load(open(JSON_PATH))
+    frames = {}
+    for fname, fr in meta["frames"].items():
+        m = TAG_RE.search(fname)
+        if m:
+            frames.setdefault(m.group(1), []).append((int(m.group(2)), fr["frame"]))
+    sheet = Image.open(PNG_PATH).convert("RGBA")
+
     anchors = {}
-    for base, pts in MANUAL.items():
-        anchors[base] = pts
-        if base in ("idle", "idle2", "walk", "jump"):
-            anchors[base + "_l"] = [(31 - x, y) for x, y in pts]
+    for tag, ident, mirrored in ANIMS:
+        pts = []
+        for _, fr in sorted(frames[tag]):
+            img = sheet.crop((fr["x"], fr["y"], fr["x"] + fr["w"], fr["y"] + fr["h"]))
+            w, h = img.size
+            pink = [(x, y) for x in range(w) for y in range(h)
+                    if img.getpixel((x, y))[3] >= 128
+                    and img.getpixel((x, y))[:3] == PINK]
+            if not pink:
+                pts.append(pts[-1] if pts else (w // 2, h // 2))
+                continue
+            top_pink = min(y for _, y in pink)
+            ears = [(x, y) for x, y in pink if y <= top_pink + 3]
+            ex0, ex1 = min(x for x, _ in ears), max(x for x, _ in ears)
+            ax = (ex0 + ex1) // 2
+            ay = None
+            for y in range(h):
+                if any(img.getpixel((x, y))[3] >= 128
+                       for x in range(max(0, ex0 - 1), min(w, ex1 + 2))):
+                    ay = y
+                    break
+            if mirrored:
+                ax = w - 1 - ax
+            pts.append((ax, ay if ay is not None else top_pink))
+        anchors[ident] = pts
     return anchors
 
 

@@ -22,8 +22,7 @@ class FerretActor {
   void onPat();   // trigger a jump (petting)
   void update(const Pet& pet, unsigned long now);
 
-  // Asleep (the bed spawns right under him wherever the nap starts; the
-  // Renderer draws bed + blanket + nightcap only then).
+  // Asleep - the Renderer dresses him (blanket + nightcap) only then.
   bool inBed() const { return _inBed; }
 
   const uint16_t* frame() const { return _anim.frame(); }
