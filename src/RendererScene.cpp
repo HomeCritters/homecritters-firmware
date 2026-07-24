@@ -678,8 +678,9 @@ void Renderer::drawHalloweenDecor(bool night) {
   _canvas.drawFastVLine(87, 119, 2, boneDk);                        // nose
   _canvas.drawFastVLine(88, 122, 1, boneDk);                        // tooth gap
 
-  // --- witch cauldron on the RIGHT, well clear of the cabin/Leon ---
-  const int cx = 206, cy = 122;
+  // --- witch cauldron on the RIGHT, raised so its base sits above Leon's
+  // foot line (like the snowman) - he passes cleanly in front ---
+  const int cx = 206, cy = 113;
   const float pulse = 0.5f + 0.5f * sinf(ms / 500.0f);
   const uint16_t brew = night ? lerp565(rgb565(70, 220, 90), rgb565(170, 255, 150), pulse)
                               : rgb565(80, 175, 90);
@@ -727,8 +728,8 @@ void Renderer::drawHalloweenDecor(bool night) {
                        lerp565(brew, _p.skyBottom, c2 / 32.0f));
   }
 
-  // --- the carved pumpkin, centered ---
-  const int px = 120, py = 122;
+  // --- the carved pumpkin, centered (raised above Leon's foot line) ---
+  const int px = 120, py = 113;
   const uint16_t orange = rgb565(232, 120, 34), rib = rgb565(190, 88, 22);
   _canvas.fillEllipse(px, py, 10, 8, orange);
   _canvas.drawFastVLine(px - 4, py - 6, 12, rib);
