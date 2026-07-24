@@ -1065,7 +1065,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,\"micMuted\":%s,"
            "\"micOn\":%s,\"micClient\":%d,\"assistOn\":%s,\"micLive\":%s,"
-           "\"wxCity\":\"%s\",\"bday\":\"%s\","
+           "\"wxCity\":\"%s\",\"bday\":\"%s\",\"festForce\":%d,\"wxForce\":%d,"
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
@@ -1078,7 +1078,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _micMuted ? "true" : "false",
            _micOn ? "true" : "false", _micClient, _assistOn ? "true" : "false",
            micLive() ? "true" : "false",
-           _weather ? _weather->city() : "", _bday,
+           _weather ? _weather->city() : "", _bday, _festDebug, _wxDebug,
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,
