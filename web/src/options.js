@@ -62,6 +62,19 @@ export const FEST_FORCE_OPTIONS = [
   { label: '🚫 Nenhum', value: 'off' },
 ];
 
+// Reverse of the firmware's fest force code (state.festForce) -> option value,
+// so the dev-panel selector restores after a page refresh. -1 = auto.
+const FEST_BY_CODE = { '-1': '', 0: 'off', 1: 'natal', 2: 'halloween', 3: 'junina', 4: 'nye', 9: 'bday' };
+export const festValueFromCode = (c) => FEST_BY_CODE[c] ?? '';
+
+// Reverse of Weather::codeFromName (state.wxForce WMO code -> option value).
+const WX_BY_CODE = {
+  '-1': '', 0: 'clear', 1: 'mclear', 2: 'partly', 3: 'cloudy', 45: 'fog',
+  53: 'drizzle', 56: 'frizzle', 63: 'rainy', 66: 'frain', 82: 'pouring',
+  73: 'snow', 77: 'grains', 86: 'snowshower', 95: 'storm', 96: 'hail',
+};
+export const wxValueFromCode = (c) => WX_BY_CODE[c] ?? '';
+
 export const STATS = [
   { key: 'hunger', label: 'Fome' },
   { key: 'energy', label: 'Energia' },

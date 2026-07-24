@@ -55,6 +55,10 @@ class WebPortal {
   // so calling this every game frame costs nothing.
   void setGameScore(int s) { if (s != _gameScore) { _gameScore = s; _dirty = true; } }
   void setBattery(int pct) { if (pct != _battery) { _battery = pct; _dirty = true; } }
+  // Dev-panel forced theme / weather (main's g_festDebug / g_wxDebug), echoed
+  // in the state so the portal's selectors survive a page refresh.
+  void setFestDebug(int f) { if (f != _festDebug) { _festDebug = f; _dirty = true; } }
+  void setWxDebug(int w) { if (w != _wxDebug) { _wxDebug = w; _dirty = true; } }
   GameNav consumeGameNav();     // pending start/back request (clears it)
   float gameTargetXNorm();      // horizontal target [0..1] from the phone, -1 if none/stale
   // Pending Bolinha throw from the phone (normalized swipe). True once; fills
@@ -216,6 +220,8 @@ class WebPortal {
   const char* _screenName = "pet";
   int _gameScore = 0;
   int _battery = -1;
+  int _festDebug = -1;  // forced festive theme (-1 auto); echoed in state
+  int _wxDebug = -1;    // forced weather WMO code (-1 auto); echoed in state
   volatile float _gameTx = -1.0f;             // last target x [0..1] from the phone
   volatile unsigned long _gameTxMs = 0;       // when it arrived (for staleness)
   volatile GameNav _navReq = NAV_NONE;        // pending start/back request

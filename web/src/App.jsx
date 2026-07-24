@@ -1,9 +1,9 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Badge, Button, Card, Col, ConfigProvider, Progress, Row, Typography, theme,
 } from 'antd';
 import { hmacSha256Hex } from './hmac.js';
-import { ACTIONS, STATS, barColor } from './options.js';
+import { ACTIONS, STATS, barColor, festValueFromCode, wxValueFromCode } from './options.js';
 import { useDeviceSocket } from './useDeviceSocket.js';
 import ScreenView from './components/ScreenView.jsx';
 import { GamePad, BallPad, SimonPad } from './components/GamePads.jsx';
@@ -29,6 +29,14 @@ export default function App() {
   const onFps = useCallback((v) => setFps(v), []);
   const [wxForce, setWxForce] = useState('');    // dev panel: forced weather
   const [festForce, setFestForce] = useState(''); // dev panel: forced festive theme
+  // Restore the dev-panel selectors from the device state so they survive a
+  // page refresh (the force lives on the device, not in the browser).
+  useEffect(() => {
+    if (state?.festForce !== undefined) setFestForce(festValueFromCode(state.festForce));
+  }, [state?.festForce]);
+  useEffect(() => {
+    if (state?.wxForce !== undefined) setWxForce(wxValueFromCode(state.wxForce));
+  }, [state?.wxForce]);
   const [shotSrc, setShotSrc] = useState(null);  // /shot.bmp?... while open
   const [shotLoading, setShotLoading] = useState(false);
   const takeShot = useCallback(async () => {

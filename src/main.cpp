@@ -638,6 +638,7 @@ static bool consoleNavigate(const String& c) {
   if (c.startsWith("wxset:")) {  // force a scene WMO code by name or number
     g_wxDebug = Weather::codeFromName(c.substring(6).c_str());
     Serial.printf("[wx] forced code = %d\n", g_wxDebug);
+    web.setWxDebug(g_wxDebug);  // echo to the portal (survives refresh)
     return true;
   }
   if (c.startsWith("fest:")) {  // force festive art: natal|halloween|junina|bday|off|auto
@@ -650,6 +651,7 @@ static bool consoleNavigate(const String& c) {
                 : f == "off"       ? Renderer::FEST_NONE
                                    : -1;  // auto
     Serial.printf("[fest] debug=%d\n", g_festDebug);
+    web.setFestDebug(g_festDebug);  // echo to the portal (survives refresh)
     // apply immediately (loopFestive is throttled to 1/min)
     renderer.setFestive(
         g_festDebug >= 0 && g_festDebug != 9 ? (Renderer::Fest)g_festDebug
@@ -735,6 +737,7 @@ static void loopWeatherFx(unsigned long now) {
     const int req = web.consumeWxSet();
     if (req != -2) g_wxDebug = req;
   }
+  web.setWxDebug(g_wxDebug);  // keep the portal selector in sync (no-op if same)
   const uint8_t wxCode =
       g_wxDebug >= 0 ? (uint8_t)g_wxDebug
                      : (weather.fresh() ? weather.codeNow() : 0);
@@ -766,6 +769,7 @@ static void loopFestive(unsigned long now) {
     g_festDebug = freq;
     nextAt = 0;  // apply NOW - waiting up to 60s read as "theme doesn't work"
   }
+  web.setFestDebug(g_festDebug);  // keep the portal selector in sync (survives refresh)
   char bd[11];
   if (web.consumeBirthday(bd, sizeof(bd))) {
     strlcpy(g_bdayDate, bd, sizeof(g_bdayDate));
