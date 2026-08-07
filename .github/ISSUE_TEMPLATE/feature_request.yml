@@ -1,0 +1,63 @@
+name: ✨ Feature request
+description: An idea for the pet — a game, an effect, a screen, an integration
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome. Keep in mind this runs on an ESP32-S3 with a round
+        240×240 screen — flash, RAM and pixels are all finite.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe the feature and what it would feel like to use.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why?
+      description: What problem does it solve, or what makes it fun?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the project?
+      multiple: true
+      options:
+        - Pet behaviour / animation
+        - New screen or UI
+        - Mini-game
+        - Weather / festive themes
+        - Audio / sound effects
+        - Voice assistant
+        - Web portal
+        - Home Assistant integration
+        - Tooling / build
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: help
+    attributes:
+      label: Would you like to build it?
+      options:
+        - "Just an idea — someone else can take it"
+        - "I'd like to try, with some pointers"
+        - "I'm already working on it"
+    validations:
+      required: true
+
+  - type: textarea
+    id: sound
+    attributes:
+      label: Sound effect
+      description: |
+        Project tradition — every feature deserves an SFX. Got one in mind?
+        A MyInstants link is perfect.

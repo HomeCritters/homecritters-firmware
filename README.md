@@ -1,7 +1,7 @@
 # HomeCritters — firmware
 
-A **desk pet + smart speaker** for your home: an original pixel-art ferret
-named Leon living in a magic forest, on a Xiaozhi/Spotpear **Ball V2**
+A **desk pet + smart speaker** for your home: a pixel-art ferret living in a
+magic forest — you name him yourself — on a Xiaozhi/Spotpear **Ball V2**
 (ESP32-S3, round 240×240 GC9A01 touch display, ES8311 audio codec).
 
 Feed him, pet him, play mini-games with him — and when music plays, he throws
@@ -11,6 +11,8 @@ media player for TTS + [Music Assistant](https://www.music-assistant.io/) +
 AirPlay) with the companion
 [homecritters-ha-plugin](https://github.com/HomeCritters/homecritters-ha-plugin).
 
+[![CI](https://github.com/HomeCritters/homecritters-firmware/actions/workflows/ci.yml/badge.svg)](https://github.com/HomeCritters/homecritters-firmware/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![platform](https://img.shields.io/badge/platform-ESP32--S3-blue)
 ![framework](https://img.shields.io/badge/framework-Arduino%20%2B%20PlatformIO-orange)
 ![HA](https://img.shields.io/badge/Home%20Assistant-integration-41BDF5)
@@ -24,10 +26,11 @@ AirPlay) with the companion
 ### 🦦 A living pet
 
 Four stats (hunger, energy, joy, hygiene) decay over time; his mood shows in
-the header and on the RGB LED. Leon wanders, jumps, eats, burrows into the
-ground and sleeps — animated from an original Aseprite sprite sheet. The
-forest follows the **real time of day** (NTP): sunny day, golden sunset, and
-a starry night with a lit cabin window and fireflies.
+the header and on the RGB LED. He wanders, jumps, eats, burrows into the
+ground and sleeps — animated from an Aseprite sprite sheet
+([by Elthen 🦦](#credits)). The forest follows the **real time of day** (NTP):
+sunny day, golden sunset, and a starry night with a lit cabin window and
+fireflies.
 
 | Day | Golden hour | Night + idle clock | Config menu |
 |---|---|---|---|
@@ -91,8 +94,8 @@ coexists with the live weather:
   striped food stall with a lit lamp, floating paper lanterns and corn stalks.
 - 🎆 **New Year** (Dec 31 + Jan 1): fireworks bursting across the sky all day,
   and the barrage fires **right at the stroke of midnight**.
-- 🎂 **Birthday**: on Leon's day (set once in the portal or Home Assistant) he
-  gets a cake with flickering candles, balloons drifting around, confetti and
+- 🎂 **Birthday**: on his birthday (set once in the portal or Home Assistant)
+  he gets a cake with flickering candles, balloons drifting around, confetti and
   *"Parabéns pra Você"*.
 
 The sleigh and the witch pass every so often at varied heights and directions,
@@ -109,8 +112,8 @@ acting as a game controller.
 
 - **Jump!** — doodle-jump style: springs, moving and crumbling platforms,
   parallax clouds, NVS high score.
-- **Bolinha** — fetch: throw the tennis ball with a swipe, Leon chases it
-  down with real physics and brings it back.
+- **Bolinha** — fetch: throw the tennis ball with a swipe, the ferret chases
+  it down with real physics and brings it back.
 - **Genius** — Simon-says on the round bezel: four color arcs, the RGB LED
   and an authentic tone per color.
 
@@ -124,9 +127,9 @@ exactly what's on the device, weather, festive decorations and all.
 
 And the mirror is a **remote control** — tap and swipe on it and the touches
 are injected into the same input pipeline as the physical screen, so you can
-pet Leon, hit the action buttons, open the config menu, the "Casa" panel, the
-weather screen, launch and even *steer the games* — everything, right from
-your phone.
+pet the ferret, hit the action buttons, open the config menu, the "Casa"
+panel, the weather screen, launch and even *steer the games* — everything,
+right from your phone.
 
 | Portal | As a game controller |
 |---|---|
@@ -143,8 +146,8 @@ And it's a show:
 
 - 🪩 **Party mode** when music plays: forced night theme, mirrored disco
   ball, random laser pulses, a color-shifting dance floor, smoke machines,
-  thumping speaker cabinets — Leon dancing through all of it while the RGB
-  LED **flashes to the actual beat** (live PCM envelope analysis).
+  thumping speaker cabinets — the ferret dancing through all of it while the
+  RGB LED **flashes to the actual beat** (live PCM envelope analysis).
 - 🔵 **Voice rings** for the assistant (below).
 
 ### 🎙️ Voice assistant
@@ -260,9 +263,58 @@ web/            React portal (Vite + Ant Design), embedded via web_index.h
 tools/          hwshot.py (screen -> PNG over serial) + serial console
 ```
 
-UI strings are in Portuguese (pt-BR); code and comments in English.
-See `CLAUDE.md` for full architecture notes.
+Code and comments are in English. UI strings are currently Portuguese (pt-BR)
+only — **there is no i18n layer yet, and building one is an open invitation**;
+see [Contributing](#contributing).
+
+See [`CLAUDE.md`](CLAUDE.md) for full architecture notes — the module map, the
+WebSocket protocol, and the hardware lessons learned the hard way.
+
+## Credits
+
+**The ferret is drawn by [Elthen's Pixel Art Shop](https://elthen.itch.io/).**
+Every frame of him — walking, digging, sleeping, dancing — comes from
+[**2D Pixel Art Ferret Sprites**](https://elthen.itch.io/2d-pixel-art-ferret-sprites).
+This whole project exists because that sprite sheet was charming enough to
+build a device around. If he makes you smile, go
+[support the artist](https://www.patreon.com/elthen). 🦦
+
+Sound effects come from [MyInstants](https://www.myinstants.com/) and friends —
+credit to whoever made each *boing*.
+
+Pinout reverse-engineering from
+[RealDeco/xiaozhi-esphome](https://github.com/RealDeco/xiaozhi-esphome);
+weather data from [Open-Meteo](https://open-meteo.com/); wake word by
+[openWakeWord](https://github.com/dscripka/openWakeWord).
+
+## Contributing
+
+Bug reports, mini-games, weather effects and festive themes are all welcome —
+start with [`CONTRIBUTING.md`](CONTRIBUTING.md). Please open an issue before
+building anything large, screenshot any visual change (with the bezel ring),
+and remember the house rule: **every new feature deserves a sound effect**.
+
+Two things we'd particularly love help with (see [`TODO.md`](TODO.md)):
+
+- 🌍 **Internationalisation.** Every UI string — on the device and in the web
+  portal — is hardcoded in Portuguese today. There is no i18n layer at all, so
+  someone gets to design one: a string table for the firmware (`PROGMEM`,
+  language picked in the config menu and persisted in NVS) and a matching one
+  for the React portal, with **English as the first translation**. Greenfield,
+  self-contained, and it opens the project up to everyone.
+- 🔊 **More sounds.** The house rule is that every feature deserves one, and
+  there are always features without one yet.
+
+Everyone taking part is expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). Found a security problem? Don't open an
+issue — see [`SECURITY.md`](SECURITY.md).
 
 ## License
 
-MIT
+[MIT](LICENSE) © HomeCritters — do whatever you want with the code: use it,
+fork it, sell it, just keep the copyright notice.
+
+The art, the sounds and the libraries belong to their own authors and keep
+their own licenses — they're all listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Worth a look if you plan to
+ship compiled binaries, since the audio decoder is GPL-3.0.

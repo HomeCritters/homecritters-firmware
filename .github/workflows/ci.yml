@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    name: Build firmware (ball_v2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build
+        # Prints the flash/RAM usage summary at the end.
+        run: pio run
+
+  portal:
+    name: Build web portal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      - name: Build single-file bundle
+        working-directory: web
+        run: npm run build
+
+      - name: Generate PROGMEM header
+        run: python3 assets/web_to_header.py
+
+      - name: Warn if include/web_index.h is stale
+        run: |
+          # gzip output is not byte-reproducible across versions, so a diff here
+          # is a hint, not a failure. Compare the embedded raw size instead.
+          built=$(wc -c < web/dist/index.html)
+          committed=$(git show HEAD:include/web_index.h | sed -n 's/.*gzipped: \([0-9]*\) ->.*/\1/p')
+          echo "portal built: ${built} bytes | committed header was built from: ${committed} bytes"
+          if [ -n "$committed" ] && [ "$built" != "$committed" ]; then
+            echo "::warning file=include/web_index.h::The committed portal header does not match a fresh build of web/src. If you changed the portal, regenerate it: cd web && npm run build && cd .. && python3 assets/web_to_header.py"
+          fi
+
+  scripts:
+    name: Lint asset & debug scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Byte-compile Python scripts
+        run: python3 -m compileall -q assets tools
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # Errors fail the build; style nits are reported as annotations only.
+          shellcheck --severity=error assets/*.sh
+          shellcheck --severity=style assets/*.sh || true

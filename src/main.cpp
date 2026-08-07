@@ -143,7 +143,7 @@ static void handleUi(ui::UiHit hit) {
 }
 
 static int g_festDebug = -1;  // serial "fest:X": -1 auto, else forced Fest (0-3), 9=bday
-// Leon's birthday, NVS "pet"/"bday" as "YYYY-MM-DD" (legacy "MM-DD" still
+// The pet's birthday, NVS "pet"/"bday" as "YYYY-MM-DD" (legacy "MM-DD" still
 // loads). Default = the project's first commit (2026-07-09). The party fires
 // on the MM-DD part; the year is only for the portal's age display. Balloons +
 // confetti all day + "parabens pra voce" once.
@@ -670,7 +670,7 @@ static bool consoleNavigate(const String& c) {
       p.putString("bday", g_bdayDate);
       p.end();
       web.setBirthday(g_bdayDate);
-      Serial.printf("[bday] aniversario do Leon: %s\n", g_bdayDate);
+      Serial.printf("[bday] aniversario do bichinho: %s\n", g_bdayDate);
     }
     return true;
   }
@@ -778,7 +778,7 @@ static void loopFestive(unsigned long now) {
     p.putString("bday", g_bdayDate);
     p.end();
     web.setBirthday(g_bdayDate);
-    Serial.printf("[bday] aniversario do Leon: %s\n", g_bdayDate);
+    Serial.printf("[bday] aniversario do bichinho: %s\n", g_bdayDate);
   }
 
   // Flyby sound cue (sleigh "ho ho ho" / witch cackle): the renderer flags
@@ -854,7 +854,7 @@ static void loopFestive(unsigned long now) {
 }
 
 // Full sleep (night mode, for HA schedule automations): screen + LED dark,
-// Leon asleep, mic REALLY muted (visible in the HA switch); any local touch
+// The pet asleep, mic REALLY muted (visible in the HA switch); any local touch
 // or BOOT press wakes everything back up and restores the pre-night mute.
 static void loopNightMode(unsigned long now) {
   int req = web.consumeFullSleep();
@@ -868,7 +868,7 @@ static void loopNightMode(unsigned long now) {
     screen = SCREEN_PET;  // leave any game
     if (!pet.sleeping()) {
       g_muteNextSleepSnd = !g_nightSleepSnd;  // night mode may be silent
-      doAction(ACTION_TOGGLE_SLEEP);          // tuck Leon in
+      doAction(ACTION_TOGGLE_SLEEP);          // tuck the pet in
     }
     led.gameOff();               // LED dark (override until wake)
     renderer.setDisplayOff(true);
@@ -881,7 +881,7 @@ static void loopNightMode(unsigned long now) {
     led.endGame();               // release the LED back to mood
     if (pet.sleeping()) {
       g_muteNextWakeSnd = !g_nightWakeSnd;
-      doAction(ACTION_TOGGLE_SLEEP);  // wake Leon
+      doAction(ACTION_TOGGLE_SLEEP);  // wake the pet
     }
     if (!g_micMutedBeforeNight && web.micMuted()) web.setMicMuted(false);
     web.setFullSleep(false);
@@ -1041,7 +1041,7 @@ void setup() {
   console.begin(&pet, &battery, &audio, &led, &renderer, consoleNavigate,
                 []() { lastInteractionMs = millis(); });
 
-  // Leon's birthday (persisted; default = the project's first commit day).
+  // The pet's birthday (persisted; default = the project's first commit day).
   {
     Preferences p;
     p.begin("pet", true);
@@ -1117,7 +1117,7 @@ void loop() {
   }
   wasSleeping = sleeping;
 
-  loopFestive(now);         // seasonal decorations + Leon's hat (real date)
+  loopFestive(now);         // seasonal decorations + the pet's hat (real date)
   loopNightMode(now);       // full-sleep enter/exit + night sound settings
   loopPairingOverlay(now);  // PIN overlay mirror + cancel X
 
@@ -1239,7 +1239,7 @@ void loop() {
     menuOpen = false;
   }
 
-  // Party mode: while music streams, Leon keeps wandering the floor as usual
+  // Party mode: while music streams, the pet keeps wandering the floor as usual
   // but jumps more often than normal (reuses the pat-jump animation). The
   // interval leaves room for full walk cycles between hops.
   static unsigned long nextHopMs = 0;

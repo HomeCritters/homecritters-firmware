@@ -261,7 +261,7 @@ void Renderer::drawSimon(SimonGame& game) {
                     A0[i], A1[i], game.litColor() == i ? LIT[i] : DIM[i]);
   }
 
-  // Center: big score up top, then Leon hopping, a hint and the exit button.
+  // Center: big score up top, then the pet hopping, a hint and the exit button.
   char sc[8];
   snprintf(sc, sizeof(sc), "%d", game.score());
   _canvas.setTextSize(3);
@@ -269,7 +269,7 @@ void Renderer::drawSimon(SimonGame& game) {
   _canvas.setCursor(CENTER_X - _canvas.textWidth(sc) / 2, 44);
   _canvas.print(sc);
 
-  // Leon hops in place (jump sprite while airborne). Bigger + centered.
+  // The pet hops in place (jump sprite while airborne). Bigger + centered.
   const unsigned long t = millis() % 900;
   int hop = 0, mode = 0;
   if (t < 520) { hop = (int)(sinf((t / 520.0f) * 3.14159f) * 18.0f); mode = 2; }
