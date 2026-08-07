@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        The device currently speaks **only Portuguese (pt-BR)** — every UI string
-        the device and in the web portal is hardcoded. There is no i18n layer
-        yet, so the first contribution here gets to design one.
+        The device currently speaks **only Portuguese (pt-BR)** — every UI
+        string, on the device and in the web portal, is hardcoded. There is no
+        i18n layer yet, so the first contribution here gets to design one.
 
         Read [TODO.md](https://github.com/HomeCritters/homecritters-firmware/blob/main/TODO.md#-internationalisation-i18n--help-wanted)
         first — it sketches the shape (PROGMEM string table + NVS language

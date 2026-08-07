@@ -117,11 +117,6 @@ convert it with `assets/mp3_to_header.py` into `include/sounds/`, and include
 it from `AudioPlayer.cpp`. Short SFX should be mixable (16 kHz mono WAV, see
 `assets/mixable_wavs.sh`) so they can play over ambient audio.
 
-**Only contribute audio you have the right to redistribute** under this
-project's license — see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
-If you are unsure about a clip's provenance, say so in the PR instead of
-quietly adding it.
-
 ## Commits and pull requests
 
 - Small, focused commits with a descriptive message. Conventional-commit

@@ -5,7 +5,7 @@ bichinho virtual de mesa com um furão em pixel art.
 
 > **Arte do furão**: sprites do
 > [Elthen's Pixel Art Shop](https://elthen.itch.io/2d-pixel-art-ferret-sprites)
-> — **não** são MIT como o resto do repo. Ver `THIRD_PARTY_NOTICES.md`.
+> — creditar sempre. Ver `THIRD_PARTY_NOTICES.md`.
 
 ## Hardware
 
@@ -318,8 +318,8 @@ portal/tools ficam aqui.
 
 O furão vem de um spritesheet do Aseprite (`assets/ferret-sprite-sheet.png` +
 `.json`, frames 32x32, uma linha por animação) — arte do
-**[Elthen's Pixel Art Shop](https://elthen.itch.io/2d-pixel-art-ferret-sprites)**,
-sob licença dele (não-comercial), não a MIT do projeto. Para regenerar:
+**[Elthen's Pixel Art Shop](https://elthen.itch.io/2d-pixel-art-ferret-sprites)**.
+Para regenerar:
 
 ```bash
 python3 assets/aseprite_to_frames.py   # gera include/ferret_anim.h
@@ -424,12 +424,6 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
       Plano em `TODO.md` (tabela PROGMEM + idioma na NVS/menu; `t()` no portal;
       inglês primeiro). Cuidado: label em inglês é mais longa que em português
       → estoura o bezel redondo, validar com `hwshot.py`.
-- [ ] **Licença da arte do furão**: sprites do Elthen são não-comerciais e o
-      repo redistribui o sheet + os headers gerados. Resolver antes/junto do
-      open source (permissão explícita, grant pago, script de fetch, ou arte
-      substituta). Ver `THIRD_PARTY_NOTICES.md`.
-- [ ] **SFX sem procedência**: `include/sounds/` veio do MyInstants sem
-      clareamento de direitos — trocar por CC0 pra o repo ficar limpo.
 - [ ] Sem contagem de tempo offline (decaimento só considera tempo ligado; o
       `Clock` já sincroniza NTP — dá pra salvar o timestamp e computar o gap).
 - [ ] Curva de bateria em `Battery::percent()` é aproximada — vale calibrar

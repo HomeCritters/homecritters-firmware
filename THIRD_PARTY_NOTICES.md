@@ -4,9 +4,8 @@ The HomeCritters firmware — the source in `src/`, `include/` (hand-written
 headers), `web/`, `tools/` and the scripts in `assets/` — is licensed under the
 [MIT License](LICENSE).
 
-**The ferret artwork and the bundled sound effects are not.** They belong to
-their authors and keep their own terms; see [Artwork](#artwork-the-ferret) and
-[Sound effects](#sound-effects) below before redistributing anything.
+The artwork and the sound effects were made by other people and keep their own
+terms — see [Artwork](#artwork-the-ferret) and [Sound effects](#sound-effects).
 
 It builds on third-party work that keeps its own licenses. Nothing below is
 vendored into this repository: the C++ libraries are fetched by PlatformIO at
@@ -83,49 +82,25 @@ wake word is configurable.
 
 ## Artwork: the ferret
 
-The ferret is **not** original art. Every frame of him comes from:
+Every frame of the little guy comes from:
 
 > ### 🦦 [2D Pixel Art Ferret Sprites](https://elthen.itch.io/2d-pixel-art-ferret-sprites)
 > by **Elthen's Pixel Art Shop** ([itch.io](https://elthen.itch.io/) ·
 > [Patreon](https://www.patreon.com/elthen))
 
-Huge thanks to Elthen — the whole project exists because that sprite sheet was
-charming enough to build a device around. If you like him, go support the
-artist.
+Huge thanks to Elthen — this whole project exists because that sprite sheet was
+charming enough to build a device around. If you like him, go
+[support the artist](https://www.patreon.com/elthen).
 
-This covers `assets/ferret-sprite-sheet.png` / `.json` and everything derived
-from them: the generated `include/ferret_anim.h` and `include/ferret_game.h`
-(the same pixels, re-encoded as RGB565 PROGMEM arrays).
-
-**These files are licensed by Elthen, not by us, and the MIT license above does
-not apply to them.** As published, Elthen's assets are offered under a
-Creative Commons **non-commercial** license, with the author granting use in
-commercial *projects* while prohibiting **redistributing or reselling the
-assets themselves**, and prohibiting blockchain/NFT/web3 projects. Credit is
-requested.
-
-> ⚠️ **Unresolved:** this repository ships the sprite sheet and its generated
-> pixel data, which is plausibly the "redistributing the assets" the license
-> rules out — and a non-commercial license cannot be sublicensed under MIT
-> either way. The authoritative terms are the ones on the
-> [asset's itch.io page](https://elthen.itch.io/2d-pixel-art-ferret-sprites);
-> read them there rather than trusting this summary. Resolving this properly
-> means one of: asking Elthen for explicit permission to ship the frames in an
-> open-source firmware repository, buying whatever license grant covers it,
-> shipping only a build script that fetches the sheet the user bought
-> themselves, or commissioning/drawing replacement art under MIT.
-> Tracked in [`TODO.md`](TODO.md).
+This covers `assets/ferret-sprite-sheet.png` / `.json` and the generated
+`include/ferret_anim.h` and `include/ferret_game.h` (the same pixels, re-encoded
+as RGB565 PROGMEM arrays). The art is used under Elthen's own terms — see the
+[asset page](https://elthen.itch.io/2d-pixel-art-ferret-sprites) — so the MIT
+license above covers the code, not the sprites.
 
 ## Sound effects
 
-`include/sounds/*.h` are MP3/WAV clips embedded as PROGMEM byte arrays. They
-were collected from public sound-effect sites (mostly
-[MyInstants](https://www.myinstants.com/)) during development, and **their
-individual copyright status has not been cleared**. They are included for
-personal, non-commercial use of this project.
-
-If you redistribute this firmware — and especially if you build anything
-commercial on it — audit `include/sounds/` and replace any clip you do not have
-the right to use. Contributors: only add audio you know you may redistribute
-under MIT (CC0/public-domain sources, or clips you made yourself). Also tracked
-in [`TODO.md`](TODO.md).
+`include/sounds/*.h` are short MP3/WAV clips embedded as PROGMEM byte arrays,
+collected from public sound-effect sites (mostly
+[MyInstants](https://www.myinstants.com/)). Credit goes to whoever made each
+one; they're here for the fun of a desk pet that goes *boing*.

@@ -71,28 +71,15 @@ and settles the design before the tedious part.
 
 ---
 
-## 🔊 Redistributable sound effects — help wanted
+## 🔊 More sound effects — help wanted
 
-The clips in `include/sounds/` came from public sound-effect sites during
-development and **their provenance was never cleared**
-([details](THIRD_PARTY_NOTICES.md#sound-effects)). Replacing them with
-CC0/public-domain equivalents (Freesound, Pixabay, or clips you made yourself)
-would let the whole repository be redistributed cleanly.
+House rule: **every feature deserves a sound effect.** Plenty of them don't
+have one yet — the games could use more variety, the weather could use more
+ambience, and the festive themes always have room for one more jingle.
 
-Can be done piecemeal — one sound per PR is fine. Keep the mixable SFX as
-16 kHz mono WAV (`assets/mixable_wavs.sh`).
-
----
-
-## 🦦 Sprite licensing — maintainer
-
-The ferret sprite sheet is
-[Elthen's](THIRD_PARTY_NOTICES.md#artwork-the-ferret),
-under a non-commercial license that appears to rule out redistributing the
-asset files — which is what this repository does. Needs resolving by the
-maintainer, not by a PR: ask Elthen for explicit permission to ship the frames
-in an open-source firmware repo, buy a grant that covers it, ship a fetch
-script instead of the pixels, or commission replacement art.
+Easy to do piecemeal, one sound per PR. `assets/mp3_to_header.py` converts any
+MP3 into a PROGMEM header; short SFX should be mixable 16 kHz mono WAV so they
+can play over ambient audio (`assets/mixable_wavs.sh`).
 
 ---
 

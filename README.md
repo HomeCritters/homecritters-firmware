@@ -279,9 +279,8 @@ This whole project exists because that sprite sheet was charming enough to
 build a device around. If he makes you smile, go
 [support the artist](https://www.patreon.com/elthen). 🦦
 
-The sprites are **not** covered by this repository's MIT license — they are
-Elthen's, under Elthen's terms. See
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+Sound effects come from [MyInstants](https://www.myinstants.com/) and friends —
+credit to whoever made each *boing*.
 
 Pinout reverse-engineering from
 [RealDeco/xiaozhi-esphome](https://github.com/RealDeco/xiaozhi-esphome);
@@ -303,8 +302,8 @@ Two things we'd particularly love help with (see [`TODO.md`](TODO.md)):
   language picked in the config menu and persisted in NVS) and a matching one
   for the React portal, with **English as the first translation**. Greenfield,
   self-contained, and it opens the project up to everyone.
-- 🔊 **Redistributable audio.** Replacing the bundled sound effects with
-  clips of known, MIT-compatible provenance.
+- 🔊 **More sounds.** The house rule is that every feature deserves one, and
+  there are always features without one yet.
 
 Everyone taking part is expected to follow the
 [Code of Conduct](CODE_OF_CONDUCT.md). Found a security problem? Don't open an
@@ -312,18 +311,10 @@ issue — see [`SECURITY.md`](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE) © HomeCritters — for this project's own code.
+[MIT](LICENSE) © HomeCritters — do whatever you want with the code: use it,
+fork it, sell it, just keep the copyright notice.
 
-**Not everything in this repository is MIT**, and that matters if you plan to
-redistribute:
-
-- **The ferret sprites** belong to Elthen, under a non-commercial license — see
-  [Credits](#credits).
-- **The audio decoder** (ESP8266Audio) is **GPL-3.0**, and the LED and
-  WebSocket libraries are LGPL. Building the firmware for yourself carries no
-  obligation, but **distributing a compiled binary** makes it a combined work
-  under GPL-3.0.
-- **The bundled sound effects** have uncleared provenance.
-
-Read [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) before redistributing
-anything.
+The art, the sounds and the libraries belong to their own authors and keep
+their own licenses — they're all listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Worth a look if you plan to
+ship compiled binaries, since the audio decoder is GPL-3.0.

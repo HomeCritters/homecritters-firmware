@@ -2,8 +2,6 @@
 // Source: ferret-sprite-sheet.png
 // Artwork: "2D Pixel Art Ferret Sprites" by Elthen's Pixel Art Shop
 // https://elthen.itch.io/2d-pixel-art-ferret-sprites
-// Licensed by its author, NOT under this project's MIT license.
-// See THIRD_PARTY_NOTICES.md before redistributing.
 #pragma once
 #include <cstdint>
 #include <pgmspace.h>

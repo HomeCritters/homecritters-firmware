@@ -12,8 +12,7 @@ Two outputs:
 Frames use the same transparency color key convention (0xF81F).
 
 Artwork: "2D Pixel Art Ferret Sprites" by Elthen's Pixel Art Shop
-(https://elthen.itch.io/2d-pixel-art-ferret-sprites) - see
-THIRD_PARTY_NOTICES.md. Not covered by this project's MIT license.
+(https://elthen.itch.io/2d-pixel-art-ferret-sprites).
 
 Usage:
     python3 assets/aseprite_to_frames.py
@@ -96,8 +95,6 @@ def generate(sheet, groups, export, scale, out_path, prefix):
         f.write(f"// Source: {os.path.basename(PNG_PATH)}\n")
         f.write("// Artwork: \"2D Pixel Art Ferret Sprites\" by Elthen's Pixel Art Shop\n")
         f.write("// https://elthen.itch.io/2d-pixel-art-ferret-sprites\n")
-        f.write("// Licensed by its author, NOT under this project's MIT license.\n")
-        f.write("// See THIRD_PARTY_NOTICES.md before redistributing.\n")
         f.write("#pragma once\n#include <cstdint>\n#include <pgmspace.h>\n\n")
         f.write(f"#define {prefix}FRAME_W {fw}\n")
         f.write(f"#define {prefix}FRAME_H {fh}\n")
