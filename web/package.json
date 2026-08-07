@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "React web portal for the HomeCritters firmware, embedded gzipped in the ESP32-S3 flash",
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/HomeCritters/homecritters-firmware.git",

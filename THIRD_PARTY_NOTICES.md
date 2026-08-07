@@ -2,7 +2,8 @@
 
 The HomeCritters firmware — the source in `src/`, `include/` (hand-written
 headers), `web/`, `tools/` and the scripts in `assets/` — is licensed under the
-[MIT License](LICENSE).
+[PolyForm Noncommercial License 1.0.0](LICENSE): use, modify and share freely
+for any noncommercial purpose.
 
 The artwork and the sound effects were made by other people and keep their own
 terms — see [Artwork](#artwork-the-ferret) and [Sound effects](#sound-effects).
@@ -31,24 +32,17 @@ certificate bundle.
 
 ### ⚠️ If you distribute a compiled binary
 
-**The audio decoder library is GPL-3.0.** This project's own source stays MIT
-(MIT is GPL-compatible), and building the firmware for yourself carries no
-obligation. But a **compiled `.bin` that anyone distributes** — a GitHub
-release artifact, a preflashed device, a web flasher image — is a combined work
-with GPL-3.0 code in it, and must be distributed under GPL-3.0 terms: the
-complete corresponding source of everything linked in, offered to whoever
-receives the binary.
-
-In practice that means one of:
-
-- keep shipping **source only** (what this repository does today), or
-- publish binaries and honour GPL-3.0 for the combined work, or
-- replace ESP8266Audio with a permissively licensed decoder first.
+**The audio decoder library is GPL-3.0.** Building and flashing the firmware
+for yourself carries no obligation. But a **compiled `.bin`** — a GitHub
+release artifact, a preflashed device, a web flasher image — is a combined
+work with GPL-3.0 code in it, and the GPL does not allow combining with
+noncommercial-only terms in a distributed binary. So this project is
+**source-distributed by design**: clone it, `pio run`, flash your own. Don't
+publish compiled binaries.
 
 The LGPL libraries (NeoPixel, arduinoWebSockets, Arduino-ESP32 core) are
-statically linked too, which under LGPL requires that recipients be able to
-relink the binary against a modified version of those libraries — again
-satisfied trivially while distribution is source-only.
+statically linked too; source-only distribution satisfies their conditions as
+well.
 
 ## Web portal packages
 
@@ -57,7 +51,7 @@ satisfied trivially while distribution is source-only.
 [vite-plugin-singlefile](https://github.com/richardtallent/vite-plugin-singlefile)
 (MIT). The SHA-256/HMAC implementation in `web/src/hmac.js` is written for this
 project (the portal is served over plain `http://`, where `crypto.subtle` is
-unavailable) and is covered by this project's MIT license.
+unavailable) and is covered by this project's license.
 
 ## External services
 
@@ -95,8 +89,8 @@ charming enough to build a device around. If you like him, go
 This covers `assets/ferret-sprite-sheet.png` / `.json` and the generated
 `include/ferret_anim.h` and `include/ferret_game.h` (the same pixels, re-encoded
 as RGB565 PROGMEM arrays). The art is used under Elthen's own terms — see the
-[asset page](https://elthen.itch.io/2d-pixel-art-ferret-sprites) — so the MIT
-license above covers the code, not the sprites.
+[asset page](https://elthen.itch.io/2d-pixel-art-ferret-sprites) — so this
+project's license covers the code, not the sprites.
 
 ## Sound effects
 

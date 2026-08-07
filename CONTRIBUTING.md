@@ -127,6 +127,7 @@ it from `AudioPlayer.cpp`. Short SFX should be mixable (16 kHz mono WAV, see
 
 ## Licensing of contributions
 
-By submitting a pull request you agree that your contribution is licensed under
-the [MIT License](LICENSE), the same as the rest of the project. There is no
-CLA.
+By submitting a pull request you agree that your contribution is licensed
+under the [PolyForm Noncommercial License 1.0.0](LICENSE), the same as the
+rest of the project — anyone can use, modify and share it for any
+noncommercial purpose. There is no CLA.
