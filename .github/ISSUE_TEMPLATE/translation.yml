@@ -1,11 +1,11 @@
 name: 🌍 Translation / i18n
-description: Help make Leon speak another language
+description: Help the ferret speak another language
 labels: ["i18n", "help wanted"]
 body:
   - type: markdown
     attributes:
       value: |
-        Leon currently speaks **only Portuguese (pt-BR)** — every UI string on
+        The device currently speaks **only Portuguese (pt-BR)** — every UI string
         the device and in the web portal is hardcoded. There is no i18n layer
         yet, so the first contribution here gets to design one.
 

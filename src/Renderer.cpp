@@ -495,7 +495,7 @@ void Renderer::draw(const Pet& pet, Battery& battery, FerretActor& ferret,
       drawButterflies();
     }
   }
-  // Disco floor goes UNDER the pet (Leon dances on it); the ball + lasers
+  // Disco floor goes UNDER the pet (he dances on it); the ball + lasers
   // overlay goes on top of everything at the end.
   if (party) drawDiscoFloor();
   drawHeader(pet, wifiOn, micMuted, micLive);

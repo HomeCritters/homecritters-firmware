@@ -4,8 +4,8 @@ The HomeCritters firmware — the source in `src/`, `include/` (hand-written
 headers), `web/`, `tools/` and the scripts in `assets/` — is licensed under the
 [MIT License](LICENSE).
 
-**Leon's artwork and the bundled sound effects are not.** They belong to their
-authors and keep their own terms; see [Artwork](#artwork-leon-the-ferret) and
+**The ferret artwork and the bundled sound effects are not.** They belong to
+their authors and keep their own terms; see [Artwork](#artwork-the-ferret) and
 [Sound effects](#sound-effects) below before redistributing anything.
 
 It builds on third-party work that keeps its own licenses. Nothing below is
@@ -81,16 +81,16 @@ Xiaozhi, Home Assistant, Nabu Casa, or Amazon.
 Home Assistant instance. No Amazon software or service is involved, and the
 wake word is configurable.
 
-## Artwork: Leon the ferret
+## Artwork: the ferret
 
-Leon is **not** original art. Every frame of him comes from:
+The ferret is **not** original art. Every frame of him comes from:
 
 > ### 🦦 [2D Pixel Art Ferret Sprites](https://elthen.itch.io/2d-pixel-art-ferret-sprites)
 > by **Elthen's Pixel Art Shop** ([itch.io](https://elthen.itch.io/) ·
 > [Patreon](https://www.patreon.com/elthen))
 
 Huge thanks to Elthen — the whole project exists because that sprite sheet was
-charming enough to build a device around. If you like Leon, go support the
+charming enough to build a device around. If you like him, go support the
 artist.
 
 This covers `assets/ferret-sprite-sheet.png` / `.json` and everything derived

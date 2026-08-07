@@ -3,7 +3,7 @@
 Firmware para transformar a "Ball V2" (ESP32-S3, tela redonda touch) num
 bichinho virtual de mesa com um furão em pixel art.
 
-> **Arte do Leon**: sprites do
+> **Arte do furão**: sprites do
 > [Elthen's Pixel Art Shop](https://elthen.itch.io/2d-pixel-art-ferret-sprites)
 > — **não** são MIT como o resto do repo. Ver `THIRD_PARTY_NOTICES.md`.
 
@@ -149,7 +149,7 @@ portal/tools ficam aqui.
   na rede**. No connect o device manda `challenge:<nonce>` (novo por socket);
   o cliente responde `auth:<HMAC-SHA256(token,nonce)>[:<cnonce>]` (hex). Com o
   cnonce o device devolve `proof:<HMAC(token,cnonce)>` = **auth mútua** (device
-  falso por mDNS spoof não se passa pelo Leon). Sem auth: sem estado/comando/
+  falso por mDNS spoof não se passa pelo aparelho). Sem auth: sem estado/comando/
   mic (5s → derruba). Pareamento por PIN (Seguranca > Parear): PIN 6 díg. na
   tela (90s, 3 tentativas), `pair:<pin>` → `token:<token>` (único momento que o
   token vai no fio, handover curto e supervisionado). Revogar acesso (2 toques)
@@ -205,7 +205,7 @@ portal/tools ficam aqui.
   fetch imediato no boot/troca de local/abrir a tela (>15 min). A condição
   atual **pinta a cena**: nublado/chuva/tempestade tingem a paleta de cinza
   (`tintPalette`+`lerp565`), nuvens derivam no céu, gotas caem NA FRENTE do
-  Leon, tempestade dá flash no céu + **raio serrilhado desenhado** (~6
+  furão, tempestade dá flash no céu + **raio serrilhado desenhado** (~6
   frames, posição aleatória) + **trovão** (`sfx_thunder`) a cada 8-20 s.
   **Cada código WMO tem visual próprio**: quase-limpo (sol+1 nuvem),
   parcial (sol+2 nuvens), garoa/chuva/temporal (densidade e velocidade das
@@ -241,7 +241,7 @@ portal/tools ficam aqui.
     borda da tela redonda; o aparelho toca a sequência (arco aceso + **LED RGB
     na cor** + **um tom por cor** — WAVs gerados com as frequências do Simon
     original) e o jogador repete tocando os arcos ou os pads do portal. Centro:
-    score, Leon, dica e botão ✕ de sair. Erro/timeout = buzzer + LED de morte;
+    score, furão, dica e botão ✕ de sair. Erro/timeout = buzzer + LED de morte;
     recorde na NVS (`game/shs`). O `AudioPlayer` decodifica **WAV e MP3**
     (auto-detect pelo header RIFF).
 - **LED RGB** reflete o humor (verde/amarelo/laranja/vermelho/azul/âmbar).
@@ -264,7 +264,7 @@ portal/tools ficam aqui.
   no estado. `mediaKind()` distingue **TTS** (URL contém `tts_proxy`) de
   **música** — TTS mostra o **anel de voz** estilo Alexa; música liga o
   **modo balada** (tema noite forçado, globo de discoteca, pulsos de laser,
-  pista de dança randômica, 2 máquinas de fumaça, caixas pulsando, Leon
+  pista de dança randômica, 2 máquinas de fumaça, caixas pulsando, furão
   dançando, LED arco-íris). Ambos os idle WDTs são desregistrados no boot.
 - **Debug de rede/áudio** (console serial): `nb:<url>` (WiFiClient cru) e
   `nb2:<url>` (esp_http_client) medem throughput; `cpu` (contadores de idle
@@ -424,7 +424,7 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
       Plano em `TODO.md` (tabela PROGMEM + idioma na NVS/menu; `t()` no portal;
       inglês primeiro). Cuidado: label em inglês é mais longa que em português
       → estoura o bezel redondo, validar com `hwshot.py`.
-- [ ] **Licença da arte do Leon**: sprites do Elthen são não-comerciais e o
+- [ ] **Licença da arte do furão**: sprites do Elthen são não-comerciais e o
       repo redistribui o sheet + os headers gerados. Resolver antes/junto do
       open source (permissão explícita, grant pago, script de fetch, ou arte
       substituta). Ver `THIRD_PARTY_NOTICES.md`.
@@ -463,7 +463,7 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
       - **Stack**: pipeline HA "Ollama" = openWakeWord(alexa) + STT/TTS
         ElevenLabs + **qwen3:8b** (cabe INTEIRO na GPU de 8GB do LXC 101;
         o 14b derrama pra CPU = 30-60s. 14b fica pro Open WebUI; gemma3:12b
-        é do LLM Vision). Prompt do Leon: ignora wake word (e transcrições
+        é do LLM Vision). Prompt do bichinho: ignora wake word (e transcrições
         tortas), bom senso com erros de STT, unidades por extenso ("23
         graus", nunca "°C"). Threshold do openWakeWord: config do add-on.
       - **Deploy do plugin**: HACS rastreia a **main** — nunca instalar

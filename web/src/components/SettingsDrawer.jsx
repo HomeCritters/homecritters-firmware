@@ -280,7 +280,7 @@ export default function SettingsDrawer({
         <div>
           <Text strong>🌙 Modo noite</Text>
           <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-            Apaga tela e LED, Leon dorme
+            Apaga tela e LED, o bichinho dorme
           </Text>
         </div>
         <Switch

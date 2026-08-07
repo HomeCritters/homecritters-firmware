@@ -86,7 +86,8 @@ Can be done piecemeal — one sound per PR is fine. Keep the mixable SFX as
 
 ## 🦦 Sprite licensing — maintainer
 
-Leon's sprite sheet is [Elthen's](THIRD_PARTY_NOTICES.md#artwork-leon-the-ferret),
+The ferret sprite sheet is
+[Elthen's](THIRD_PARTY_NOTICES.md#artwork-the-ferret),
 under a non-commercial license that appears to rule out redistributing the
 asset files — which is what this repository does. Needs resolving by the
 maintainer, not by a PR: ask Elthen for explicit permission to ship the frames

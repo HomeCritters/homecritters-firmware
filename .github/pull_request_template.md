@@ -26,7 +26,10 @@ on the physical screen.
 
 ## Checklist
 
-- [ ] Code and comments in English; UI strings in Portuguese (pt-BR)
+- [ ] Code and comments in English; new UI strings in Portuguese (pt-BR) until
+      an [i18n layer](../blob/main/TODO.md#-internationalisation-i18n--help-wanted)
+      exists — grouped per screen, not scattered inline, so they're easy to
+      extract later
 - [ ] No hardcoded GPIO numbers (`include/pins.h` is the source of truth)
 - [ ] Any new `Renderer` screen ends with `endScreen()`
 - [ ] Any new screen is registered in `SCREENS[]` + `enterScreen()`

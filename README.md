@@ -1,8 +1,8 @@
 # HomeCritters — firmware
 
-A **desk pet + smart speaker** for your home: a pixel-art ferret named Leon
-living in a magic forest, on a Xiaozhi/Spotpear **Ball V2** (ESP32-S3, round
-240×240 GC9A01 touch display, ES8311 audio codec).
+A **desk pet + smart speaker** for your home: a pixel-art ferret living in a
+magic forest — you name him yourself — on a Xiaozhi/Spotpear **Ball V2**
+(ESP32-S3, round 240×240 GC9A01 touch display, ES8311 audio codec).
 
 Feed him, pet him, play mini-games with him — and when music plays, he throws
 a party. Works fully standalone, and becomes a first-class
@@ -26,11 +26,11 @@ AirPlay) with the companion
 ### 🦦 A living pet
 
 Four stats (hunger, energy, joy, hygiene) decay over time; his mood shows in
-the header and on the RGB LED. Leon wanders, jumps, eats, burrows into the
-ground and sleeps — animated from an Aseprite sprite sheet ([by Elthen
-🦦](#credits)). The
-forest follows the **real time of day** (NTP): sunny day, golden sunset, and
-a starry night with a lit cabin window and fireflies.
+the header and on the RGB LED. He wanders, jumps, eats, burrows into the
+ground and sleeps — animated from an Aseprite sprite sheet
+([by Elthen 🦦](#credits)). The forest follows the **real time of day** (NTP):
+sunny day, golden sunset, and a starry night with a lit cabin window and
+fireflies.
 
 | Day | Golden hour | Night + idle clock | Config menu |
 |---|---|---|---|
@@ -94,8 +94,8 @@ coexists with the live weather:
   striped food stall with a lit lamp, floating paper lanterns and corn stalks.
 - 🎆 **New Year** (Dec 31 + Jan 1): fireworks bursting across the sky all day,
   and the barrage fires **right at the stroke of midnight**.
-- 🎂 **Birthday**: on Leon's day (set once in the portal or Home Assistant) he
-  gets a cake with flickering candles, balloons drifting around, confetti and
+- 🎂 **Birthday**: on his birthday (set once in the portal or Home Assistant)
+  he gets a cake with flickering candles, balloons drifting around, confetti and
   *"Parabéns pra Você"*.
 
 The sleigh and the witch pass every so often at varied heights and directions,
@@ -112,8 +112,8 @@ acting as a game controller.
 
 - **Jump!** — doodle-jump style: springs, moving and crumbling platforms,
   parallax clouds, NVS high score.
-- **Bolinha** — fetch: throw the tennis ball with a swipe, Leon chases it
-  down with real physics and brings it back.
+- **Bolinha** — fetch: throw the tennis ball with a swipe, the ferret chases
+  it down with real physics and brings it back.
 - **Genius** — Simon-says on the round bezel: four color arcs, the RGB LED
   and an authentic tone per color.
 
@@ -127,9 +127,9 @@ exactly what's on the device, weather, festive decorations and all.
 
 And the mirror is a **remote control** — tap and swipe on it and the touches
 are injected into the same input pipeline as the physical screen, so you can
-pet Leon, hit the action buttons, open the config menu, the "Casa" panel, the
-weather screen, launch and even *steer the games* — everything, right from
-your phone.
+pet the ferret, hit the action buttons, open the config menu, the "Casa"
+panel, the weather screen, launch and even *steer the games* — everything,
+right from your phone.
 
 | Portal | As a game controller |
 |---|---|
@@ -146,8 +146,8 @@ And it's a show:
 
 - 🪩 **Party mode** when music plays: forced night theme, mirrored disco
   ball, random laser pulses, a color-shifting dance floor, smoke machines,
-  thumping speaker cabinets — Leon dancing through all of it while the RGB
-  LED **flashes to the actual beat** (live PCM envelope analysis).
+  thumping speaker cabinets — the ferret dancing through all of it while the
+  RGB LED **flashes to the actual beat** (live PCM envelope analysis).
 - 🔵 **Voice rings** for the assistant (below).
 
 ### 🎙️ Voice assistant
@@ -263,17 +263,20 @@ web/            React portal (Vite + Ant Design), embedded via web_index.h
 tools/          hwshot.py (screen -> PNG over serial) + serial console
 ```
 
-UI strings are in Portuguese (pt-BR); code and comments in English.
+Code and comments are in English. UI strings are currently Portuguese (pt-BR)
+only — **there is no i18n layer yet, and building one is an open invitation**;
+see [Contributing](#contributing).
+
 See [`CLAUDE.md`](CLAUDE.md) for full architecture notes — the module map, the
 WebSocket protocol, and the hardware lessons learned the hard way.
 
 ## Credits
 
-**Leon is drawn by [Elthen's Pixel Art Shop](https://elthen.itch.io/).** Every
-frame of him — walking, digging, sleeping, dancing — comes from
+**The ferret is drawn by [Elthen's Pixel Art Shop](https://elthen.itch.io/).**
+Every frame of him — walking, digging, sleeping, dancing — comes from
 [**2D Pixel Art Ferret Sprites**](https://elthen.itch.io/2d-pixel-art-ferret-sprites).
 This whole project exists because that sprite sheet was charming enough to
-build a device around. If Leon makes you smile, go
+build a device around. If he makes you smile, go
 [support the artist](https://www.patreon.com/elthen). 🦦
 
 The sprites are **not** covered by this repository's MIT license — they are
@@ -314,7 +317,7 @@ issue — see [`SECURITY.md`](SECURITY.md).
 **Not everything in this repository is MIT**, and that matters if you plan to
 redistribute:
 
-- **Leon's sprites** belong to Elthen, under a non-commercial license — see
+- **The ferret sprites** belong to Elthen, under a non-commercial license — see
   [Credits](#credits).
 - **The audio decoder** (ESP8266Audio) is **GPL-3.0**, and the LED and
   WebSocket libraries are LGPL. Building the firmware for yourself carries no

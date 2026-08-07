@@ -7,7 +7,7 @@
 using namespace theme;
 using namespace ui;
 
-// Checkered dance floor over the grass strip, drawn UNDER the pet so Leon
+// Checkered dance floor over the grass strip, drawn UNDER the pet so he
 // dances on it. Tiles cycle through party colors in a rolling diagonal
 // pattern, with a dark seam grid so it reads as tiles.
 void Renderer::drawDiscoFloor() {
@@ -45,7 +45,7 @@ void Renderer::drawDiscoFloor() {
     for (int col = 0; col < 12; col++)
       tile(col * tileW, y0 + row * tileH, tileW, tileH, col, row);
 
-  // Two speaker cabinets flanking the stage (drawn under the pet: Leon can
+  // Two speaker cabinets flanking the stage (drawn under the pet: he can
   // strut in front of them). The woofer ring thumps to a beat envelope.
   for (int side = 0; side < 2; side++) {
     const int sx = side ? 212 : 2;  // cabinet left edge
@@ -69,7 +69,7 @@ void Renderer::drawDiscoFloor() {
 
   // Smoke machines on each side of the floor. Part of the stage set (drawn
   // under the HUD so the edge pull-handles/bars/buttons stay on top, and
-  // under the pet so Leon dances in front of the fog).
+  // under the pet so he dances in front of the fog).
   // Puff "translucency" is dithering: only a checkerboard of pixels is
   // drawn, sparser as the puff ages, so the scene shows through.
   for (int m = 0; m < 2; m++) {

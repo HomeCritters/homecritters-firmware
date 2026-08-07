@@ -554,8 +554,8 @@ void Renderer::drawXmasDecor(bool night) {
   }
 
   // --- snowman on the grass (carrot nose, coal smile, red scarf). Raised so
-  // his base sits ABOVE Leon's feet (FLOOR_Y): he reads as further back and
-  // Leon cleanly passes in FRONT of him. ---
+  // his base sits ABOVE the pet's feet (FLOOR_Y): he reads as further back and
+  // the pet cleanly passes in FRONT of him. ---
   {
     const int sx2 = 96, sy2 = 113;
     const uint16_t snow = rgb565(240, 244, 250), snowSh = rgb565(198, 206, 224);
@@ -678,7 +678,7 @@ void Renderer::drawHalloweenDecor(bool night) {
   _canvas.drawFastVLine(87, 119, 2, boneDk);                        // nose
   _canvas.drawFastVLine(88, 122, 1, boneDk);                        // tooth gap
 
-  // --- witch cauldron on the RIGHT, raised so its base sits above Leon's
+  // --- witch cauldron on the RIGHT, raised so its base sits above the pet's
   // foot line (like the snowman) - he passes cleanly in front ---
   const int cx = 206, cy = 113;
   const float pulse = 0.5f + 0.5f * sinf(ms / 500.0f);
@@ -728,7 +728,7 @@ void Renderer::drawHalloweenDecor(bool night) {
                        lerp565(brew, _p.skyBottom, c2 / 32.0f));
   }
 
-  // --- the carved pumpkin, centered (raised above Leon's foot line) ---
+  // --- the carved pumpkin, centered (raised above the pet's foot line) ---
   const int px = 120, py = 113;
   const uint16_t orange = rgb565(232, 120, 34), rib = rgb565(190, 88, 22);
   _canvas.fillEllipse(px, py, 10, 8, orange);
@@ -814,10 +814,10 @@ void Renderer::drawJuninaDecor(bool night) {
   }
 
   // --- barraquinha (striped festival stall) center-left, with a lit lamp.
-  // Base raised above Leon's foot line (FLOOR_Y) so he passes cleanly in
+  // Base raised above the pet's foot line (FLOOR_Y) so he passes cleanly in
   // front instead of clipping through it. ---
   {
-    const int bx = 96, bg = 114;  // left edge, base line (above Leon's feet)
+    const int bx = 96, bg = 114;  // left edge, base line (above the pet's feet)
     const uint16_t post = rgb565(140, 105, 70);
     const uint16_t red = rgb565(215, 70, 70), wht = rgb565(246, 240, 230);
     _canvas.fillEllipse(bx + 14, bg + 1, 17, 3, rgb565(24, 30, 22));  // shadow
@@ -849,7 +849,7 @@ void Renderer::drawJuninaDecor(bool night) {
   }
 
   // --- BONFIRE (fogueira): the centerpiece - a real bright fire on the
-  // right, clear of Leon's usual paths. Big flames, layered core, sparks. ---
+  // right, clear of the pet's usual paths. Big flames, layered core, sparks. ---
   const int fx = 200, fy = 128;
   const uint16_t log_ = _p.treeTrunk, logHi = lerp565(_p.treeTrunk, rgb565(150, 100, 60), 0.5f);
   // warm ground glow (day too, stronger at night), breathing with the fire

@@ -113,7 +113,7 @@ class Renderer {
 
   // Live screen streaming for the portal. Encodes the finished canvas as a
   // set of CHANGED ROWS vs the last sent frame (delta): most of the scene is
-  // static, so a moving-Leon frame is only ~30 rows (~2KB) instead of the
+  // static, so a moving-pet frame is only ~30 rows (~2KB) instead of the
   // whole 240 (~8KB), which lets us push a much higher frame rate. Wire
   // format: a run of records `{u8 rowIdx, RLE of that row's 240 px}`, where
   // each RLE run is `{u8 count 1..255, u8 hi, u8 lo}` (RGB565, big-endian as
