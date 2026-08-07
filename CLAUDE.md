@@ -1,7 +1,11 @@
 # Tamagotchi de mesa (furão) — Xiaozhi/Spotpear Ball V2
 
 Firmware para transformar a "Ball V2" (ESP32-S3, tela redonda touch) num
-bichinho virtual de mesa com um furão original em pixel art.
+bichinho virtual de mesa com um furão em pixel art.
+
+> **Arte do Leon**: sprites do
+> [Elthen's Pixel Art Shop](https://elthen.itch.io/2d-pixel-art-ferret-sprites)
+> — **não** são MIT como o resto do repo. Ver `THIRD_PARTY_NOTICES.md`.
 
 ## Hardware
 
@@ -313,7 +317,9 @@ portal/tools ficam aqui.
 ## Regenerar as animações do furão
 
 O furão vem de um spritesheet do Aseprite (`assets/ferret-sprite-sheet.png` +
-`.json`, frames 32x32, uma linha por animação). Para regenerar:
+`.json`, frames 32x32, uma linha por animação) — arte do
+**[Elthen's Pixel Art Shop](https://elthen.itch.io/2d-pixel-art-ferret-sprites)**,
+sob licença dele (não-comercial), não a MIT do projeto. Para regenerar:
 
 ```bash
 python3 assets/aseprite_to_frames.py   # gera include/ferret_anim.h
@@ -411,6 +417,19 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
 
 ## Pendências / próximos passos conhecidos
 
+> Os itens prontos pra alguém de fora pegar estão em `TODO.md` (help wanted).
+> Aqui fica o backlog cru de engenharia.
+
+- [ ] **i18n**: toda string de UI é pt-BR hardcoded, sem camada de tradução.
+      Plano em `TODO.md` (tabela PROGMEM + idioma na NVS/menu; `t()` no portal;
+      inglês primeiro). Cuidado: label em inglês é mais longa que em português
+      → estoura o bezel redondo, validar com `hwshot.py`.
+- [ ] **Licença da arte do Leon**: sprites do Elthen são não-comerciais e o
+      repo redistribui o sheet + os headers gerados. Resolver antes/junto do
+      open source (permissão explícita, grant pago, script de fetch, ou arte
+      substituta). Ver `THIRD_PARTY_NOTICES.md`.
+- [ ] **SFX sem procedência**: `include/sounds/` veio do MyInstants sem
+      clareamento de direitos — trocar por CC0 pra o repo ficar limpo.
 - [ ] Sem contagem de tempo offline (decaimento só considera tempo ligado; o
       `Clock` já sincroniza NTP — dá pra salvar o timestamp e computar o gap).
 - [ ] Curva de bateria em `Battery::percent()` é aproximada — vale calibrar
@@ -466,7 +485,10 @@ $PY tools/console.py "stats:80,20,50,10" pet            # só manda comandos
 ## Preferências de estilo
 
 - **Código e comentários em inglês**; **strings de UI (tela e portal) em
-  português** (o dono do projeto é BR).
+  português** (o dono do projeto é BR). **Ainda não existe camada de i18n** —
+  construir uma (com inglês como 1ª tradução) é item aberto em `TODO.md`; até
+  lá, string nova em português, mas agrupada por tela (não espalhada inline)
+  pra facilitar a extração depois.
 - Manter `pins.h` como única fonte de verdade pro pinout — não hardcodar
   números de GPIO nos módulos.
 - Assets viram headers gerados (`GENERATED ... do NOT edit`), nunca editados

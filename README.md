@@ -1,8 +1,8 @@
 # HomeCritters — firmware
 
-A **desk pet + smart speaker** for your home: an original pixel-art ferret
-named Leon living in a magic forest, on a Xiaozhi/Spotpear **Ball V2**
-(ESP32-S3, round 240×240 GC9A01 touch display, ES8311 audio codec).
+A **desk pet + smart speaker** for your home: a pixel-art ferret named Leon
+living in a magic forest, on a Xiaozhi/Spotpear **Ball V2** (ESP32-S3, round
+240×240 GC9A01 touch display, ES8311 audio codec).
 
 Feed him, pet him, play mini-games with him — and when music plays, he throws
 a party. Works fully standalone, and becomes a first-class
@@ -27,7 +27,8 @@ AirPlay) with the companion
 
 Four stats (hunger, energy, joy, hygiene) decay over time; his mood shows in
 the header and on the RGB LED. Leon wanders, jumps, eats, burrows into the
-ground and sleeps — animated from an original Aseprite sprite sheet. The
+ground and sleeps — animated from an Aseprite sprite sheet ([by Elthen
+🦦](#credits)). The
 forest follows the **real time of day** (NTP): sunny day, golden sunset, and
 a starry night with a lit cabin window and fireflies.
 
@@ -266,6 +267,24 @@ UI strings are in Portuguese (pt-BR); code and comments in English.
 See [`CLAUDE.md`](CLAUDE.md) for full architecture notes — the module map, the
 WebSocket protocol, and the hardware lessons learned the hard way.
 
+## Credits
+
+**Leon is drawn by [Elthen's Pixel Art Shop](https://elthen.itch.io/).** Every
+frame of him — walking, digging, sleeping, dancing — comes from
+[**2D Pixel Art Ferret Sprites**](https://elthen.itch.io/2d-pixel-art-ferret-sprites).
+This whole project exists because that sprite sheet was charming enough to
+build a device around. If Leon makes you smile, go
+[support the artist](https://www.patreon.com/elthen). 🦦
+
+The sprites are **not** covered by this repository's MIT license — they are
+Elthen's, under Elthen's terms. See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+Pinout reverse-engineering from
+[RealDeco/xiaozhi-esphome](https://github.com/RealDeco/xiaozhi-esphome);
+weather data from [Open-Meteo](https://open-meteo.com/); wake word by
+[openWakeWord](https://github.com/dscripka/openWakeWord).
+
 ## Contributing
 
 Bug reports, mini-games, weather effects and festive themes are all welcome —
@@ -273,19 +292,35 @@ start with [`CONTRIBUTING.md`](CONTRIBUTING.md). Please open an issue before
 building anything large, screenshot any visual change (with the bezel ring),
 and remember the house rule: **every new feature deserves a sound effect**.
 
+Two things we'd particularly love help with (see [`TODO.md`](TODO.md)):
+
+- 🌍 **Internationalisation.** Every UI string — on the device and in the web
+  portal — is hardcoded in Portuguese today. There is no i18n layer at all, so
+  someone gets to design one: a string table for the firmware (`PROGMEM`,
+  language picked in the config menu and persisted in NVS) and a matching one
+  for the React portal, with **English as the first translation**. Greenfield,
+  self-contained, and it opens the project up to everyone.
+- 🔊 **Redistributable audio.** Replacing the bundled sound effects with
+  clips of known, MIT-compatible provenance.
+
 Everyone taking part is expected to follow the
 [Code of Conduct](CODE_OF_CONDUCT.md). Found a security problem? Don't open an
 issue — see [`SECURITY.md`](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE) © HomeCritters — for this project's own code and for Leon's
-original sprite art.
+[MIT](LICENSE) © HomeCritters — for this project's own code.
 
-The libraries it builds on keep their own licenses, and two of them are
-copyleft: the audio decoder (ESP8266Audio) is **GPL-3.0** and the LED and
-WebSocket libraries are LGPL. Building the firmware for yourself carries no
-obligation, but **distributing a compiled binary** makes it a combined work
-under GPL-3.0. The bundled sound effects also have uncleared provenance. Read
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) before redistributing
+**Not everything in this repository is MIT**, and that matters if you plan to
+redistribute:
+
+- **Leon's sprites** belong to Elthen, under a non-commercial license — see
+  [Credits](#credits).
+- **The audio decoder** (ESP8266Audio) is **GPL-3.0**, and the LED and
+  WebSocket libraries are LGPL. Building the firmware for yourself carries no
+  obligation, but **distributing a compiled binary** makes it a combined work
+  under GPL-3.0.
+- **The bundled sound effects** have uncleared provenance.
+
+Read [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) before redistributing
 anything.

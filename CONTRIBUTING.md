@@ -87,6 +87,13 @@ is the device. What we do ask:
 - **Code and comments in English. UI strings (device screen and web portal) in
   Portuguese (pt-BR).** The project owner is Brazilian and the product speaks
   Portuguese; the codebase speaks English.
+
+  > 🌍 We'd like to change the second half of that. There is **no i18n layer
+  > yet** — building one, with English as the first translation, is an open
+  > invitation and one of the most useful things anyone could contribute. See
+  > [`TODO.md`](TODO.md#-internationalisation-i18n--help-wanted). Until it
+  > exists, new strings go in Portuguese; please keep them in one place per
+  > screen rather than scattered inline, so they're easy to extract later.
 - Keep modules single-responsibility and unaware of each other (`Pet` = rules,
   `Renderer` = pixels, `InputController` = events). `main.cpp` is the only
   place that stitches things together.

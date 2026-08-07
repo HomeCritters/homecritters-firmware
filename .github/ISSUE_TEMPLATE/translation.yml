@@ -1,0 +1,67 @@
+name: 🌍 Translation / i18n
+description: Help make Leon speak another language
+labels: ["i18n", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Leon currently speaks **only Portuguese (pt-BR)** — every UI string on
+        the device and in the web portal is hardcoded. There is no i18n layer
+        yet, so the first contribution here gets to design one.
+
+        Read [TODO.md](https://github.com/HomeCritters/homecritters-firmware/blob/main/TODO.md#-internationalisation-i18n--help-wanted)
+        first — it sketches the shape (PROGMEM string table + NVS language
+        setting on the firmware, a small `t()` dictionary in the React portal)
+        and the round-screen pitfall: English labels are usually longer than
+        the Portuguese ones and will overflow the bezel if you don't check.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What are you proposing?
+      options:
+        - "Building the i18n mechanism (no translation layer exists yet)"
+        - "Adding a language, on top of an existing mechanism"
+        - "Fixing or improving existing strings"
+    validations:
+      required: true
+
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      description: Which language, and which locale? (e.g. English / en-US)
+      value: English (en)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      multiple: true
+      options:
+        - Device screen (firmware)
+        - Web portal (React)
+        - Documentation (README / CONTRIBUTING)
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Approach
+      description: |
+        If you're designing the mechanism: how do you want to store the
+        strings, pick the language, and keep flash usage sane? Rough is fine —
+        this is the conversation we want to have *before* the big PR.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I read the i18n section of TODO.md
+          required: true
+        - label: I understand any changed screen needs a screenshot with the bezel ring drawn
+          required: true
