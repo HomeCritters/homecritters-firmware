@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # Web portal (React + Vite + antd)
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      web-dependencies:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  # CI actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
+
+# Note: PlatformIO lib_deps in platformio.ini are not supported by Dependabot;
+# bump those by hand and rebuild.

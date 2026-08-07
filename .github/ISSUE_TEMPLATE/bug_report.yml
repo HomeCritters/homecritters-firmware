@@ -1,0 +1,94 @@
+name: 🐛 Bug report
+description: Something in the firmware or the web portal misbehaves
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please fill in what you can — a serial log and a
+        screenshot usually turn a mystery into a five-minute fix.
+
+        **Security problems don't go here** — see [SECURITY.md](https://github.com/HomeCritters/homecritters-firmware/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the config menu (swipe down)
+        2. Tap "Luz"
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+      description: Commit hash, or the version shown in the web portal.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      multiple: true
+      options:
+        - Pet screen / animation
+        - Weather
+        - Festive themes / birthday
+        - Mini-games
+        - Web portal
+        - Screen mirror / screenshots
+        - Audio / media player
+        - Voice assistant / microphone
+        - Home Assistant integration
+        - Pairing / security
+        - WiFi / networking
+        - Build / flashing
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: Which board? Any deviation from a stock Ball V2 (wiring, PSRAM, flash size)?
+      value: Spotpear/Xiaozhi Ball V2 (stock)
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Serial log
+      description: |
+        `pio device monitor` at 115200 baud. A crash backtrace is decoded
+        automatically by `monitor_filters = esp32_exception_decoder`.
+      render: shell
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: |
+        For anything visual: `python3 tools/hwshot.py -o shot.png`, or the 📸
+        button in the web portal. Drag the PNG in here.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this isn't a duplicate
+          required: true
+        - label: I'm running a build from `main` (or I said which commit above)
+          required: true

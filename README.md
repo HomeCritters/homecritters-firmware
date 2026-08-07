@@ -11,6 +11,8 @@ media player for TTS + [Music Assistant](https://www.music-assistant.io/) +
 AirPlay) with the companion
 [homecritters-ha-plugin](https://github.com/HomeCritters/homecritters-ha-plugin).
 
+[![CI](https://github.com/HomeCritters/homecritters-firmware/actions/workflows/ci.yml/badge.svg)](https://github.com/HomeCritters/homecritters-firmware/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![platform](https://img.shields.io/badge/platform-ESP32--S3-blue)
 ![framework](https://img.shields.io/badge/framework-Arduino%20%2B%20PlatformIO-orange)
 ![HA](https://img.shields.io/badge/Home%20Assistant-integration-41BDF5)
@@ -261,8 +263,29 @@ tools/          hwshot.py (screen -> PNG over serial) + serial console
 ```
 
 UI strings are in Portuguese (pt-BR); code and comments in English.
-See `CLAUDE.md` for full architecture notes.
+See [`CLAUDE.md`](CLAUDE.md) for full architecture notes — the module map, the
+WebSocket protocol, and the hardware lessons learned the hard way.
+
+## Contributing
+
+Bug reports, mini-games, weather effects and festive themes are all welcome —
+start with [`CONTRIBUTING.md`](CONTRIBUTING.md). Please open an issue before
+building anything large, screenshot any visual change (with the bezel ring),
+and remember the house rule: **every new feature deserves a sound effect**.
+
+Everyone taking part is expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). Found a security problem? Don't open an
+issue — see [`SECURITY.md`](SECURITY.md).
 
 ## License
 
-MIT
+[MIT](LICENSE) © HomeCritters — for this project's own code and for Leon's
+original sprite art.
+
+The libraries it builds on keep their own licenses, and two of them are
+copyleft: the audio decoder (ESP8266Audio) is **GPL-3.0** and the LED and
+WebSocket libraries are LGPL. Building the firmware for yourself carries no
+obligation, but **distributing a compiled binary** makes it a combined work
+under GPL-3.0. The bundled sound effects also have uncleared provenance. Read
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) before redistributing
+anything.

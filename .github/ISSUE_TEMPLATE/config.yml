@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🏠 Home Assistant integration
+    url: https://github.com/HomeCritters/homecritters-ha-plugin/issues
+    about: Bugs in the HA custom component (entities, discovery, media player, voice) live in the plugin repository.
+  - name: 🔒 Security vulnerability
+    url: https://github.com/HomeCritters/homecritters-firmware/security/advisories/new
+    about: Please report security issues privately, not as a public issue.
+  - name: 📖 Architecture notes
+    url: https://github.com/HomeCritters/homecritters-firmware/blob/main/CLAUDE.md
+    about: Module map, WebSocket protocol, and the hardware gotchas learned the hard way.
