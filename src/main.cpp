@@ -467,7 +467,7 @@ static void loopWalkieList(unsigned long now) {
     if (ui::isBackPull(dx, dy, g_wtStartX, g_wtStartY)) {
       audio.playClick();
       screen = SCREEN_GAMES;
-    } else if (ui::inWalkieToggle(g_wtStartX, g_wtStartY)) {
+    } else if (ui::inWalkiePill(g_wtStartX, g_wtStartY)) {
       audio.playClick();
       walkie.setEnabled(!walkie.enabled());
     } else if (walkie.enabled()) {
@@ -515,7 +515,7 @@ static void loopWalkieTalk(unsigned long now) {
       walkie.txEnd();
     } else {
       const int32_t dx = g_touchX - g_wtStartX, dy = g_touchY - g_wtStartY;
-      if (ui::isBackPull(dx, dy, g_wtStartX, g_wtStartY)) {
+      if (ui::isBackPull(dx, dy, g_wtStartX, g_wtStartY)) {  // left tab/pull
         audio.playClick();
         screen = SCREEN_WALKIE;
       }
@@ -629,9 +629,10 @@ static const ScreenDef SCREENS[] = {
     {SCREEN_HA, "ha", loopHaPanel, nullptr, 30, true},
     {SCREEN_WEATHER, "weather", loopWeather, nullptr, 30, true},
     {SCREEN_WALKIE, "walkie", loopWalkieList, nullptr, 30, true},
-    // The talk screen never idle-closes: you sit on it waiting for a friend
-    // to speak (Apple Watch behavior). Leave via the back pull.
-    {SCREEN_WALKIE_TALK, "walkietalk", loopWalkieTalk, nullptr, 20, false},
+    // Talk screen idle-closes back to the pet after the menu timeout - but
+    // never mid-conversation (the loop refreshes lastInteraction during
+    // TX/RX), and an incoming PTT re-opens it automatically.
+    {SCREEN_WALKIE_TALK, "walkietalk", loopWalkieTalk, nullptr, 20, true},
 };
 static const ScreenDef* screenDef(Screen s) {
   for (const auto& d : SCREENS)
@@ -644,6 +645,7 @@ static const ScreenDef* screenDef(Screen s) {
 // (serial nav to the HA panel skipped haSubscribe, for instance).
 static void enterScreen(Screen s, unsigned long now) {
   menuOpen = false;
+  touchinput::cancel();  // no ghost taps: drop any synthetic-touch leftovers
   switch (s) {
     case SCREEN_HA:
       g_haPage = 0;
@@ -1265,6 +1267,20 @@ void loop() {
   web.handle();
   walkie.pumpTx();     // TX: drain mic frames -> UDP (no-op when idle)
   walkie.tick(now);    // session timeouts + radio keepalive
+  {  // Incoming PTT pulls the UI to the talk screen (Apple Watch behavior):
+     // whoever called becomes the reply target.
+    static WtState wtUiPrev = WT_IDLE;
+    const WtState ws = walkie.state();
+    if (ws == WT_RX && wtUiPrev != WT_RX && screen != SCREEN_WALKIE_TALK &&
+        !g_fullSleep) {
+      g_wtTarget = walkie.rxPeerIndex();  // -1 -> reply as broadcast
+      strlcpy(g_wtTargetName, walkie.rxName(), sizeof(g_wtTargetName));
+      enterScreen(SCREEN_WALKIE_TALK, now);
+      lastInteractionMs = now;
+      web.pushState();
+    }
+    wtUiPrev = ws;
+  }
   {  // portal wt:* commands (scan/on/off/tx:N|bc/txstop)
     char wc[12];
     if (web.consumeWalkieCmd(wc, sizeof(wc))) {

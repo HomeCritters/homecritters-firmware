@@ -118,15 +118,30 @@ void Walkie::onPacket(AsyncUDPPacket& p) {
     memcpy(_rxMac, h->mac, 6);
     snprintf(_rxName, sizeof(_rxName), "critter-%02x%02x%02x",
              h->mac[3], h->mac[4], h->mac[5]);
+    int idx = -1;
     portENTER_CRITICAL(&_mux);
     for (int i = 0; i < _peerCount; i++) {
       if (memcmp(_peers[i].mac, h->mac, 6) == 0) {
         strlcpy(_rxName, _peers[i].name, sizeof(_rxName));
         _peers[i].lastSeenMs = now;  // passive liveness refresh
+        _peers[i].ip = p.remoteIP();  // and the address (DHCP may move it)
+        idx = i;
         break;
       }
     }
+    if (idx < 0 && _peerCount < MAX_PEERS) {
+      // Unknown caller: learn them from the packet (MAC + source IP) so the
+      // auto-opened talk screen can reply unicast; a scan refines the name.
+      WtPeer& pr = _peers[_peerCount];
+      strlcpy(pr.name, _rxName, sizeof(pr.name));
+      memcpy(pr.mac, h->mac, 6);
+      pr.ip = p.remoteIP();
+      pr.lastSeenMs = now;
+      idx = _peerCount;
+      _peerCount = _peerCount + 1;
+    }
     portEXIT_CRITICAL(&_mux);
+    _rxPeerIdx = idx;
     _rxRing.reset();
     _rxStartMs = now;
     _state = WT_RX;
@@ -151,8 +166,10 @@ void Walkie::endRxSession() {
 // ---- TX --------------------------------------------------------------------
 bool Walkie::txStart(int peerIdx) {
   if (!_enabled || _fullSleep) return false;
+  // Radio etiquette: you can NOT talk over an incoming PTT - wait for the
+  // other side to finish (the button buzzes, owner's rule).
+  if (_state == WT_RX) return false;
   if (_web && !_web->walkieMicStart()) return false;  // HA voice PTT owns the mic
-  if (_state == WT_RX) endRxSession();                // TX wins locally
   if (peerIdx >= 0) {
     if (peerIdx >= _peerCount) { if (_web) _web->walkieMicStop(); return false; }
     _txIp = _peers[peerIdx].ip;

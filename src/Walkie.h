@@ -71,6 +71,9 @@ class Walkie {
   WtState state() const { return _state; }
   const char* rxName() const { return _rxName; }  // who we're hearing
   int txTarget() const { return _txTarget; }
+  // Peer-table index of the current/last RX sender (-1 unknown): the UI
+  // auto-opens the talk screen pointed at whoever called.
+  int rxPeerIndex() const { return _rxPeerIdx; }
 
   // Render-loop pumps (same cadence family as pumpMic/pumpScreen).
   void pumpTx();
@@ -114,6 +117,7 @@ class Walkie {
   char _rxName[19] = {0};
   volatile unsigned long _rxLastMs = 0;
   volatile unsigned long _rxStartMs = 0;
+  volatile int _rxPeerIdx = -1;  // sender's slot in the peer table
   unsigned long _rxWindowMs = 0;  // rate limit window
   uint8_t _rxWindowPkts = 0;
 
