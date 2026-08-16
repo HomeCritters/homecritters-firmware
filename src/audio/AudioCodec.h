@@ -42,6 +42,13 @@ size_t readMicMono(int16_t* dst, size_t frames, uint32_t timeoutMs);
 // Fed by CodecOutput::ConsumeSample; drives the beat-following party LED.
 uint16_t outLevel();
 
+// Raw PCM sink for the walkie-talkie RX path: mono 16kHz samples ->
+// gain (Q12 fixed point, 4096 = 1.0) -> stereo interleave -> i2s_write.
+// The caller owns the session (AudioPlayer's walkie drain) and must have the
+// clock at 16kHz (setCaptureRate - a no-op at idle since idle IS 16kHz).
+// Blocking in <=64-sample chunks; returns mono samples written.
+size_t playRaw16(const int16_t* mono, size_t n, uint16_t gainQ12);
+
 // --- SFX overlay (the mixer) -------------------------------------------
 // Plays a WAV (PCM16 MONO, standard 44-byte header - the format our asset
 // pipeline generates) ON TOP of whatever the decoder is sending to the DAC:

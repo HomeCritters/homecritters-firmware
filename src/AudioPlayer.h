@@ -56,10 +56,18 @@ class AudioPlayer {
   void stopStream();
   bool streaming() const { return _streaming; }
 
-  // True while any audio plays (media stream OR a PROGMEM SFX). The mic
-  // capture path is half-duplex with playback (shared I2S clock), so it must
-  // suspend capture while this is true.
-  bool busy() const { return _playing || _streaming; }
+  // True while any audio plays (media stream, a PROGMEM SFX, or a walkie RX
+  // session). The mic capture path is half-duplex with playback (shared I2S
+  // clock), so it must suspend capture while this is true - which also gives
+  // the walkie echo-free half-duplex for free.
+  bool busy() const { return _playing || _streaming || _walkieRx; }
+
+  // --- Walkie-talkie RX (raw 16kHz PCM drained on the audio task) ---
+  void walkieRxAttach(StreamRing* ring) { _walkieRing = ring; }
+  void walkieRxStart();  // chirp + start the raw drain (prebuffer inside)
+  void walkieRxStop();
+  bool walkieRxActive() const { return _walkieRx; }
+  void playWalkieChirp();
 
   // What is playing: HA TTS URLs go through /api/tts_proxy/, so speech is
   // distinguishable from music - the UI shows an Alexa-style ring for speech
@@ -128,5 +136,10 @@ class AudioPlayer {
   void* _out = nullptr;  // AudioOutputI2S*
 
   StreamRing _ring;      // permanent 1MB PSRAM ring (media path)
+  // Walkie RX: ring owned by Walkie (lwIP task writes, audio task reads).
+  StreamRing* _walkieRing = nullptr;
+  volatile bool _walkieRx = false;   // session open (busy() includes this)
+  bool _walkiePlaying = false;       // audio-task only: prebuffer satisfied
+  volatile uint16_t _walkieGainQ12 = 4096;  // volume curve applied to raw PCM
   AudioReader _reader;   // core-0 network reader task
 };

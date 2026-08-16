@@ -9,11 +9,26 @@
 #include <cstring>
 #include "Renderer.h"
 #include "TouchInput.h"  // portal mirror -> synthetic touch injection
+#include "Walkie.h"  // wt/wt:* WS commands (stats + remote control)
 #include "audio/AudioCodec.h"  // mic capture (readMicMono / setCaptureRate)
 #include "web_index.h"  // gzipped single-file React portal
 
-static constexpr const char* HOSTNAME = "critter";  // -> critter.local
 static constexpr const char* FW_VERSION = "1.0.0";
+
+// mDNS hostname, unique per device: "critter-XXYYZZ" from the MAC tail.
+// With a single device "critter.local" also worked, but two devices on the
+// same LAN collided (both probed the same name); unique names fix that and
+// give the walkie-talkie a stable per-device identity. HA discovery browses
+// _critter._tcp and connects by IP, so it is unaffected.
+static const char* uniqueHostname() {
+  static char host[20] = {0};
+  if (!host[0]) {
+    uint8_t mac[6];
+    WiFi.macAddress(mac);
+    snprintf(host, sizeof(host), "critter-%02x%02x%02x", mac[3], mac[4], mac[5]);
+  }
+  return host;
+}
 
 static void jsonEscape(const String& in, char* out, size_t n);  // defined below
 
@@ -28,7 +43,7 @@ void WebPortal::begin(Pet* pet, AudioPlayer* audio, StatusLed* led,
   _ha = ha;
   _onAction = onAction;
   WiFi.mode(WIFI_STA);
-  WiFi.setHostname(HOSTNAME);
+  WiFi.setHostname(uniqueHostname());
   // Modem power save ON by default: the radio naps between AP beacons, which
   // cuts ~50mA and real heat (the S3 ran hot with PS off 24/7). The old
   // "always on" rule here predates the MCLK/GPIO0 fix - the latency spikes
@@ -186,6 +201,12 @@ void WebPortal::topTask(void* arg) {
 // to the lib's TCP timeout on EVERY frame), and pacing scales with payload -
 // high-entropy scenes (snow, disco) produce 50KB+ deltas that must not be
 // attempted at 18fps.
+void WebPortal::buildWalkieJson(char* out, size_t n) {
+  const int p = snprintf(out, n, "wt:");
+  if (_walkie) _walkie->statsJson(out + p, n - p);
+  else snprintf(out + p, n - p, "{}");
+}
+
 void WebPortal::dropScreenViewer() {
   _screenClient = -1;
   // Restore WiFi modem-sleep unless media streaming still needs the radio hot.
@@ -316,6 +337,7 @@ void WebPortal::micCaptureLoop() {
 // so no locking). Sends only what's buffered; a slow/dead client can back up
 // the ring (producer drops on overflow) but never blocks rendering here.
 void WebPortal::pumpMic() {
+  if (_micWalkie) return;  // walkie owns the mic: Walkie::pumpTx drains the ring
   // muted OR night mode = hard gates: nothing leaves the device
   if (!_micOn || _micClient < 0 || _micMuted || _fullSleep) return;
   uint8_t buf[640];  // one 20ms frame per send (320 samples * 2 bytes)
@@ -368,13 +390,19 @@ void WebPortal::startServer() {
   // this, a phone that sleeps or leaves WiFi keeps a half-open socket and
   // every broadcast BLOCKS on the dead TCP write - felt as screen freezes.
   _ws.enableHeartbeat(15000, 3000, 2);
-  // mDNS: friendly access via critter.local (Bonjour/Avahi). The _critter
-  // service is what the Home Assistant integration discovers via zeroconf.
-  if (MDNS.begin(HOSTNAME)) {
+  // mDNS: unique per-device hostname (critter-XXYYZZ.local) so multiple
+  // critters coexist on one LAN. The _critter service is what HA discovers
+  // via zeroconf AND what the walkie-talkie browses for peers: TXT carries
+  // the MAC (identity), the pet name (friends list label) and wt (walkie
+  // enabled). setInstanceName makes the advertised instance unique too.
+  if (MDNS.begin(uniqueHostname())) {
+    MDNS.setInstanceName(uniqueHostname());
     MDNS.addService("http", "tcp", 80);
     MDNS.addService("ws", "tcp", 81);
     MDNS.addService("critter", "tcp", 81);
     MDNS.addServiceTxt("critter", "tcp", "mac", WiFi.macAddress());
+    MDNS.addServiceTxt("critter", "tcp", "name", _pet ? _pet->name() : "Critter");
+    MDNS.addServiceTxt("critter", "tcp", "wt", "1");
   }
   _serverUp = true;
   // Serve HTTP on core 0 so a big page load can't stall the render loop.
@@ -387,7 +415,7 @@ void WebPortal::startServer() {
   h = nullptr;
   xTaskCreatePinnedToCore(micCaptureTask, "miccap", 4096, this, 3, &h, 0);
   taskreg::add("miccap", h, 0, 3);
-  Serial.printf("[web] portal at http://%s.local/  (ip %s, ws :81)\n", HOSTNAME, ip().c_str());
+  Serial.printf("[web] portal at http://%s.local/  (ip %s, ws :81)\n", uniqueHostname(), ip().c_str());
 }
 
 // GET /info -> device identity JSON (used by the HA config flow).
@@ -707,6 +735,19 @@ void WebPortal::onWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
       if (_renderer) _renderer->triggerBolt();
       return;
     }
+    // Walkie-talkie: stats + remote control (portal toggle, scripted E2E -
+    // the same surface the serial `wt` commands expose).
+    if (msg == "wt" && _walkie) {
+      char j[560];
+      buildWalkieJson(j, sizeof(j));
+      _ws.sendTXT(num, j);
+      return;
+    }
+    if (msg.startsWith("wt:") && _walkie) {
+      // consumed by main (scan/on/off/tx:N/txstop)
+      strlcpy((char*)_wtCmd, msg.c_str() + 3, sizeof(_wtCmd));
+      return;
+    }
     // Dev panel: force a festive theme (natal|halloween|junina|nye|bday|off|auto).
     if (msg.startsWith("fest:")) {
       const String f = msg.substring(5);
@@ -812,7 +853,11 @@ void WebPortal::applyCommand(const String& msg) {
     return;
   }
   if (msg.startsWith("name:")) {
-    if (_pet) _pet->setName(msg.substring(5));
+    if (_pet) {
+      _pet->setName(msg.substring(5));
+      // Refresh the mDNS TXT so walkie peers see the new name (replaces).
+      if (_serverUp) MDNS.addServiceTxt("critter", "tcp", "name", _pet->name());
+    }
     _dirty = true;  // push the new name to every client (and any bday text)
     return;
   }
@@ -1065,7 +1110,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            "{\"screen\":\"%s\",\"score\":%d,\"battery\":%d,\"name\":\"%s\",\"sleeping\":%s,"
            "\"fullSleep\":%s,\"sleepSnd\":%s,\"wakeSnd\":%s,\"micMuted\":%s,"
            "\"micOn\":%s,\"micClient\":%d,\"assistOn\":%s,\"micLive\":%s,"
-           "\"wxCity\":\"%s\",\"bday\":\"%s\",\"festForce\":%d,\"wxForce\":%d,"
+           "\"wxCity\":\"%s\",\"bday\":\"%s\",\"festForce\":%d,\"wxForce\":%d,\"wt\":%d,"
            "\"mood\":\"%s\",\"media\":\"%s\",\"voice\":\"%s\","
            "\"volume\":%d,\"ledBright\":%d,\"scrBright\":%d,\"clockOn\":%s,\"tz\":\"%s\","
            "\"idleSec\":%d,\"menuSec\":%d,\"h24\":%s,\"dmy\":%s,"
@@ -1079,6 +1124,7 @@ void WebPortal::stateJson(char* out, size_t n) const {
            _micOn ? "true" : "false", _micClient, _assistOn ? "true" : "false",
            micLive() ? "true" : "false",
            _weather ? _weather->city() : "", _bday, _festDebug, _wxDebug,
+           _walkie ? (int)_walkie->enabled() : 0,
            moodName(p.mood()),
            _audio && _audio->streaming() ? "play" : "idle",
            _voiceState,

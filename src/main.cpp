@@ -16,6 +16,7 @@
 #include "BallGame.h"
 #include "SimonGame.h"
 #include "HaPanel.h"
+#include "Walkie.h"
 #include "Weather.h"
 #include "DebugConsole.h"
 #include "pins.h"  // BOOT pin (full-sleep wake check)
@@ -44,11 +45,12 @@ DoodleGame       doodle;
 BallGame         ball;
 SimonGame        simon;
 HaPanel          haPanel;
+Walkie           walkie;
 Weather          weather;
 DebugConsole     console;
 
 // Which screen is showing.
-enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON, SCREEN_HA, SCREEN_WEATHER };
+enum Screen { SCREEN_PET, SCREEN_GAMES, SCREEN_DOODLE, SCREEN_BALL, SCREEN_SIMON, SCREEN_HA, SCREEN_WEATHER, SCREEN_WALKIE, SCREEN_WALKIE_TALK };
 static Screen screen = SCREEN_PET;
 // Single entry point for switching screens (defined after the loopX handlers).
 static void enterScreen(Screen s, unsigned long now);
@@ -438,9 +440,89 @@ static void loopGamesMenu(unsigned long now) {
     } else if (ui::inGameSimon(g_gamesStartX, g_gamesStartY)) {
       audio.playClick();
       enterScreen(SCREEN_SIMON, now);
+    } else if (ui::inGameWalkie(g_gamesStartX, g_gamesStartY)) {
+      audio.playClick();
+      enterScreen(SCREEN_WALKIE, now);
     }
   }
   renderer.drawGamesMenu();  // idle auto-close lives in the screen table
+}
+
+// ---- Walkie-talkie screens ----
+// List: toggle + "Todos" + discovered peers; tap a row -> talk screen.
+static int32_t g_wtStartX = 0, g_wtStartY = 0;
+static int g_wtTarget = -1;        // -1 = broadcast, else peer index
+static char g_wtTargetName[19] = "Todos";
+static void loopWalkieList(unsigned long now) {
+  int32_t x, y;
+  const bool down = touchinput::read(lcd, &x, &y);
+  if (down && !g_touchDown) { g_touchDown = true; g_wtStartX = x; g_wtStartY = y; }
+  if (down) {
+    g_touchX = x; g_touchY = y;
+    lastInteractionMs = now;
+  } else if (g_touchDown) {
+    g_touchDown = false;
+    lastInteractionMs = now;
+    const int32_t dx = g_touchX - g_wtStartX, dy = g_touchY - g_wtStartY;
+    if (ui::isBackPull(dx, dy, g_wtStartX, g_wtStartY)) {
+      audio.playClick();
+      screen = SCREEN_GAMES;
+    } else if (ui::inWalkiePill(g_wtStartX, g_wtStartY)) {
+      audio.playClick();
+      walkie.setEnabled(!walkie.enabled());
+    } else if (walkie.enabled()) {
+      const int row = ui::walkieRowAt(g_wtStartX, g_wtStartY);
+      if (row == 0) {
+        audio.playClick();
+        g_wtTarget = -1;
+        strlcpy(g_wtTargetName, "Todos", sizeof(g_wtTargetName));
+        enterScreen(SCREEN_WALKIE_TALK, now);
+      } else if (row > 0 && row - 1 < walkie.peerCount()) {
+        audio.playClick();
+        g_wtTarget = row - 1;
+        strlcpy(g_wtTargetName, walkie.peer(row - 1).name, sizeof(g_wtTargetName));
+        enterScreen(SCREEN_WALKIE_TALK, now);
+      }
+    }
+  }
+  // Refresh discovery every 10s while the list is open.
+  static unsigned long nextScan = 0;
+  if (now >= nextScan) { nextScan = now + 10000; walkie.requestScan(); }
+  renderer.drawWalkieList(walkie);
+}
+
+// Talk: HOLD the big circle = transmit (down/up edges, not release-tap).
+static bool g_wtHeld = false;
+static void loopWalkieTalk(unsigned long now) {
+  int32_t x, y;
+  const bool down = touchinput::read(lcd, &x, &y);
+  if (down && !g_touchDown) {  // press edge
+    g_touchDown = true;
+    g_wtStartX = x; g_wtStartY = y;
+    if (ui::inWalkieTalkBtn(x, y) && !g_wtHeld) {
+      if (walkie.txStart(g_wtTarget)) g_wtHeld = true;
+      else audio.playBuzzer();  // mic muted / night mode refuse the claim
+    }
+  }
+  if (down) {
+    g_touchX = x; g_touchY = y;
+    lastInteractionMs = now;
+  } else if (g_touchDown) {    // release edge
+    g_touchDown = false;
+    lastInteractionMs = now;
+    if (g_wtHeld) {
+      g_wtHeld = false;
+      walkie.txEnd();
+    } else {
+      const int32_t dx = g_touchX - g_wtStartX, dy = g_touchY - g_wtStartY;
+      if (ui::isBackPull(dx, dy, g_wtStartX, g_wtStartY)) {  // left tab/pull
+        audio.playClick();
+        screen = SCREEN_WALKIE;
+      }
+    }
+  }
+  if (walkie.state() != WT_IDLE) lastInteractionMs = now;  // no idle-close mid-talk
+  renderer.drawWalkieTalk(walkie, g_wtTargetName, g_wtHeld);
 }
 
 // HA control panel: swipe up/down = page, tap a controllable tile = toggle
@@ -546,6 +628,11 @@ static const ScreenDef SCREENS[] = {
     {SCREEN_GAMES, "games", loopGamesMenu, nullptr, 30, true},
     {SCREEN_HA, "ha", loopHaPanel, nullptr, 30, true},
     {SCREEN_WEATHER, "weather", loopWeather, nullptr, 30, true},
+    {SCREEN_WALKIE, "walkie", loopWalkieList, nullptr, 30, true},
+    // Talk screen idle-closes back to the pet after the menu timeout - but
+    // never mid-conversation (the loop refreshes lastInteraction during
+    // TX/RX), and an incoming PTT re-opens it automatically.
+    {SCREEN_WALKIE_TALK, "walkietalk", loopWalkieTalk, nullptr, 20, true},
 };
 static const ScreenDef* screenDef(Screen s) {
   for (const auto& d : SCREENS)
@@ -558,6 +645,7 @@ static const ScreenDef* screenDef(Screen s) {
 // (serial nav to the HA panel skipped haSubscribe, for instance).
 static void enterScreen(Screen s, unsigned long now) {
   menuOpen = false;
+  touchinput::cancel();  // no ghost taps: drop any synthetic-touch leftovers
   switch (s) {
     case SCREEN_HA:
       g_haPage = 0;
@@ -572,6 +660,14 @@ static void enterScreen(Screen s, unsigned long now) {
     case SCREEN_SIMON:  startSimon(now);  return;  // sets screen itself
     case SCREEN_BALL:
       ball.reset();
+      g_touchDown = false;
+      break;
+    case SCREEN_WALKIE:
+      walkie.requestScan();  // fresh roster as the list opens
+      g_touchDown = false;
+      break;
+    case SCREEN_WALKIE_TALK:
+      g_wtHeld = false;
       g_touchDown = false;
       break;
     default: break;  // SCREEN_PET / SCREEN_GAMES: nothing extra
@@ -622,6 +718,8 @@ static bool consoleNavigate(const String& c) {
   if (c == "pet")    { enterScreen(SCREEN_PET, now); return true; }
   if (c == "games")  { enterScreen(SCREEN_GAMES, now); return true; }
   if (c == "hapanel"){ enterScreen(SCREEN_HA, now); return true; }
+  if (c == "walkie") { enterScreen(SCREEN_WALKIE, now); return true; }
+  if (c == "walkietalk") { enterScreen(SCREEN_WALKIE_TALK, now); return true; }
   if (c == "weather"){ enterScreen(SCREEN_WEATHER, now); return true; }
   if (c == "wx") {  // dump the weather model
     Serial.printf("[wx] city='%s' loc=%d fetched=%d stale=%lums now=%dC code=%d kind=%d\n",
@@ -675,6 +773,20 @@ static bool consoleNavigate(const String& c) {
     return true;
   }
   if (c == "bday") { Serial.printf("[bday] %s\n", g_bdayDate); return true; }
+  if (c == "wt") { walkie.printStats(); return true; }
+  if (c == "wt:scan") { walkie.requestScan(); return true; }
+  if (c == "wt:on") { walkie.setEnabled(true); return true; }
+  if (c == "wt:off") { walkie.setEnabled(false); return true; }
+  if (c.startsWith("wt:tx:")) {  // debug: TX to a raw IP without the UI/touch
+    // wt:tx:bc = broadcast; wt:tx:<n> = peer index; used by validation scripts
+    const String t = c.substring(6);
+    bool ok;
+    if (t == "bc") ok = walkie.txStart(-1);
+    else ok = walkie.txStart(t.toInt());
+    Serial.printf("[wt] txStart -> %s\n", ok ? "ok" : "REFUSED");
+    return true;
+  }
+  if (c == "wt:txstop") { walkie.txEnd(); return true; }
   if (c == "wxbolt") {  // debug: strike lightning right now (bolt + thunder)
     renderer.triggerBolt();
     return true;
@@ -873,6 +985,7 @@ static void loopNightMode(unsigned long now) {
     led.gameOff();               // LED dark (override until wake)
     renderer.setDisplayOff(true);
     web.setFullSleep(true);
+    walkie.setFullSleep(true);   // walkie RX muted during night mode
     g_micMutedBeforeNight = web.micMuted();
     if (!g_micMutedBeforeNight) web.setMicMuted(true);
   } else if (req == 0 && g_fullSleep) {
@@ -885,6 +998,7 @@ static void loopNightMode(unsigned long now) {
     }
     if (!g_micMutedBeforeNight && web.micMuted()) web.setMicMuted(false);
     web.setFullSleep(false);
+    walkie.setFullSleep(false);
     lastInteractionMs = now;
     g_inputSwallowUntil = now + 800;  // the wake tap must not also feed/pat
   }
@@ -1034,6 +1148,8 @@ void setup() {
   simon.begin();   // load the Genius high score
   audio.begin();  // I2C + ES8311 + I2S + audio task
   web.begin(&pet, &audio, &led, &petClock, &renderer, &haPanel, doAction);  // WiFi + portal
+  walkie.begin(&audio, &web);  // UDP walkie-talkie (discovery via mDNS)
+  web.setWalkie(&walkie);      // wt/wt:* over WS (portal + scripted E2E)
   web.setBattery(battery.percent());  // seed the portal value
   web.setWeatherModel(&weather);      // wxloc command + wxCity in the state
   // Weather fetch task (core 0); skips fetches while media streams.
@@ -1149,6 +1265,33 @@ void loop() {
   // stream down if the device's WS goes silent (heartbeat timeout). Broadcast
   // volume is already minimized while streaming (animation mirror suppressed).
   web.handle();
+  walkie.pumpTx();     // TX: drain mic frames -> UDP (no-op when idle)
+  walkie.tick(now);    // session timeouts + radio keepalive
+  {  // Incoming PTT pulls the UI to the talk screen (Apple Watch behavior):
+     // whoever called becomes the reply target.
+    static WtState wtUiPrev = WT_IDLE;
+    const WtState ws = walkie.state();
+    if (ws == WT_RX && wtUiPrev != WT_RX && screen != SCREEN_WALKIE_TALK &&
+        !g_fullSleep) {
+      g_wtTarget = walkie.rxPeerIndex();  // -1 -> reply as broadcast
+      strlcpy(g_wtTargetName, walkie.rxName(), sizeof(g_wtTargetName));
+      enterScreen(SCREEN_WALKIE_TALK, now);
+      lastInteractionMs = now;
+      web.pushState();
+    }
+    wtUiPrev = ws;
+  }
+  {  // portal wt:* commands (scan/on/off/tx:N|bc/txstop)
+    char wc[12];
+    if (web.consumeWalkieCmd(wc, sizeof(wc))) {
+      if (!strcmp(wc, "scan")) walkie.requestScan();
+      else if (!strcmp(wc, "on")) walkie.setEnabled(true);
+      else if (!strcmp(wc, "off")) walkie.setEnabled(false);
+      else if (!strcmp(wc, "txstop")) walkie.txEnd();
+      else if (!strncmp(wc, "tx:", 3))
+        walkie.txStart(!strcmp(wc + 3, "bc") ? -1 : atoi(wc + 3));
+    }
+  }
 
   ferret.update(pet, now);
   // (The portal used to re-render the ferret from a broadcast of anim/pos;
@@ -1156,6 +1299,17 @@ void loop() {
 
   led.update(pet.mood());
   loopMediaLedShow(now);  // balada rainbow / TTS cyan pulse
+  {  // walkie LED: TX = steady amber, RX = green pulse (any screen). Last
+     // gameColor of the frame wins, so this sits after the media show.
+    static WtState wtLedLast = WT_IDLE;
+    const WtState ws = walkie.state();
+    if (ws == WT_TX) led.gameColor(255, 150, 0);
+    else if (ws == WT_RX) {
+      const uint8_t p = (uint8_t)(110 + 90 * sinf(now / 220.0f));
+      led.gameColor(0, p, 40);
+    } else if (wtLedLast != WT_IDLE) led.endGame();
+    wtLedLast = ws;
+  }
 
   // Report the current screen to the portal and honor phone game nav (start/
   // back), so Doodle Jump can be launched and steered entirely from the phone.

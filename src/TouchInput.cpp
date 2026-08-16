@@ -23,6 +23,11 @@ void inject(bool down, int32_t x, int32_t y) {
   }
 }
 
+void cancel() {
+  s_down = false;
+  s_pendingUp = false;
+}
+
 bool read(LGFX_BallV2& lcd, int32_t* x, int32_t* y) {
   if (lcd.getTouch(x, y)) return true;  // a real finger always wins
   if (s_down && millis() - s_stamp < 1500) {

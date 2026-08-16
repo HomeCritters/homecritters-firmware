@@ -25,4 +25,9 @@ void inject(bool down, int32_t x, int32_t y);
 // stream went stale so a dropped connection can't wedge a finger down).
 bool read(LGFX_BallV2& lcd, int32_t* x, int32_t* y);
 
+// Drop any synthetic touch state immediately (no deferred release). Called on
+// screen transitions: the latch's trailing "final down" read must not leak
+// into the next screen as a ghost tap.
+void cancel();
+
 }  // namespace touchinput
