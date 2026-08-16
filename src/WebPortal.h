@@ -13,6 +13,7 @@
 #include "audio/StreamRing.h"
 
 class Renderer;  // for the /shot.bmp screenshot endpoint
+class Walkie;    // walkie-talkie stats/commands over WS
 
 // ============================================================
 // WebPortal: WiFi connectivity + web portal (React) + WebSocket.
@@ -86,9 +87,38 @@ class WebPortal {
   bool micLive() const {
     return _micOn && _micClient >= 0 && !_micMuted && !_fullSleep && _assistOn;
   }
+  // --- Walkie-talkie mic claim: the walkie borrows the capture pipeline
+  // exclusively (capture task untouched; pumpMic stands down and
+  // Walkie::pumpTx drains the ring to UDP instead). The HA always-on wake
+  // word keeps the mic streaming 24/7, so the walkie PREEMPTS it (an explicit
+  // press beats passive listening) and restores the stream on release - the
+  // pipeline just hears a gap of silence. Mute/night mode still hard-refuse.
+  bool walkieMicStart() {
+    if (_micMuted || _fullSleep) return false;
+    _micWalkiePrevOn = _micOn && _micClient >= 0;  // wake-word stream to restore
+    _micWalkie = true;
+    _micOn = true;
+    return true;
+  }
+  void walkieMicStop() {
+    if (!_micWalkie) return;
+    _micWalkie = false;
+    _micOn = _micWalkiePrevOn && _micClient >= 0;  // resume HA wake word
+  }
+  StreamRing& micRing() { return _micRing; }
   // Weather model: receives "wxloc:" (portal/HA/serial) and feeds wxCity
   // into the state JSON so clients can show the configured city.
   void setWeatherModel(Weather* w) { _weather = w; }
+  void setWalkie(Walkie* w) { _walkie = w; }  // WS wt/wt:* commands
+  // Pending walkie command from the portal ("scan"/"on"/"off"/"tx:N"/"txstop"),
+  // consumed by main on the render loop (same thread as the WS parse, but the
+  // command touches the mic/audio state that main owns).
+  bool consumeWalkieCmd(char* out, size_t n) {
+    if (!_wtCmd[0]) return false;
+    strlcpy(out, (const char*)_wtCmd, n);
+    _wtCmd[0] = 0;
+    return true;
+  }
   // Dev panel: pending "wxset:" from the portal (-2 = none pending; -1 =
   // back to real weather; else a forced WMO code). Consumed by main.
   int consumeWxSet() { const int v = _wxSetReq; _wxSetReq = -2; return v; }
@@ -206,6 +236,9 @@ class WebPortal {
   Clock* _clock = nullptr;
   HaPanel* _ha = nullptr;   // HA control panel model (SCREEN_HA)
   Weather* _weather = nullptr;  // real-weather model (wxloc / wxCity)
+  Walkie* _walkie = nullptr;    // walkie-talkie (wt/wt:* WS commands)
+  volatile char _wtCmd[12] = {0};  // pending wt:* command (consumed by main)
+  void buildWalkieJson(char* out, size_t n);
   volatile int _wxSetReq = -2;  // pending forced weather (dev panel)
   volatile int _festSetReq = -2;  // pending forced festive theme (dev panel)
   char _bday[11] = "2026-07-09"; // pet birthday YYYY-MM-DD (reported by main)
@@ -237,6 +270,8 @@ class WebPortal {
   // stalled client can never freeze rendering. Half-duplex: capture pauses
   // while audio plays (playback owns the shared I2S clock).
   volatile bool _micOn = false;  // written on render loop, read by capture task
+  volatile bool _micWalkie = false;  // walkie owns the mic (pumpMic stands down)
+  bool _micWalkiePrevOn = false;     // HA wake-word stream preempted by walkie
   volatile bool _micMuted = false;  // privacy mute (NVS-persisted)
   int _micClient = -1;      // WS client num to stream audio to (HA voice sink)
   bool _assistOn = false;   // HA confirmed a live pipeline stage (assist:on/off)

@@ -54,6 +54,9 @@ class Renderer {
 
   // Game screens.
   void drawGamesMenu();
+  // Walkie-talkie: friends list + Apple Watch-style hold-to-talk screen.
+  void drawWalkieList(class Walkie& wt);
+  void drawWalkieTalk(class Walkie& wt, const char* target, bool pressed);
   void drawDoodle(DoodleGame& game);
   void drawBall(BallGame& game);
   void drawSimon(SimonGame& game);

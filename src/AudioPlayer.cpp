@@ -42,6 +42,7 @@
 #include "sounds/sfx_hohoho.h"
 #include "sounds/sfx_witch.h"
 #include "sounds/sfx_nye.h"
+#include "sounds/sfx_walkie.h"
 
 // ============================================================
 // Minimal ES8311 driver (playback/DAC only).
@@ -200,6 +201,8 @@ void AudioPlayer::applyGain() {
   // genuinely quiet (10% -> ~0.3% amplitude) while keeping 100% full.
   float v = _volume / 100.0f;
   OUT->SetGain(powf(v, 2.5f));
+  // Same curve for the walkie's raw-PCM path (Q12: 4096 = 1.0).
+  _walkieGainQ12 = (uint16_t)(powf(v, 2.5f) * 4096.0f);
 }
 
 void AudioPlayer::setVolume(int pct) {
@@ -336,6 +339,20 @@ void AudioPlayer::playNyeFireworks(bool force) {
 void AudioPlayer::playWindAmb()   { if (!busy()) play(sfx_wind_mp3,    sfx_wind_mp3_len); }
 void AudioPlayer::playListen()    { playMix(sfx_listen_wav,  sfx_listen_wav_len); }
 void AudioPlayer::playConfirm()   { playMix(sfx_confirm_wav, sfx_confirm_wav_len); }
+// Walkie-talkie chirp (the classic Nextel beep) - PTT press + RX greeting.
+void AudioPlayer::playWalkieChirp() { if (!busy()) play(sfx_walkie_mp3, sfx_walkie_mp3_len); }
+
+// --- Walkie RX session (drained in taskLoop; see the raw-PCM block there) ---
+void AudioPlayer::walkieRxStart() {
+  playWalkieChirp();     // greeting on the receiver; drain waits out busy()
+  _walkiePlaying = false;
+  _walkieRx = true;      // busy() now true -> mic capture yields (half-duplex)
+}
+
+void AudioPlayer::walkieRxStop() {
+  _walkieRx = false;
+  _walkiePlaying = false;
+}
 
 void AudioPlayer::playSimon(int color) {
   switch (color) {  // mixable: the Genius tones sum over the party music
@@ -475,12 +492,35 @@ void AudioPlayer::taskLoop() {
     if (streamNow) startMedia(url);
     else if (data) startDecode(data, len);
 
+    // Walkie RX: raw 16kHz PCM drained straight to I2S (no decoder). Wait for
+    // a 4-frame (80ms) prebuffer before the first sample; after that, an
+    // empty ring plays one silence frame to keep DMA fed (jitter absorb).
+    // The session opens/closes from the Walkie module (walkieRxStart/Stop).
+    if (_walkieRx && !_playing && !_streaming && _walkieRing) {
+      if (!_walkiePlaying && _walkieRing->fill() >= 4 * 640) {
+        AudioCodec::setCaptureRate();  // ensure 16k (no-op at idle)
+        _walkiePlaying = true;
+      }
+      if (_walkiePlaying) {
+        int16_t frame[320];
+        if (_walkieRing->fill() >= sizeof(frame)) {
+          _walkieRing->readAvail(frame, sizeof(frame));
+          AudioCodec::playRaw16(frame, 320, _walkieGainQ12);
+        } else {
+          memset(frame, 0, sizeof(frame));  // underrun: silence keeps DMA fed
+          AudioCodec::playRaw16(frame, 320, 0);
+        }
+      }
+    } else {
+      _walkiePlaying = false;
+    }
+
     // Speaker amp gating: powered only while something plays, +300ms linger
     // (so back-to-back SFX don't click). Killing EN at idle silences the
     // amplified DAC noise floor (faint hiss with an ear on the speaker).
     static bool ampOn = false;
     static uint32_t ampIdleAt = 0;
-    if (_playing) {
+    if (_playing || _walkiePlaying) {
       if (!ampOn) { digitalWrite(PIN_SPEAKER_EN, HIGH); ampOn = true; }
       ampIdleAt = 0;
     } else if (ampOn) {

@@ -29,6 +29,14 @@ void Renderer::drawGameTile(int x, int y, const char* label, char icon, uint16_t
     _canvas.fillCircle(cx + 4, cy - 3, 3, TFT_WHITE);
     _canvas.fillCircle(cx - 4, cy - 3, 1, menu::CELL_LABEL);
     _canvas.fillCircle(cx + 4, cy - 3, 1, menu::CELL_LABEL);
+  } else if (icon == 'w') {  // Walkie: handheld radio with antenna + grill
+    _canvas.fillRoundRect(cx - 9, cy - 8, 18, 24, 5, iconColor);      // body
+    _canvas.drawRoundRect(cx - 9, cy - 8, 18, 24, 5, rgb565(150, 100, 20));
+    _canvas.fillRoundRect(cx - 6, cy - 16, 3, 9, 1, iconColor);       // antenna
+    _canvas.drawPixel(cx - 5, cy - 18, rgb565(255, 235, 150));        // tip
+    for (int r = 0; r < 3; r++)                                       // grill
+      _canvas.drawFastHLine(cx - 5, cy - 3 + r * 4, 10, rgb565(120, 80, 15));
+    _canvas.fillRect(cx - 5, cy + 9, 4, 3, rgb565(120, 80, 15));      // PTT btn
   } else {            // Bolinha: a yellow tennis ball with a curved seam
     _canvas.fillCircle(cx, cy, 16, iconColor);
     _canvas.drawCircle(cx, cy, 16, rgb565(150, 175, 40));  // rim
@@ -55,7 +63,8 @@ void Renderer::drawGamesMenu() {
 
   drawGameTile(GAME_COL_L, GAME_ROW_1, "Jump!", 'j', menu::IC_DOODLE);
   drawGameTile(GAME_COL_R, GAME_ROW_1, "Bolinha", 'b', menu::IC_BALL);
-  drawGameTile(GAME_COL_C, GAME_ROW_2, "Genius", 's', 0);
+  drawGameTile(GAME_COL_L, GAME_ROW_2, "Genius", 's', 0);
+  drawGameTile(GAME_COL_R, GAME_ROW_2, "Walkie", 'w', menu::IC_SUN);
 
   drawLeftHandle();  // pull (or tap) the left tab to go back to the pet
   endScreen();

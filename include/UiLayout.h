@@ -223,7 +223,34 @@ inline bool inGameBall(int32_t tx, int32_t ty) {
   return inRect(tx, ty, GAME_COL_R, GAME_ROW_1, GAME_TILE_W, GAME_TILE_H);
 }
 inline bool inGameSimon(int32_t tx, int32_t ty) {
-  return inRect(tx, ty, GAME_COL_C, GAME_ROW_2, GAME_TILE_W, GAME_TILE_H);
+  return inRect(tx, ty, GAME_COL_L, GAME_ROW_2, GAME_TILE_W, GAME_TILE_H);
+}
+inline bool inGameWalkie(int32_t tx, int32_t ty) {
+  return inRect(tx, ty, GAME_COL_R, GAME_ROW_2, GAME_TILE_W, GAME_TILE_H);
+}
+
+// ------------------- Walkie-talkie -------------------
+// Friends list: header toggle + up to 3 rows (row 0 = "Todos" broadcast).
+constexpr int16_t WT_TOGGLE_CX = 196, WT_TOGGLE_CY = 30;   // enabled switch
+constexpr int16_t WT_ROW_X = 36, WT_ROW_W = 168, WT_ROW_H = 40;
+constexpr int16_t WT_ROW0_Y = 66;                          // rows at 66/110/154
+inline int walkieRowAt(int32_t tx, int32_t ty) {
+  if (tx < WT_ROW_X || tx > WT_ROW_X + WT_ROW_W) return -1;
+  for (int i = 0; i < 3; i++) {
+    const int y = WT_ROW0_Y + i * (WT_ROW_H + 4);
+    if (ty >= y && ty < y + WT_ROW_H) return i;  // 0 = broadcast, 1.. = peers
+  }
+  return -1;
+}
+inline bool inWalkieToggle(int32_t tx, int32_t ty) {
+  const int32_t dx = tx - WT_TOGGLE_CX, dy = ty - WT_TOGGLE_CY;
+  return dx * dx + dy * dy <= 22 * 22;
+}
+// Talk screen: the big push-to-talk circle.
+constexpr int16_t WT_BTN_CX = 120, WT_BTN_CY = 134, WT_BTN_R = 66;
+inline bool inWalkieTalkBtn(int32_t tx, int32_t ty) {
+  const int32_t dx = tx - WT_BTN_CX, dy = ty - WT_BTN_CY;
+  return dx * dx + dy * dy <= (int32_t)WT_BTN_R * WT_BTN_R;
 }
 
 // ------------------- Genius / Simon (full screen) -------------------

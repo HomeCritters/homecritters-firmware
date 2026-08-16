@@ -278,6 +278,19 @@ export default function SettingsDrawer({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
         <div>
+          <Text strong>📻 Walkie-Talkie</Text>
+          <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+            Falar com outros HomeCritters da rede (menu Jogos)
+          </Text>
+        </div>
+        <Switch
+          checked={!!state?.wt}
+          onChange={(v) => send(v ? 'wt:on' : 'wt:off')}
+        />
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+        <div>
           <Text strong>🌙 Modo noite</Text>
           <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
             Apaga tela e LED, Leon dorme

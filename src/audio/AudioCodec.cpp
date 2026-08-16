@@ -74,6 +74,33 @@ size_t AudioCodec::readMicMono(int16_t* dst, size_t frames, uint32_t timeoutMs) 
   return done;
 }
 
+// Walkie-talkie RX: raw mono 16k -> gain -> stereo -> DMA. Runs on the audio
+// task (the walkie drain); blocking writes in small chunks so a session can
+// stop quickly. Feeds the same level meter the party LED reads.
+size_t AudioCodec::playRaw16(const int16_t* mono, size_t n, uint16_t gainQ12) {
+  if (!s_installed) return 0;
+  int16_t stereo[64 * 2];
+  size_t done = 0;
+  while (done < n) {
+    size_t chunk = n - done;
+    if (chunk > 64) chunk = 64;
+    for (size_t i = 0; i < chunk; i++) {
+      int32_t v = ((int32_t)mono[done + i] * gainQ12) >> 12;
+      if (v > 32767) v = 32767;
+      if (v < -32768) v = -32768;
+      stereo[i * 2] = (int16_t)v;
+      stereo[i * 2 + 1] = (int16_t)v;
+    }
+    size_t written = 0;
+    if (i2s_write(PORT, stereo, chunk * 2 * sizeof(int16_t), &written,
+                  pdMS_TO_TICKS(100)) != ESP_OK)
+      break;
+    done += written / (2 * sizeof(int16_t));
+    if (written == 0) break;
+  }
+  return done;
+}
+
 // ---- SFX overlay (the mixer) ----
 // One PCM overlay summed on top of the decoded stream inside ConsumeSample.
 // Writer = render loop (startOverlay), reader = audio task. s_ovlActive is
