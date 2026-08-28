@@ -12,7 +12,7 @@ AirPlay) with the companion
 [homecritters-ha-plugin](https://github.com/HomeCritters/homecritters-ha-plugin).
 
 [![CI](https://github.com/HomeCritters/homecritters-firmware/actions/workflows/ci.yml/badge.svg)](https://github.com/HomeCritters/homecritters-firmware/actions/workflows/ci.yml)
-[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)](LICENSE)
 ![platform](https://img.shields.io/badge/platform-ESP32--S3-blue)
 ![framework](https://img.shields.io/badge/framework-Arduino%20%2B%20PlatformIO-orange)
 ![HA](https://img.shields.io/badge/Home%20Assistant-integration-41BDF5)
@@ -311,10 +311,16 @@ issue — see [`SECURITY.md`](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE) © HomeCritters — do whatever you want with the code: use it,
-fork it, sell it, just keep the copyright notice.
+[PolyForm Noncommercial 1.0.0](LICENSE) © HomeCritters.
+
+In plain words: **use it, change it, share it, contribute back — just don't
+sell it.** Build one for your desk, fork it, mod it, gift one to a friend;
+any noncommercial purpose is fair game. Making money off it (selling devices,
+selling the firmware, bundling it in a paid product) is not.
+
+> Required Notice: Copyright HomeCritters
+> (https://github.com/HomeCritters/homecritters-firmware)
 
 The art, the sounds and the libraries belong to their own authors and keep
 their own licenses — they're all listed in
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Worth a look if you plan to
-ship compiled binaries, since the audio decoder is GPL-3.0.
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
