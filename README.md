@@ -225,6 +225,10 @@ truth), based on [RealDeco/xiaozhi-esphome](https://github.com/RealDeco/xiaozhi-
 
 ## Building & flashing
 
+> 🆕 First time? Follow the full step-by-step install guide:
+> **[docs/INSTALL.md](docs/INSTALL.md)** — from a brand-new Ball V2 to a
+> paired portal (WiFi setup, PIN pairing, HA, second device).
+
 ```bash
 pio run                 # build
 pio run -t upload       # build and flash (USB-C; hold BOOT if no port shows up)
@@ -232,7 +236,8 @@ pio device monitor      # serial log, 115200 baud
 ```
 
 First boot opens a **WiFi captive portal** (AP "HomeCritters") for network
-setup. After that the device announces itself as `critter.local`.
+setup. After that the device announces itself as `critter-XXYYZZ.local`
+(unique per device).
 
 ## Regenerating assets
 
